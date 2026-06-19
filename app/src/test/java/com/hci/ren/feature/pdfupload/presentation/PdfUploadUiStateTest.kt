@@ -77,4 +77,16 @@ class PdfUploadUiStateTest {
         assertNull(cache.get(2))
         assertEquals("three", cache.get(3))
     }
+
+    @Test
+    fun boundedCacheClearRemovesAllEntries() {
+        val cache = BoundedPageCache<Int, String>(maxEntries = 2)
+        cache.put(1, "one")
+        cache.put(2, "two")
+
+        cache.clear()
+
+        assertNull(cache.get(1))
+        assertNull(cache.get(2))
+    }
 }

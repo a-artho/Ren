@@ -25,6 +25,8 @@ class PdfUploadViewModel(
     val uiState: StateFlow<PdfUploadUiState> = _uiState.asStateFlow()
 
     fun selectDocument(uri: Uri) {
+        pageCache.clear()
+        loadingPages.clear()
         _uiState.value = PdfUploadUiState(loadStatus = PdfLoadStatus.Loading)
 
         viewModelScope.launch {
@@ -89,6 +91,10 @@ class PdfUploadViewModel(
                     pageIndex = key.pageIndex,
                     targetWidthPx = targetWidthPx,
                 )
+            }
+
+            if (_uiState.value.document?.uri != document.uri) {
+                return@launch
             }
 
             loadingPages.remove(key)

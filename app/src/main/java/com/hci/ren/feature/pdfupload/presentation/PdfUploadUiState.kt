@@ -92,4 +92,9 @@ class BoundedPageCache<K, V>(
     fun put(key: K, value: V) {
         entries[key] = value
     }
+
+    @Synchronized
+    fun clear() {
+        entries.clear()
+    }
 }
