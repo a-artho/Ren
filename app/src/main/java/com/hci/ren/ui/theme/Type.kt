@@ -8,11 +8,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
 import com.hci.ren.R
 
-private val RenFontFamily = FontFamily(
-    Font(R.font.manrope, weight = FontWeight.Normal),
-    Font(R.font.manrope, weight = FontWeight.Medium),
-    Font(R.font.manrope, weight = FontWeight.SemiBold),
-    Font(R.font.manrope, weight = FontWeight.Bold)
+private val InterFontFamily = FontFamily(
+    Font(R.font.inter_regular, weight = FontWeight.Normal),
+    Font(R.font.inter_medium, weight = FontWeight.Medium),
+    Font(R.font.inter_semibold, weight = FontWeight.SemiBold),
+    Font(R.font.inter_bold, weight = FontWeight.Bold)
 )
 
 private fun renTextStyle(
@@ -20,7 +20,7 @@ private fun renTextStyle(
     fontSize: Int,
     lineHeight: Int
 ) = TextStyle(
-    fontFamily = RenFontFamily,
+    fontFamily = InterFontFamily,
     fontWeight = fontWeight,
     fontSize = fontSize.sp,
     lineHeight = lineHeight.sp
@@ -43,22 +43,22 @@ val Typography = Typography(
         lineHeight = 26
     ),
     titleMedium = renTextStyle(
-        fontWeight = FontWeight.SemiBold,
+        fontWeight = FontWeight.Medium,
         fontSize = 16,
         lineHeight = 22
     ),
     bodyLarge = renTextStyle(
-        fontWeight = FontWeight.Medium,
+        fontWeight = FontWeight.Normal,
         fontSize = 16,
         lineHeight = 24
     ),
     bodyMedium = renTextStyle(
-        fontWeight = FontWeight.Medium,
+        fontWeight = FontWeight.Normal,
         fontSize = 14,
         lineHeight = 20
     ),
     labelLarge = renTextStyle(
-        fontWeight = FontWeight.SemiBold,
+        fontWeight = FontWeight.Medium,
         fontSize = 14,
         lineHeight = 20
     ),
