@@ -28,6 +28,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -73,6 +74,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
@@ -416,7 +418,7 @@ private fun StudyDaysStep(
         }
     }
 
-    Spacer(Modifier.height(104.dp))
+    Spacer(Modifier.height(40.dp))
 
     AdvancedControlsLink(
         onClick = onAdvancedControls,
@@ -624,11 +626,15 @@ private fun ShortcutButton(
             },
             contentColor = MaterialTheme.colorScheme.onSurface,
         ),
+        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 8.dp),
     ) {
         Text(
             text = shortcut.label,
-            style = MaterialTheme.typography.bodyLarge,
+            style = MaterialTheme.typography.bodyMedium,
             fontWeight = FontWeight.SemiBold,
+            maxLines = 1,
+            softWrap = false,
+            textAlign = TextAlign.Center,
         )
     }
 }
@@ -697,8 +703,12 @@ private fun PlanSetupPrimaryButton(
             .testTag(if (isFinalStep) "generate-plan" else "plan-next"),
         shape = RoundedCornerShape(12.dp),
         colors = ButtonDefaults.buttonColors(
-            containerColor = MaterialTheme.colorScheme.primary,
-            contentColor = MaterialTheme.colorScheme.onPrimary,
+            containerColor = if (MaterialTheme.colorScheme.background.luminance() < 0.5f) {
+                com.hci.ren.ui.theme.RenGreenDark
+            } else {
+                MaterialTheme.colorScheme.primary
+            },
+            contentColor = Color.White,
             disabledContainerColor = MaterialTheme.colorScheme.surfaceVariant,
             disabledContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
         ),
