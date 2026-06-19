@@ -9,6 +9,7 @@ import android.graphics.pdf.PdfRenderer
 import android.net.Uri
 import android.provider.OpenableColumns
 import java.io.IOException
+import androidx.core.graphics.createBitmap
 
 class PdfDocumentRepository(
     private val contentResolver: ContentResolver,
@@ -49,7 +50,7 @@ class PdfDocumentRepository(
                     val height = (width * (page.height.toFloat() / page.width.toFloat()))
                         .toInt()
                         .coerceAtLeast(1)
-                    Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888).also { bitmap ->
+                    createBitmap(width, height).also { bitmap ->
                         bitmap.eraseColor(Color.WHITE)
                         page.render(bitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
                     }

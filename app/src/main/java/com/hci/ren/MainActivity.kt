@@ -8,8 +8,10 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.lifecycle.viewmodel.compose.viewModel
 import com.hci.ren.feature.home.presentation.HomeRoute
-import com.hci.ren.feature.pdfupload.presentation.PdfSetupScreen
+import com.hci.ren.feature.pdfupload.presentation.PlanSetupRoute
+import com.hci.ren.feature.pdfupload.presentation.PlanSetupViewModel
 import com.hci.ren.feature.pdfupload.presentation.PdfUploadRoute
 import com.hci.ren.ui.theme.RenTheme
 
@@ -22,6 +24,7 @@ class MainActivity : ComponentActivity() {
                 var screen by rememberSaveable { mutableStateOf(ScreenHome) }
                 var setupDocumentUri by rememberSaveable { mutableStateOf("") }
                 var openPickerOnStart by rememberSaveable { mutableStateOf(false) }
+                val planSetupViewModel: PlanSetupViewModel = viewModel()
 
                 when (screen) {
                     ScreenHome -> HomeRoute(
@@ -41,11 +44,15 @@ class MainActivity : ComponentActivity() {
                         },
                     )
 
-                    ScreenPdfSetup -> PdfSetupScreen(
+                    ScreenPdfSetup -> PlanSetupRoute(
                         documentUri = setupDocumentUri,
-                        onBack = {
+                        viewModel = planSetupViewModel,
+                        onExit = {
                             openPickerOnStart = false
                             screen = ScreenPdfUpload
+                        },
+                        onGeneratePlan = {
+                            // The real plan-generation destination has not been selected yet.
                         },
                     )
                 }
