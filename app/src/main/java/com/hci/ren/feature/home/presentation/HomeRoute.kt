@@ -7,7 +7,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 
 @Composable
-fun HomeRoute() {
+fun HomeRoute(
+    onUploadPdf: () -> Unit,
+) {
     var state by remember { mutableStateOf(HomePreviewData.active) }
 
     HomeScreen(
@@ -19,9 +21,13 @@ fun HomeRoute() {
                 )
 
                 HomeAction.AddMaterialDismissed,
-                HomeAction.UploadPdfClicked,
                 HomeAction.UseSampleMaterialClicked,
                 -> state.copy(isAddMaterialSheetVisible = false)
+
+                HomeAction.UploadPdfClicked -> {
+                    onUploadPdf()
+                    state.copy(isAddMaterialSheetVisible = false)
+                }
 
                 else -> state
             }
