@@ -1,5 +1,14 @@
 package com.hci.ren.feature.pdfupload.presentation
 
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -59,6 +68,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -74,6 +84,12 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.hci.ren.ui.theme.RenTheme
+import com.hci.ren.ui.motion.RenMotionDurationMillis
+import com.hci.ren.ui.motion.RenMotionEasing
+import com.hci.ren.ui.motion.isReducedMotionEnabled
+import com.hci.ren.ui.motion.renScreenTransform
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -93,7 +109,18 @@ fun PlanSetupScreen(
     modifier: Modifier = Modifier,
 ) {
     var isDatePickerOpen by rememberSaveable { mutableStateOf(false) }
+    var isNavigationLocked by rememberSaveable { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
     val datePickerState = rememberDatePickerState()
+    fun navigateOnce(action: () -> Unit) {
+        if (isNavigationLocked) return
+        isNavigationLocked = true
+        action()
+        scope.launch {
+            delay(RenMotionDurationMillis.toLong())
+            isNavigationLocked = false
+        }
+    }
 
     Scaffold(
         modifier = modifier.fillMaxSize(),
@@ -112,17 +139,27 @@ fun PlanSetupScreen(
 
             PlanSetupTopRow(
                 state = state,
-                onBack = onBack,
+                onBack = { navigateOnce(onBack) },
             )
 
             Spacer(Modifier.height(10.dp))
 
-            Column(
+            val reducedMotion = isReducedMotionEnabled()
+            AnimatedContent(
+                targetState = state.currentStep,
+                transitionSpec = {
+                    renScreenTransform(
+                        forward = targetState.ordinal > initialState.ordinal,
+                        reducedMotion = reducedMotion,
+                    )
+                },
+                contentKey = { it },
+                label = "plan-step",
                 modifier = Modifier
-                    .weight(1f)
-                    .verticalScroll(rememberScrollState()),
-            ) {
-                when (state.currentStep) {
+                    .weight(1f),
+            ) { step ->
+                Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
+                when (step) {
                     PlanSetupStep.Goal -> GoalStep(
                         selectedGoal = state.selectedGoal,
                         onGoalSelected = onGoalSelected,
@@ -147,14 +184,15 @@ fun PlanSetupScreen(
                         onAdvancedControls = onAdvancedControls,
                     )
                 }
+                }
             }
 
             Spacer(Modifier.height(14.dp))
 
             PlanSetupPrimaryButton(
                 state = state,
-                onNext = onNext,
-                onGeneratePlan = onGeneratePlan,
+                onNext = { navigateOnce(onNext) },
+                onGeneratePlan = { navigateOnce(onGeneratePlan) },
             )
 
             Spacer(Modifier.height(PlanSetupEdgePadding))
@@ -218,8 +256,13 @@ private fun PlanSetupTopRow(
 
         Spacer(Modifier.width(8.dp))
 
+        val animatedProgress by animateFloatAsState(
+            targetValue = state.progress,
+            animationSpec = tween(RenMotionDurationMillis, easing = RenMotionEasing),
+            label = "setup-progress",
+        )
         LinearProgressIndicator(
-            progress = { state.progress },
+            progress = { animatedProgress },
             modifier = Modifier
                 .weight(1f)
                 .height(5.dp)
@@ -418,17 +461,19 @@ private fun SelectionRow(
     isSelected: Boolean,
     onClick: () -> Unit,
 ) {
-    val borderColor = if (isSelected) {
+    val targetBorderColor = if (isSelected) {
         MaterialTheme.colorScheme.primary
     } else {
         MaterialTheme.colorScheme.outlineVariant
     }
-    val background = if (isSelected) {
+    val targetBackground = if (isSelected) {
         MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.32f)
     } else {
         MaterialTheme.colorScheme.surface
     }
 
+    val borderColor by animateColorAsState(targetBorderColor, tween(RenMotionDurationMillis), label = "option-border")
+    val background by animateColorAsState(targetBackground, tween(RenMotionDurationMillis), label = "option-background")
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -477,7 +522,11 @@ private fun SelectionRow(
             }
         }
 
-        if (isSelected) {
+        AnimatedVisibility(
+            visible = isSelected,
+            enter = fadeIn(tween(220)) + scaleIn(tween(220), initialScale = 0.9f),
+            exit = fadeOut(tween(180)) + scaleOut(tween(180), targetScale = 0.9f),
+        ) {
             Box(
                 modifier = Modifier
                     .size(30.dp)
@@ -492,7 +541,8 @@ private fun SelectionRow(
                     modifier = Modifier.size(20.dp),
                 )
             }
-        } else if (icon != null) {
+        }
+        if (!isSelected && icon != null) {
             Box(
                 modifier = Modifier
                     .size(28.dp)

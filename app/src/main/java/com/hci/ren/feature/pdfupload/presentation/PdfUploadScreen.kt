@@ -1,5 +1,14 @@
 package com.hci.ren.feature.pdfupload.presentation
 
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.Crossfade
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -40,6 +49,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -52,6 +62,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.hci.ren.ui.theme.RenTheme
+import com.hci.ren.ui.motion.RenMotionDurationMillis
+import com.hci.ren.ui.motion.RenMotionEasing
+import com.hci.ren.ui.motion.isReducedMotionEnabled
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -173,7 +186,13 @@ private fun PdfPickerHeader(
                 )
             }
         } else {
-            PdfFileCard(document = document)
+            val reducedMotion = isReducedMotionEnabled()
+            AnimatedVisibility(
+                visible = true,
+                enter = fadeIn(tween(RenMotionDurationMillis, easing = RenMotionEasing)) +
+                    if (reducedMotion) androidx.compose.animation.EnterTransition.None
+                    else slideInVertically(tween(RenMotionDurationMillis, easing = RenMotionEasing)) { it / 5 },
+            ) { PdfFileCard(document = document) }
         }
 
         if (state.loadStatus is PdfLoadStatus.Error) {
@@ -245,16 +264,15 @@ private fun PdfPreviewPane(
         modifier = modifier,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        PdfPageImage(
-            key = PdfRenderKey(state.selectedPageIndex, PdfRenderKind.Preview),
-            state = state.renderedPages[PdfRenderKey(state.selectedPageIndex, PdfRenderKind.Preview)],
-            targetWidthPx = 1400,
-            onPageRequested = onPageRequested,
-            modifier = Modifier
-                .weight(1f)
-                .fillMaxHeight()
-                .testTag("selected-pdf-page"),
-        )
+        AnimatedContent(
+            targetState = state.selectedPageIndex,
+            transitionSpec = { fadeIn(tween(220)) togetherWith fadeOut(tween(220)) },
+            label = "selected-page",
+            modifier = Modifier.weight(1f).fillMaxHeight().testTag("selected-pdf-page"),
+        ) { pageIndex ->
+            val key = PdfRenderKey(pageIndex, PdfRenderKind.Preview)
+            PdfPageImage(key, state.renderedPages[key], 1400, onPageRequested, Modifier.fillMaxSize())
+        }
 
         LazyColumn(
             modifier = Modifier
@@ -300,28 +318,40 @@ private fun PdfPageImage(
         onPageRequested(key, targetWidthPx)
     }
 
+    val borderColor by animateColorAsState(
+        targetValue = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant,
+        animationSpec = tween(RenMotionDurationMillis, easing = RenMotionEasing),
+        label = "page-border",
+    )
+    val backgroundColor by animateColorAsState(
+        targetValue = if (isSelected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = .18f) else MaterialTheme.colorScheme.surface,
+        animationSpec = tween(RenMotionDurationMillis, easing = RenMotionEasing),
+        label = "page-background",
+    )
     Box(
         modifier = modifier
             .clip(RoundedCornerShape(12.dp))
             .border(
                 width = if (isSelected) 2.dp else 1.dp,
-                color = if (isSelected) {
-                    MaterialTheme.colorScheme.primary
-                } else {
-                    MaterialTheme.colorScheme.outlineVariant
-                },
+                color = borderColor,
                 shape = RoundedCornerShape(12.dp),
             )
-            .background(MaterialTheme.colorScheme.surface),
+            .background(backgroundColor),
         contentAlignment = Alignment.Center,
     ) {
         when (state) {
-            is PdfPageRenderState.Ready -> Image(
-                bitmap = state.bitmap.asImageBitmap(),
-                contentDescription = "Page ${key.pageIndex + 1}",
-                modifier = Modifier.fillMaxSize(),
-                contentScale = ContentScale.Fit,
-            )
+            is PdfPageRenderState.Ready -> Crossfade(
+                targetState = state.bitmap,
+                animationSpec = tween(220),
+                label = "rendered-page",
+            ) { bitmap ->
+                Image(
+                    bitmap = bitmap.asImageBitmap(),
+                    contentDescription = "Page ${key.pageIndex + 1}",
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Fit,
+                )
+            }
 
             is PdfPageRenderState.Error -> Text(
                 text = "Preview unavailable",
