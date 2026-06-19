@@ -81,10 +81,16 @@ private fun UploadCard(
                 onClick = onUploadPdf,
                 modifier = Modifier.fillMaxWidth(),
             ) {
-                Text("Upload PDF")
+                Text(
+                    text = "Upload PDF",
+                    fontWeight = FontWeight.SemiBold,
+                )
             }
             TextButton(onClick = onUseSampleMaterial) {
-                Text("Try sample material")
+                Text(
+                    text = "Try sample material",
+                    fontWeight = FontWeight.SemiBold,
+                )
             }
         }
     }

@@ -88,6 +88,7 @@ private fun MaterialRow(
                     text = "PDF",
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.primary,
+                    fontWeight = FontWeight.SemiBold,
                 )
             }
             Column(
@@ -160,7 +161,10 @@ private fun EmptyMaterialList(
                 style = MaterialTheme.typography.titleMedium,
             )
             TextButton(onClick = onAddMaterial) {
-                Text("Add material")
+                Text(
+                    text = "Add material",
+                    fontWeight = FontWeight.SemiBold,
+                )
             }
         }
     }

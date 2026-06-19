@@ -122,7 +122,10 @@ fun PdfUploadScreen(
                     .fillMaxWidth()
                     .testTag("pdf-continue"),
             ) {
-                Text("Continue")
+                Text(
+                    text = "Continue",
+                    fontWeight = FontWeight.SemiBold,
+                )
             }
             Text(
                 text = "Next we'll customize how you want to study.",
@@ -164,7 +167,10 @@ private fun PdfPickerHeader(
                     contentDescription = null,
                 )
                 Spacer(Modifier.width(8.dp))
-                Text("Select PDF")
+                Text(
+                    text = "Select PDF",
+                    fontWeight = FontWeight.SemiBold,
+                )
             }
         } else {
             PdfFileCard(document = document)
@@ -350,6 +356,7 @@ private fun EmptyPreviewPane(
                 text = "PDF preview will appear here.",
                 style = MaterialTheme.typography.bodyLarge,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
+                fontWeight = FontWeight.SemiBold,
             )
         }
     }
