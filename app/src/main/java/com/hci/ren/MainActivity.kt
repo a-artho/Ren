@@ -9,6 +9,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.animation.core.updateTransition
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
@@ -20,6 +22,9 @@ import com.hci.ren.feature.home.presentation.HomeRoute
 import com.hci.ren.feature.pdfupload.presentation.PlanSetupRoute
 import com.hci.ren.feature.pdfupload.presentation.PlanSetupViewModel
 import com.hci.ren.feature.pdfupload.presentation.PdfUploadRoute
+import com.hci.ren.feature.plangeneration.PlanDetailsScreen
+import com.hci.ren.feature.plangeneration.PlanGenerationScreen
+import com.hci.ren.feature.plangeneration.PlanGenerationViewModel
 import com.hci.ren.ui.theme.RenTheme
 import com.hci.ren.ui.motion.isReducedMotionEnabled
 import com.hci.ren.ui.motion.renScreenTransform
@@ -34,8 +39,20 @@ class MainActivity : ComponentActivity() {
                 var setupDocumentUri by rememberSaveable { mutableStateOf("") }
                 var openPickerOnStart by rememberSaveable { mutableStateOf(false) }
                 val planSetupViewModel: PlanSetupViewModel = viewModel()
-
+                val planGenerationViewModel: PlanGenerationViewModel = viewModel()
+                val generationState by planGenerationViewModel.uiState.collectAsState()
                 var forward by rememberSaveable { mutableStateOf(true) }
+
+                LaunchedEffect(generationState.planId, generationState.plan) {
+                    if (generationState.plan != null) {
+                        forward = true
+                        screen = ScreenPlanDetails
+                    } else if (generationState.planId != null && screen == ScreenHome) {
+                        forward = true
+                        screen = ScreenPlanProcessing
+                    }
+                }
+
                 val reducedMotion = isReducedMotionEnabled()
                 val transition = updateTransition(screen, label = "app-screen")
                 Box(
@@ -86,10 +103,39 @@ class MainActivity : ComponentActivity() {
                                 screen = ScreenPdfUpload
                             }
                         },
-                        onGeneratePlan = {
-                            // The real plan-generation destination has not been selected yet.
+                        onGeneratePlan = { submission ->
+                            if (!transition.isRunning) {
+                                forward = true
+                                planGenerationViewModel.start(submission)
+                                screen = ScreenPlanProcessing
+                            }
                         },
                     )
+
+                    ScreenPlanProcessing -> PlanGenerationScreen(
+                        state = generationState,
+                        onBack = {
+                            if (!transition.isRunning) {
+                                forward = false
+                                planGenerationViewModel.reset()
+                                screen = ScreenHome
+                            }
+                        },
+                        onRetry = planGenerationViewModel::retry,
+                    )
+
+                    ScreenPlanDetails -> generationState.plan?.let { plan ->
+                        PlanDetailsScreen(
+                            plan = plan,
+                            onBack = {
+                                if (!transition.isRunning) {
+                                    forward = false
+                                    planGenerationViewModel.reset()
+                                    screen = ScreenHome
+                                }
+                            },
+                        )
+                    }
                         }
                     }
                 }
@@ -101,3 +147,5 @@ class MainActivity : ComponentActivity() {
 private const val ScreenHome = "home"
 private const val ScreenPdfUpload = "pdf_upload"
 private const val ScreenPdfSetup = "pdf_setup"
+private const val ScreenPlanProcessing = "plan_processing"
+private const val ScreenPlanDetails = "plan_details"

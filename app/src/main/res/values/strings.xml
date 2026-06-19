@@ -1,3 +1,36 @@
 <resources>
     <string name="app_name">Ren</string>
+    <string name="back">Back</string>
+    <string name="ai_processing">AI Processing</string>
+    <string name="building_study_plan">Building your personalized study plan…</string>
+    <string name="processing_description">This usually takes 30–60 seconds.</string>
+    <string name="uploading_document">Uploading your document</string>
+    <string name="reading_material">Reading and understanding material</string>
+    <string name="identifying_topics">Identifying key topics</string>
+    <string name="creating_blocks">Creating study blocks</string>
+    <string name="finalizing_plan">Finalizing your plan</string>
+    <string name="processing_note">This may take a moment. You can leave this screen.</string>
+    <string name="plan_generation_failed">We couldn’t create the plan. Try again.</string>
+    <string name="retry">Retry</string>
+    <string name="complete">Complete</string>
+    <string name="your_study_plan">Your study plan</string>
+    <string name="detected_topics">Detected topics</string>
+    <string name="study_blocks">Study blocks</string>
+    <string name="total_minutes">%1$d minutes total</string>
+    <string name="block_minutes">%1$d minutes</string>
+    <string name="step_subtitle_uploading">Sending your file…</string>
+    <string name="step_subtitle_analyzing">Processing document…</string>
+    <string name="step_subtitle_identifying">Analyzing content…</string>
+    <string name="step_subtitle_creating">Organizing sessions…</string>
+    <string name="step_subtitle_finalizing">Almost there…</string>
+    <string name="while_you_wait">While you wait</string>
+    <string name="wait_tip_1">Great learners take breaks.\nYour brain needs rest to absorb and remember.</string>
+    <string name="wait_tip_2">Spaced repetition beats cramming.\nReview a little each day for lasting results.</string>
+    <string name="wait_tip_3">Active recall is powerful.\nTest yourself instead of re-reading notes.</string>
+    <string name="cancel_generation_title">Cancel plan generation?</string>
+    <string name="cancel_generation_message">Are you sure you want to stop? You will lose any progress made on generating this study plan.</string>
+    <string name="cancel_generation_confirm">Yes, cancel</string>
+    <string name="cancel_generation_dismiss">No, keep waiting</string>
+    <string name="error_icon_description">Error indicator</string>
 </resources>
+
