@@ -1,5 +1,6 @@
 package com.hci.ren.feature.pdfupload.presentation
 
+import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -8,9 +9,12 @@ import kotlinx.coroutines.flow.update
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import java.util.TimeZone
 
-class PlanSetupViewModel : ViewModel() {
-    private val _uiState = MutableStateFlow(PlanSetupUiState())
+class PlanSetupViewModel(
+    private val savedStateHandle: SavedStateHandle = SavedStateHandle(),
+) : ViewModel() {
+    private val _uiState = MutableStateFlow(restoreState())
     val uiState: StateFlow<PlanSetupUiState> = _uiState.asStateFlow()
 
     fun setDocument(documentUri: String) {
@@ -18,17 +22,24 @@ class PlanSetupViewModel : ViewModel() {
             if (state.documentUri == documentUri) {
                 state
             } else {
-                PlanSetupUiState(documentUri = documentUri)
+                PlanSetupUiState(documentUri = documentUri).also(::persistState)
             }
         }
     }
 
+    fun beginNewSession(documentUri: String) {
+        savedStateHandle.keys().forEach { savedStateHandle.remove<Any>(it) }
+        val state = PlanSetupUiState(documentUri = documentUri)
+        _uiState.value = state
+        persistState(state)
+    }
+
     fun selectGoal(goal: StudyGoal) {
-        _uiState.update { it.copy(selectedGoal = goal) }
+        updateAndPersist { it.copy(selectedGoal = goal) }
     }
 
     fun selectDeadline(deadline: StudyDeadline) {
-        _uiState.update { state ->
+        updateAndPersist { state ->
             state.copy(
                 selectedDeadline = deadline,
                 customDeadlineDate = if (deadline == StudyDeadline.ChooseDate) {
@@ -46,7 +57,7 @@ class PlanSetupViewModel : ViewModel() {
     }
 
     fun selectCustomDate(epochMillis: Long) {
-        _uiState.update { state ->
+        updateAndPersist { state ->
             state.copy(
                 selectedDeadline = StudyDeadline.ChooseDate,
                 customDeadlineDate = isoDateFormat.format(Date(epochMillis)),
@@ -56,17 +67,17 @@ class PlanSetupViewModel : ViewModel() {
     }
 
     fun selectDailyTime(time: DailyStudyTime) {
-        _uiState.update { it.copy(selectedDailyTime = time) }
+        updateAndPersist { it.copy(selectedDailyTime = time) }
     }
 
     fun updateCustomMinutes(value: String) {
-        _uiState.update {
+        updateAndPersist {
             it.copy(customMinutesText = value.filter(Char::isDigit).take(3))
         }
     }
 
     fun toggleStudyDay(day: StudyDay) {
-        _uiState.update { state ->
+        updateAndPersist { state ->
             val days = if (day in state.selectedDays) {
                 state.selectedDays - day
             } else {
@@ -77,7 +88,7 @@ class PlanSetupViewModel : ViewModel() {
     }
 
     fun selectShortcut(shortcut: StudyDayShortcut) {
-        _uiState.update { it.copy(selectedDays = daysForShortcut(shortcut)) }
+        updateAndPersist { it.copy(selectedDays = daysForShortcut(shortcut)) }
     }
 
     fun showAdvancedMessage() {
@@ -88,7 +99,7 @@ class PlanSetupViewModel : ViewModel() {
         val step = _uiState.value.currentStep
         if (step == PlanSetupStep.Goal) return false
 
-        _uiState.update {
+        updateAndPersist {
             it.copy(currentStep = PlanSetupStep.entries[step.ordinal - 1])
         }
         return true
@@ -98,7 +109,7 @@ class PlanSetupViewModel : ViewModel() {
         val state = _uiState.value
         if (!state.canContinue || state.currentStep == PlanSetupStep.StudyDays) return
 
-        _uiState.update {
+        updateAndPersist {
             it.copy(currentStep = PlanSetupStep.entries[state.currentStep.ordinal + 1])
         }
     }
@@ -109,9 +120,71 @@ class PlanSetupViewModel : ViewModel() {
         return submission
     }
 
+    private inline fun updateAndPersist(crossinline transform: (PlanSetupUiState) -> PlanSetupUiState) {
+        _uiState.update { state ->
+            transform(state).also(::persistState)
+        }
+    }
+
+    private fun persistState(state: PlanSetupUiState) {
+        savedStateHandle[KEY_DOCUMENT_URI] = state.documentUri
+        savedStateHandle[KEY_STEP] = state.currentStep.name
+        setOrRemove(KEY_GOAL, state.selectedGoal?.name)
+        setOrRemove(KEY_DEADLINE, state.selectedDeadline?.name)
+        setOrRemove(KEY_CUSTOM_DEADLINE_DATE, state.customDeadlineDate)
+        setOrRemove(KEY_CUSTOM_DEADLINE_LABEL, state.customDeadlineLabel)
+        setOrRemove(KEY_DAILY_TIME, state.selectedDailyTime?.name)
+        savedStateHandle[KEY_CUSTOM_MINUTES] = state.customMinutesText
+        savedStateHandle[KEY_DAYS] = state.selectedDays.joinToString(",") { it.name }
+    }
+
+    private fun setOrRemove(key: String, value: String?) {
+        if (value != null) savedStateHandle[key] = value
+        else savedStateHandle.remove<String>(key)
+    }
+
+    private fun restoreState(): PlanSetupUiState {
+        val documentUri = savedStateHandle.get<String>(KEY_DOCUMENT_URI) ?: return PlanSetupUiState()
+        return PlanSetupUiState(
+            documentUri = documentUri,
+            currentStep = savedStateHandle.get<String>(KEY_STEP)
+                ?.let { runCatching { PlanSetupStep.valueOf(it) }.getOrNull() }
+                ?: PlanSetupStep.Goal,
+            selectedGoal = savedStateHandle.get<String>(KEY_GOAL)
+                ?.let { runCatching { StudyGoal.valueOf(it) }.getOrNull() },
+            selectedDeadline = savedStateHandle.get<String>(KEY_DEADLINE)
+                ?.let { runCatching { StudyDeadline.valueOf(it) }.getOrNull() },
+            customDeadlineDate = savedStateHandle[KEY_CUSTOM_DEADLINE_DATE],
+            customDeadlineLabel = savedStateHandle[KEY_CUSTOM_DEADLINE_LABEL],
+            selectedDailyTime = savedStateHandle.get<String>(KEY_DAILY_TIME)
+                ?.let { runCatching { DailyStudyTime.valueOf(it) }.getOrNull() },
+            customMinutesText = savedStateHandle.get<String>(KEY_CUSTOM_MINUTES) ?: "",
+            selectedDays = savedStateHandle.get<String>(KEY_DAYS)
+                ?.split(",")
+                ?.filter { it.isNotEmpty() }
+                ?.mapNotNull { runCatching { StudyDay.valueOf(it) }.getOrNull() }
+                ?.toSet()
+                ?: emptySet(),
+        )
+    }
+
     private companion object {
+        const val KEY_DOCUMENT_URI = "setup_document_uri"
+        const val KEY_STEP = "setup_step"
+        const val KEY_GOAL = "setup_goal"
+        const val KEY_DEADLINE = "setup_deadline"
+        const val KEY_CUSTOM_DEADLINE_DATE = "setup_custom_date"
+        const val KEY_CUSTOM_DEADLINE_LABEL = "setup_custom_label"
+        const val KEY_DAILY_TIME = "setup_daily_time"
+        const val KEY_CUSTOM_MINUTES = "setup_custom_minutes"
+        const val KEY_DAYS = "setup_days"
+
         val isoDateFormat = SimpleDateFormat("yyyy-MM-dd", Locale.US)
         val displayDateFormat = SimpleDateFormat("d MMM", Locale.US)
+
+        init {
+            isoDateFormat.timeZone = TimeZone.getTimeZone("UTC")
+            displayDateFormat.timeZone = TimeZone.getTimeZone("UTC")
+        }
     }
 }
-

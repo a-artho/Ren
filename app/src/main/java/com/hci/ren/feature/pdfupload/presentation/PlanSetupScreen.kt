@@ -13,6 +13,8 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -67,6 +69,7 @@ import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.rememberCoroutineScope
@@ -79,6 +82,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -111,7 +115,7 @@ fun PlanSetupScreen(
     modifier: Modifier = Modifier,
 ) {
     var isDatePickerOpen by rememberSaveable { mutableStateOf(false) }
-    var isNavigationLocked by rememberSaveable { mutableStateOf(false) }
+    var isNavigationLocked by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val datePickerState = rememberDatePickerState()
     fun navigateOnce(action: () -> Unit) {
@@ -483,14 +487,14 @@ private fun SelectionRow(
             .clip(RoundedCornerShape(10.dp))
             .background(background)
             .border(BorderStroke(1.dp, borderColor), RoundedCornerShape(10.dp))
-            .clickable(role = Role.RadioButton, onClick = onClick)
+            .selectable(selected = isSelected, role = Role.RadioButton, onClick = onClick)
             .padding(horizontal = 18.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         if (icon == null) {
             RadioButton(
                 selected = isSelected,
-                onClick = onClick,
+                onClick = null,
             )
         } else {
             Icon(
@@ -585,7 +589,7 @@ private fun DayToggle(
                 },
             )
             .border(1.dp, borderColor, RoundedCornerShape(10.dp))
-            .clickable(onClick = onClick)
+            .toggleable(value = isSelected, role = Role.Checkbox, onValueChange = { onClick() })
             .semantics { contentDescription = day.label },
         contentAlignment = Alignment.Center,
     ) {
@@ -608,7 +612,9 @@ private fun ShortcutButton(
 ) {
     OutlinedButton(
         onClick = onClick,
-        modifier = modifier.height(52.dp),
+        modifier = modifier
+            .height(52.dp)
+            .semantics { selected = isSelected },
         shape = RoundedCornerShape(10.dp),
         border = BorderStroke(
             1.dp,

@@ -1,11 +1,64 @@
 package com.hci.ren.feature.pdfupload.presentation
 
+import androidx.lifecycle.SavedStateHandle
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.util.TimeZone
 
 class PlanSetupUiStateTest {
+    @Test
+    fun setupSelectionsAreRestoredFromSavedStateHandle() {
+        val handle = SavedStateHandle()
+        val original = PlanSetupViewModel(handle)
+        original.beginNewSession("content://ren/doc")
+        original.selectGoal(StudyGoal.PrepareForExam)
+        original.selectDeadline(StudyDeadline.InOneWeek)
+        original.selectDailyTime(DailyStudyTime.FortyFiveMinutes)
+        original.toggleStudyDay(StudyDay.Monday)
+        original.toggleStudyDay(StudyDay.Friday)
+        original.goNext() // Goal -> Deadline
+
+        // Simulate process death: create new ViewModel with same handle contents
+        val restoredHandle = SavedStateHandle(handle.keys().associateWith { handle.get<Any>(it)!! })
+        val restored = PlanSetupViewModel(restoredHandle)
+        val state = restored.uiState.value
+
+        assertEquals("content://ren/doc", state.documentUri)
+        assertEquals(PlanSetupStep.Deadline, state.currentStep)
+        assertEquals(StudyGoal.PrepareForExam, state.selectedGoal)
+        assertEquals(StudyDeadline.InOneWeek, state.selectedDeadline)
+        assertEquals(DailyStudyTime.FortyFiveMinutes, state.selectedDailyTime)
+        assertEquals(setOf(StudyDay.Monday, StudyDay.Friday), state.selectedDays)
+    }
+
+    @Test
+    fun datePickerUtcMillisAreNotShiftedByLocalTimeZone() {
+        val previous = TimeZone.getDefault()
+        try {
+            TimeZone.setDefault(TimeZone.getTimeZone("America/Los_Angeles"))
+            val viewModel = PlanSetupViewModel()
+
+            viewModel.selectCustomDate(1_772_582_400_000L) // 2026-03-04T00:00:00Z
+
+            assertEquals("2026-03-04", viewModel.uiState.value.customDeadlineDate)
+        } finally {
+            TimeZone.setDefault(previous)
+        }
+    }
+
+    @Test
+    fun beginNewSessionClearsAnswersEvenForSameDocument() {
+        val viewModel = PlanSetupViewModel()
+        viewModel.setDocument("content://ren/document")
+        viewModel.selectGoal(StudyGoal.PrepareForExam)
+
+        viewModel.beginNewSession("content://ren/document")
+
+        assertEquals("content://ren/document", viewModel.uiState.value.documentUri)
+        assertEquals(null, viewModel.uiState.value.selectedGoal)
+    }
     @Test
     fun nextRequiresValidSelectionForEachStep() {
         assertFalse(PlanSetupUiState(currentStep = PlanSetupStep.Goal).canContinue)

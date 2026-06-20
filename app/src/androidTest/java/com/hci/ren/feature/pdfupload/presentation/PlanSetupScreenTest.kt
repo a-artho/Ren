@@ -3,8 +3,11 @@ package com.hci.ren.feature.pdfupload.presentation
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.assertIsOn
+import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
@@ -119,5 +122,33 @@ class PlanSetupScreenTest {
 
         assertEquals(StudyDayShortcut.Weekdays, shortcut)
         assertEquals(true, generated)
+    }
+
+    @Test
+    fun selectedOptionsExposeAccessibilityState() {
+        composeRule.setContent {
+            RenTheme {
+                PlanSetupScreen(
+                    state = PlanSetupUiState(
+                        currentStep = PlanSetupStep.StudyDays,
+                        selectedDays = StudyDay.entries.toSet(),
+                    ),
+                    onBack = {},
+                    onGoalSelected = {},
+                    onDeadlineSelected = {},
+                    onDateSelected = {},
+                    onDailyTimeSelected = {},
+                    onCustomMinutesChanged = {},
+                    onDayToggled = {},
+                    onShortcutSelected = {},
+                    onAdvancedControls = {},
+                    onNext = {},
+                    onGeneratePlan = {},
+                )
+            }
+        }
+
+        composeRule.onNodeWithContentDescription("Monday").assertIsOn()
+        composeRule.onNodeWithText("Every day").assertIsSelected()
     }
 }
