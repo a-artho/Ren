@@ -11,6 +11,7 @@ enum class PlanStatus {
             "FINALIZING" -> Finalizing
             "COMPLETED" -> Completed
             "FAILED" -> Failed
+            "CANCELED" -> Failed
             else -> Failed
         }
     }

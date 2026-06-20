@@ -67,6 +67,14 @@ class PlanApiRepository(
         return GeneratedStudyPlan(planId, topics, blocks, json.getInt("totalEstimatedMinutes"))
     }
 
+    fun cancelPlan(planId: String) {
+        val connection = open("/plans/$planId/cancel", "POST")
+        val responseCode = connection.responseCode
+        val stream = if (responseCode in 200..299) connection.inputStream else connection.errorStream
+        val text = stream?.bufferedReader()?.use { it.readText() }.orEmpty()
+        if (responseCode !in 200..299) error("Server request failed ($responseCode): $text")
+    }
+
     private fun jsonRequest(path: String, method: String, body: JSONObject? = null): JSONObject {
         val connection = open(path, method)
         if (body != null) {

@@ -11,5 +11,6 @@ class PlanGenerationModelsTest {
         assertEquals(PlanStatus.Finalizing, PlanStatus.fromWire("FINALIZING"))
         assertEquals(PlanStatus.Completed, PlanStatus.fromWire("COMPLETED"))
         assertEquals(PlanStatus.Failed, PlanStatus.fromWire("FAILED"))
+        assertEquals(PlanStatus.Failed, PlanStatus.fromWire("CANCELED"))
     }
 }
