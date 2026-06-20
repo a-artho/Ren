@@ -59,8 +59,10 @@ import kotlin.time.Duration.Companion.milliseconds
 fun PlanGenerationScreen(state: PlanGenerationUiState, onBack: () -> Unit, onRetry: () -> Unit) {
     var showCancelDialog by remember { mutableStateOf(false) }
 
-    if (state.status != PlanStatus.Failed) {
-        BackHandler(enabled = true) {
+    BackHandler(enabled = true) {
+        if (state.status == PlanStatus.Failed) {
+            onBack()
+        } else {
             showCancelDialog = true
         }
     }
@@ -631,6 +633,7 @@ private fun PlantIllustration() {
 
 @Composable
 fun PlanDetailsScreen(plan: GeneratedStudyPlan, onBack: () -> Unit) {
+    BackHandler(onBack = onBack)
     Surface(
         modifier = Modifier.fillMaxSize(),
         color = MaterialTheme.colorScheme.background,

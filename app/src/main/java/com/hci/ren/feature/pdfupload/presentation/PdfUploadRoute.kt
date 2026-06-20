@@ -1,6 +1,7 @@
 package com.hci.ren.feature.pdfupload.presentation
 
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.compose.BackHandler
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -36,11 +37,13 @@ fun PdfUploadRoute(
             }
         },
     )
-    var hasOpenedPicker by rememberSaveable { mutableStateOf(false) }
+    var pickerHandledSessionId by rememberSaveable { mutableStateOf<Long?>(null) }
 
-    LaunchedEffect(openPickerOnStart) {
-        if (openPickerOnStart && !hasOpenedPicker) {
-            hasOpenedPicker = true
+    BackHandler(onBack = onBack)
+
+    LaunchedEffect(openPickerOnStart, state.sessionId) {
+        if (openPickerOnStart && pickerHandledSessionId != state.sessionId) {
+            pickerHandledSessionId = state.sessionId
             launcher.launch(arrayOf("application/pdf"))
         }
     }

@@ -1,5 +1,6 @@
 package com.hci.ren.feature.pdfupload.presentation
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -19,13 +20,16 @@ fun PlanSetupRoute(
         viewModel.setDocument(documentUri)
     }
 
+    val navigateBack = {
+        if (!viewModel.goBack()) {
+            onExit()
+        }
+    }
+    BackHandler(onBack = navigateBack)
+
     PlanSetupScreen(
         state = state,
-        onBack = {
-            if (!viewModel.goBack()) {
-                onExit()
-            }
-        },
+        onBack = navigateBack,
         onGoalSelected = viewModel::selectGoal,
         onDeadlineSelected = viewModel::selectDeadline,
         onDateSelected = viewModel::selectCustomDate,

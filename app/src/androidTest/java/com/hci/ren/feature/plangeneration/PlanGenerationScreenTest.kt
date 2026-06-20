@@ -6,6 +6,7 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.performClick
 import androidx.test.platform.app.InstrumentationRegistry
+import androidx.test.espresso.Espresso.pressBack
 import org.junit.Assert.assertTrue
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.hci.ren.R
@@ -104,6 +105,31 @@ class PlanGenerationScreenTest {
         composeRule.onNodeWithText(totalMinutesStr).assertIsDisplayed()
         composeRule.onNodeWithText(blockMinutesStr).assertIsDisplayed()
         composeRule.onNodeWithText("Summarize the chapter.").assertIsDisplayed()
+    }
+
+    @Test fun systemBackLeavesFailedScreen() {
+        var backed = false
+        composeRule.setContent {
+            RenTheme {
+                PlanGenerationScreen(
+                    PlanGenerationUiState(status = PlanStatus.Failed),
+                    onBack = { backed = true },
+                    onRetry = {},
+                )
+            }
+        }
+
+        pressBack()
+        composeRule.runOnIdle { assertTrue(backed) }
+    }
+
+    @Test fun systemBackLeavesPlanDetails() {
+        var backed = false
+        val plan = GeneratedStudyPlan("plan", emptyList(), emptyList(), 0)
+        composeRule.setContent { RenTheme { PlanDetailsScreen(plan) { backed = true } } }
+
+        pressBack()
+        composeRule.runOnIdle { assertTrue(backed) }
     }
 
     @Test fun backButtonShowsConfirmationDialogDuringProcessing() {

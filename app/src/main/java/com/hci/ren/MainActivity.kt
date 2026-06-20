@@ -22,6 +22,7 @@ import com.hci.ren.feature.home.presentation.HomeRoute
 import com.hci.ren.feature.pdfupload.presentation.PlanSetupRoute
 import com.hci.ren.feature.pdfupload.presentation.PlanSetupViewModel
 import com.hci.ren.feature.pdfupload.presentation.PdfUploadRoute
+import com.hci.ren.feature.pdfupload.presentation.PdfUploadViewModel
 import com.hci.ren.feature.plangeneration.PlanDetailsScreen
 import com.hci.ren.feature.plangeneration.PlanGenerationScreen
 import com.hci.ren.feature.plangeneration.PlanGenerationViewModel
@@ -38,6 +39,8 @@ class MainActivity : ComponentActivity() {
                 var screen by rememberSaveable { mutableStateOf(ScreenHome) }
                 var setupDocumentUri by rememberSaveable { mutableStateOf("") }
                 var openPickerOnStart by rememberSaveable { mutableStateOf(false) }
+                var setupStartedForUploadSession by rememberSaveable { mutableStateOf(false) }
+                val pdfUploadViewModel: PdfUploadViewModel = viewModel()
                 val planSetupViewModel: PlanSetupViewModel = viewModel()
                 val planGenerationViewModel: PlanGenerationViewModel = viewModel()
                 val generationState by planGenerationViewModel.uiState.collectAsState()
@@ -69,6 +72,8 @@ class MainActivity : ComponentActivity() {
                         onUploadPdf = {
                             if (!transition.isRunning) {
                                 forward = true
+                                pdfUploadViewModel.beginNewSession()
+                                setupStartedForUploadSession = false
                                 openPickerOnStart = true
                                 screen = ScreenPdfUpload
                             }
@@ -77,9 +82,11 @@ class MainActivity : ComponentActivity() {
 
                     ScreenPdfUpload -> PdfUploadRoute(
                         openPickerOnStart = openPickerOnStart,
+                        viewModel = pdfUploadViewModel,
                         onBack = {
                             if (!transition.isRunning) {
                                 forward = false
+                                openPickerOnStart = false
                                 screen = ScreenHome
                             }
                         },
@@ -87,6 +94,10 @@ class MainActivity : ComponentActivity() {
                             if (!transition.isRunning) {
                                 forward = true
                                 setupDocumentUri = documentUri
+                                if (!setupStartedForUploadSession) {
+                                    planSetupViewModel.beginNewSession(documentUri)
+                                    setupStartedForUploadSession = true
+                                }
                                 openPickerOnStart = false
                                 screen = ScreenPdfSetup
                             }
@@ -124,17 +135,32 @@ class MainActivity : ComponentActivity() {
                         onRetry = planGenerationViewModel::retry,
                     )
 
-                    ScreenPlanDetails -> generationState.plan?.let { plan ->
-                        PlanDetailsScreen(
-                            plan = plan,
-                            onBack = {
-                                if (!transition.isRunning) {
-                                    forward = false
-                                    planGenerationViewModel.reset()
-                                    screen = ScreenHome
-                                }
-                            },
-                        )
+                    ScreenPlanDetails -> {
+                        val plan = generationState.plan
+                        if (plan == null) {
+                            PlanGenerationScreen(
+                                state = generationState,
+                                onBack = {
+                                    if (!transition.isRunning) {
+                                        forward = false
+                                        planGenerationViewModel.reset()
+                                        screen = ScreenHome
+                                    }
+                                },
+                                onRetry = planGenerationViewModel::retry,
+                            )
+                        } else {
+                            PlanDetailsScreen(
+                                plan = plan,
+                                onBack = {
+                                    if (!transition.isRunning) {
+                                        forward = false
+                                        planGenerationViewModel.reset()
+                                        screen = ScreenHome
+                                    }
+                                },
+                            )
+                        }
                     }
                         }
                     }
