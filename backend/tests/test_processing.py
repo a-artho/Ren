@@ -46,5 +46,6 @@ async def test_processing_fails_safely_after_second_error(tmp_path, monkeypatch)
     assert fake.calls == 2
     assert row[2] == PlanStatus.FAILED
     assert row[4] == "invalid provider output"
-    assert pdf.exists()
+    assert not pdf.exists()
+    assert store.document_path(row[0]) is None
 

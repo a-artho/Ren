@@ -17,6 +17,19 @@ UPLOADS = DATA / "uploads"
 STORE = Store(DATA / "ren.db")
 provider: AIProvider | None = None
 logger = logging.getLogger("ren")
+TASKS: dict[str, asyncio.Task] = {}
+
+
+def cleanup_document(document_id: str):
+    path = STORE.delete_document(document_id)
+    if path: path.unlink(missing_ok=True)
+
+
+def schedule(plan_id: str):
+    task = asyncio.create_task(process(plan_id))
+    TASKS[plan_id] = task
+    task.add_done_callback(lambda completed, key=plan_id: TASKS.pop(key, None))
+    return task
 
 async def process(plan_id: str):
     row = STORE.get(plan_id)
@@ -37,14 +50,16 @@ async def process(plan_id: str):
         STORE.set_status(plan_id, PlanStatus.CREATING_BLOCKS)
         STORE.set_status(plan_id, PlanStatus.FINALIZING)
         STORE.set_status(plan_id, PlanStatus.COMPLETED, result=result)
+    except asyncio.CancelledError:
+        STORE.set_status(plan_id, PlanStatus.CANCELED)
+        raise
     except Exception as exc:
         logger.exception("Plan %s generation failed", plan_id)
         STORE.set_status(plan_id, PlanStatus.FAILED, error=str(exc)[:300])
     finally:
-        if path:
-            row = STORE.get(plan_id)
-            if row and row[2] == PlanStatus.COMPLETED:
-                path.unlink(missing_ok=True)
+        row = STORE.get(plan_id)
+        if row and row[2] in (PlanStatus.COMPLETED, PlanStatus.FAILED, PlanStatus.CANCELED):
+            cleanup_document(document_id)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -52,7 +67,7 @@ async def lifespan(app: FastAPI):
     UPLOADS.mkdir(parents=True, exist_ok=True)
     key = os.getenv("GEMINI_API_KEY")
     if key: provider = GeminiProvider(key, os.getenv("GEMINI_MODEL", "gemini-2.5-flash"))
-    for plan_id in STORE.pending_ids(): asyncio.create_task(process(plan_id))
+    for plan_id in STORE.pending_ids(): schedule(plan_id)
     yield
 
 app = FastAPI(title="Ren API", lifespan=lifespan)
@@ -75,10 +90,31 @@ async def upload_document(file: UploadFile = File(...)):
 
 @app.post("/plans", status_code=202)
 async def create_plan(request: CreatePlanRequest):
-    if not STORE.document_path(request.documentId): raise HTTPException(404, "Document not found")
+    existing = STORE.plan_id_for_request(request.requestId)
+    if existing: return {"planId": existing}
+    document_path = STORE.document_path(request.documentId)
+    if not document_path or not document_path.exists(): raise HTTPException(404, "Document not found")
     plan_id, created = STORE.create_plan(request)
-    if created: asyncio.create_task(process(plan_id))
+    if created: schedule(plan_id)
     return {"planId": plan_id}
+
+
+@app.post("/plans/{plan_id}/cancel")
+async def cancel_plan(plan_id: str):
+    row = STORE.get(plan_id)
+    if not row: raise HTTPException(404, "Plan not found")
+    if row[2] == PlanStatus.CANCELED:
+        return {"planId": plan_id, "status": PlanStatus.CANCELED}
+    if row[2] in (PlanStatus.COMPLETED, PlanStatus.FAILED):
+        raise HTTPException(409, "Plan is already finished")
+    STORE.set_status(plan_id, PlanStatus.CANCELED)
+    task = TASKS.get(plan_id)
+    if task and not task.done():
+        task.cancel()
+        try: await task
+        except asyncio.CancelledError: pass
+    cleanup_document(row[0])
+    return {"planId": plan_id, "status": PlanStatus.CANCELED}
 
 @app.get("/plans/{plan_id}/status")
 def plan_status(plan_id: str):

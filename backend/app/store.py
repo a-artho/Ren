@@ -25,6 +25,14 @@ class Store:
     def document_path(self, document_id: str) -> Path | None:
         with self.connect() as db: row = db.execute("SELECT path FROM documents WHERE id=?", (document_id,)).fetchone()
         return Path(row[0]) if row else None
+    def delete_document(self, document_id: str) -> Path | None:
+        path = self.document_path(document_id)
+        with self.connect() as db: db.execute("DELETE FROM documents WHERE id=?", (document_id,))
+        return path
+    def plan_id_for_request(self, request_id: str) -> str | None:
+        with self.connect() as db:
+            row = db.execute("SELECT id FROM plans WHERE request_id=?", (request_id,)).fetchone()
+        return row[0] if row else None
     def create_plan(self, request: CreatePlanRequest) -> tuple[str, bool]:
         with self.connect() as db:
             existing = db.execute("SELECT id FROM plans WHERE request_id=?", (request.requestId,)).fetchone()
@@ -41,6 +49,7 @@ class Store:
         with self.connect() as db: db.execute("UPDATE plans SET status=?,result_json=?,error=? WHERE id=?",
             (status, result.model_dump_json() if result else None, error, plan_id))
     def pending_ids(self):
-        terminal = (PlanStatus.COMPLETED, PlanStatus.FAILED)
-        with self.connect() as db: return [r[0] for r in db.execute("SELECT id FROM plans WHERE status NOT IN (?,?)", terminal).fetchall()]
+        terminal = (PlanStatus.COMPLETED, PlanStatus.FAILED, PlanStatus.CANCELED)
+        with self.connect() as db:
+            return [r[0] for r in db.execute("SELECT id FROM plans WHERE status NOT IN (?,?,?)", terminal).fetchall()]
 

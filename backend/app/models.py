@@ -12,6 +12,7 @@ class PlanStatus(StrEnum):
     FINALIZING = "FINALIZING"
     COMPLETED = "COMPLETED"
     FAILED = "FAILED"
+    CANCELED = "CANCELED"
 
 
 class Setup(BaseModel):

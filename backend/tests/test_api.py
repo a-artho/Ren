@@ -50,3 +50,39 @@ def test_unknown_resources_and_invalid_setup_are_rejected(tmp_path, monkeypatch)
         invalid = setup("missing"); invalid["setup"]["dailyStudyMinutes"] = 0
         assert api.post("/plans", json=invalid).status_code == 422
 
+
+def test_consumed_document_rejects_new_request_but_preserves_idempotency(tmp_path, monkeypatch):
+    with client(tmp_path, monkeypatch) as api:
+        uploaded = api.post("/documents", files={"file": ("lesson.pdf", b"%PDF-test", "application/pdf")})
+        document_id = uploaded.json()["documentId"]
+        created = api.post("/plans", json=setup(document_id))
+        plan_id = created.json()["planId"]
+
+        path = main.STORE.document_path(document_id)
+        assert path is not None
+        path.unlink()
+        main.STORE.delete_document(document_id)
+
+        duplicate = api.post("/plans", json=setup(document_id))
+        fresh = api.post("/plans", json=setup(document_id, request_id="request-2"))
+
+        assert duplicate.status_code == 202
+        assert duplicate.json()["planId"] == plan_id
+        assert fresh.status_code == 404
+
+
+def test_cancel_marks_plan_terminal_and_removes_document(tmp_path, monkeypatch):
+    with client(tmp_path, monkeypatch) as api:
+        uploaded = api.post("/documents", files={"file": ("lesson.pdf", b"%PDF-test", "application/pdf")})
+        document_id = uploaded.json()["documentId"]
+        created = api.post("/plans", json=setup(document_id))
+        plan_id = created.json()["planId"]
+
+        cancelled = api.post(f"/plans/{plan_id}/cancel")
+
+        assert cancelled.status_code == 200
+        assert cancelled.json() == {"planId": plan_id, "status": "CANCELED"}
+        assert api.get(f"/plans/{plan_id}/status").json()["status"] == "CANCELED"
+        assert main.STORE.document_path(document_id) is None
+        assert api.post(f"/plans/{plan_id}/cancel").status_code == 200
+
