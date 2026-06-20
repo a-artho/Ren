@@ -4,6 +4,7 @@ import android.graphics.Bitmap
 import java.util.Locale
 
 data class PdfUploadUiState(
+    val sessionId: Long = 0,
     val document: PdfDocumentUiModel? = null,
     val selectedPageIndex: Int = 0,
     val loadStatus: PdfLoadStatus = PdfLoadStatus.Idle,
@@ -79,18 +80,22 @@ fun formatFileSize(sizeBytes: Long): String {
 class BoundedPageCache<K, V>(
     private val maxEntries: Int,
 ) {
-    private val entries = object : LinkedHashMap<K, V>(maxEntries, 0.75f, true) {
-        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<K, V>?): Boolean {
-            return size > maxEntries
-        }
+    init {
+        require(maxEntries > 0) { "maxEntries must be positive." }
     }
+
+    private val entries = LinkedHashMap<K, V>(maxEntries, 0.75f, true)
 
     @Synchronized
     fun get(key: K): V? = entries[key]
 
     @Synchronized
-    fun put(key: K, value: V) {
+    fun put(key: K, value: V): K? {
         entries[key] = value
+        if (entries.size <= maxEntries) return null
+        val eldestKey = entries.entries.first().key
+        entries.remove(eldestKey)
+        return eldestKey
     }
 
     @Synchronized

@@ -89,4 +89,27 @@ class PdfUploadUiStateTest {
         assertNull(cache.get(1))
         assertNull(cache.get(2))
     }
+
+    @Test
+    fun boundedCacheReportsEvictedEntry() {
+        val cache = BoundedPageCache<Int, String>(maxEntries = 2)
+        cache.put(1, "one")
+        cache.put(2, "two")
+
+        assertEquals(1, cache.put(3, "three"))
+    }
+
+    @Test
+    fun renderDimensionsBoundExtremeAspectRatiosAndPixelCount() {
+        val tall = boundedRenderDimensions(
+            sourceWidth = 1,
+            sourceHeight = 100_000,
+            targetWidth = 1_400,
+        )
+
+        assertTrue(tall.width >= 1)
+        assertTrue(tall.height >= 1)
+        assertTrue(tall.width.toLong() * tall.height <= MaxPdfRenderPixels)
+        assertTrue(tall.height <= MaxPdfRenderDimension)
+    }
 }

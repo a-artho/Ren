@@ -46,11 +46,12 @@ class PdfDocumentRepository(
                     "Page is outside the PDF."
                 }
                 renderer.openPage(pageIndex).use { page ->
-                    val width = targetWidthPx.coerceAtLeast(1)
-                    val height = (width * (page.height.toFloat() / page.width.toFloat()))
-                        .toInt()
-                        .coerceAtLeast(1)
-                    createBitmap(width, height).also { bitmap ->
+                    val dimensions = boundedRenderDimensions(
+                        sourceWidth = page.width,
+                        sourceHeight = page.height,
+                        targetWidth = targetWidthPx,
+                    )
+                    createBitmap(dimensions.width, dimensions.height).also { bitmap ->
                         bitmap.eraseColor(Color.WHITE)
                         page.render(bitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
                     }
@@ -87,6 +88,32 @@ class PdfDocumentRepository(
             }
         }
     }
+}
+
+internal const val MaxPdfRenderDimension = 8_192
+internal const val MaxPdfRenderPixels = 8_000_000L
+
+internal data class PdfRenderDimensions(
+    val width: Int,
+    val height: Int,
+)
+
+internal fun boundedRenderDimensions(
+    sourceWidth: Int,
+    sourceHeight: Int,
+    targetWidth: Int,
+): PdfRenderDimensions {
+    require(sourceWidth > 0 && sourceHeight > 0) { "PDF page dimensions must be positive." }
+    var width = targetWidth.coerceIn(1, MaxPdfRenderDimension)
+    var height = (width.toDouble() * sourceHeight / sourceWidth)
+        .coerceAtLeast(1.0)
+
+    val dimensionScale = minOf(1.0, MaxPdfRenderDimension / height)
+    val pixelScale = minOf(1.0, kotlin.math.sqrt(MaxPdfRenderPixels / (width * height)))
+    val scale = minOf(dimensionScale, pixelScale)
+    width = (width * scale).toInt().coerceAtLeast(1)
+    height = (height * scale).toInt().coerceIn(1, MaxPdfRenderDimension).toDouble()
+    return PdfRenderDimensions(width, height.toInt())
 }
 
 private data class PdfFileMetadata(

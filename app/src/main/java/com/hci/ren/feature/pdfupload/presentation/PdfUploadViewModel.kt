@@ -20,23 +20,29 @@ class PdfUploadViewModel(
         maxEntries = 12,
     )
     private val loadingPages = mutableSetOf<PdfRenderKey>()
+    private var documentLoadGeneration = 0L
+    private var sessionId = 0L
 
     private val _uiState = MutableStateFlow(PdfUploadUiState())
     val uiState: StateFlow<PdfUploadUiState> = _uiState.asStateFlow()
 
     fun selectDocument(uri: Uri) {
+        val loadGeneration = ++documentLoadGeneration
         pageCache.clear()
         loadingPages.clear()
-        _uiState.value = PdfUploadUiState(loadStatus = PdfLoadStatus.Loading)
+        _uiState.value = PdfUploadUiState(sessionId = sessionId, loadStatus = PdfLoadStatus.Loading)
 
         viewModelScope.launch {
             val result = withContext(Dispatchers.IO) {
                 repository.loadDocument(uri)
             }
 
+            if (loadGeneration != documentLoadGeneration) return@launch
+
             result
                 .onSuccess { document ->
                     _uiState.value = PdfUploadUiState(
+                        sessionId = sessionId,
                         document = document,
                         selectedPageIndex = 0,
                         loadStatus = PdfLoadStatus.Ready,
@@ -45,6 +51,7 @@ class PdfUploadViewModel(
                 }
                 .onFailure {
                     _uiState.value = PdfUploadUiState(
+                        sessionId = sessionId,
                         loadStatus = PdfLoadStatus.Error(
                             "This PDF could not be opened. It may be protected, corrupted, or no longer accessible.",
                         ),
@@ -68,6 +75,7 @@ class PdfUploadViewModel(
         targetWidthPx: Int,
     ) {
         val document = _uiState.value.document ?: return
+        val loadGeneration = documentLoadGeneration
         if (key.pageIndex !in 0 until document.pageCount) return
 
         pageCache.get(key)?.let { bitmap ->
@@ -93,17 +101,18 @@ class PdfUploadViewModel(
                 )
             }
 
-            if (_uiState.value.document?.uri != document.uri) {
+            if (loadGeneration != documentLoadGeneration || _uiState.value.document?.uri != document.uri) {
                 return@launch
             }
 
             loadingPages.remove(key)
             result
                 .onSuccess { bitmap ->
-                    pageCache.put(key, bitmap)
+                    val evictedKey = pageCache.put(key, bitmap)
                     _uiState.update { state ->
                         state.copy(
-                            renderedPages = state.renderedPages + (key to PdfPageRenderState.Ready(bitmap)),
+                            renderedPages = (state.renderedPages - listOfNotNull(evictedKey)) +
+                                (key to PdfPageRenderState.Ready(bitmap)),
                         )
                     }
                 }
@@ -120,6 +129,14 @@ class PdfUploadViewModel(
     }
 
     fun documentReference(): String? = _uiState.value.document?.uri
+
+    fun beginNewSession() {
+        documentLoadGeneration += 1
+        sessionId += 1
+        pageCache.clear()
+        loadingPages.clear()
+        _uiState.value = PdfUploadUiState(sessionId = sessionId)
+    }
 
     private companion object {
         const val previewWidthPx = 1400
