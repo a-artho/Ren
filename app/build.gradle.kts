@@ -37,6 +37,12 @@ android {
     buildFeatures {
         compose = true
     }
+    lint {
+        // Version and target upgrades require dedicated compatibility testing.
+        // Keep lint strict for every actionable source/resource warning.
+        disable += setOf("GradleDependency", "NewerVersionAvailable", "OldTargetApi")
+        warningsAsErrors = true
+    }
 }
 
 dependencies {
