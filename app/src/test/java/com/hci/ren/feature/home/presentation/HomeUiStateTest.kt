@@ -54,4 +54,11 @@ class HomeUiStateTest {
 
         assertEquals(expected, HomePreviewData.empty)
     }
+
+    @Test
+    fun choosingSampleMaterialPopulatesDashboardAndClosesSheet() {
+        val result = homeStateAfterSampleSelection()
+
+        assertEquals(HomePreviewData.active, result)
+    }
 }

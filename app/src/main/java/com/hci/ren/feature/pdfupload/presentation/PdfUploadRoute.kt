@@ -41,6 +41,10 @@ fun PdfUploadRoute(
 
     BackHandler(onBack = onBack)
 
+    LaunchedEffect(Unit) {
+        viewModel.restoreDocumentIfNeeded()
+    }
+
     LaunchedEffect(openPickerOnStart, state.sessionId) {
         if (openPickerOnStart && pickerHandledSessionId != state.sessionId) {
             pickerHandledSessionId = state.sessionId

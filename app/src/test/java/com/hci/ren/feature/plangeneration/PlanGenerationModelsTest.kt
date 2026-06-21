@@ -1,6 +1,8 @@
 package com.hci.ren.feature.plangeneration
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class PlanGenerationModelsTest {
@@ -12,5 +14,28 @@ class PlanGenerationModelsTest {
         assertEquals(PlanStatus.Completed, PlanStatus.fromWire("COMPLETED"))
         assertEquals(PlanStatus.Failed, PlanStatus.fromWire("FAILED"))
         assertEquals(PlanStatus.Failed, PlanStatus.fromWire("CANCELED"))
+    }
+
+    @Test fun retryReusesRequestUnlessBackendDefinitelyFinished() {
+        assertEquals(
+            "existing",
+            requestIdForRetry("existing", GenerationFailurePhase.UploadOrCreate) { "new" },
+        )
+        assertEquals(
+            "existing",
+            requestIdForRetry("existing", GenerationFailurePhase.Polling) { "new" },
+        )
+        assertEquals(
+            "new",
+            requestIdForRetry("existing", GenerationFailurePhase.BackendTerminal) { "new" },
+        )
+    }
+
+    @Test fun httpFailureClassificationSeparatesPermanentAndTransientErrors() {
+        assertFalse(isRetryableStatusCode(404))
+        assertFalse(isRetryableStatusCode(422))
+        assertTrue(isRetryableStatusCode(408))
+        assertTrue(isRetryableStatusCode(429))
+        assertTrue(isRetryableStatusCode(503))
     }
 }

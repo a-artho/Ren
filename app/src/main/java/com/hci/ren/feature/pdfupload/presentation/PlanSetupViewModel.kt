@@ -8,11 +8,12 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import java.text.SimpleDateFormat
 import java.util.Date
+import java.util.Calendar
 import java.util.Locale
 import java.util.TimeZone
 
 class PlanSetupViewModel(
-    private val savedStateHandle: SavedStateHandle = SavedStateHandle(),
+    private val savedStateHandle: SavedStateHandle,
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(restoreState())
     val uiState: StateFlow<PlanSetupUiState> = _uiState.asStateFlow()
@@ -56,7 +57,8 @@ class PlanSetupViewModel(
         }
     }
 
-    fun selectCustomDate(epochMillis: Long) {
+    fun selectCustomDate(epochMillis: Long, nowMillis: Long = System.currentTimeMillis()) {
+        if (!isSelectableDeadlineUtc(epochMillis, nowMillis)) return
         updateAndPersist { state ->
             state.copy(
                 selectedDeadline = StudyDeadline.ChooseDate,
@@ -187,4 +189,33 @@ class PlanSetupViewModel(
             displayDateFormat.timeZone = TimeZone.getTimeZone("UTC")
         }
     }
+}
+
+internal fun isSelectableDeadlineUtc(
+    selectedMillis: Long,
+    nowMillis: Long,
+    localTimeZone: TimeZone = TimeZone.getDefault(),
+): Boolean {
+    val utc = TimeZone.getTimeZone("UTC")
+    val selectedUtcDay = Calendar.getInstance(utc).run {
+        timeInMillis = selectedMillis
+        set(Calendar.HOUR_OF_DAY, 0)
+        set(Calendar.MINUTE, 0)
+        set(Calendar.SECOND, 0)
+        set(Calendar.MILLISECOND, 0)
+        timeInMillis
+    }
+    val localToday = Calendar.getInstance(localTimeZone).apply {
+        timeInMillis = nowMillis
+    }
+    val localTodayAsUtcDay = Calendar.getInstance(utc).run {
+        clear()
+        set(
+            localToday.get(Calendar.YEAR),
+            localToday.get(Calendar.MONTH),
+            localToday.get(Calendar.DAY_OF_MONTH),
+        )
+        timeInMillis
+    }
+    return selectedUtcDay >= localTodayAsUtcDay
 }

@@ -100,8 +100,8 @@ class PlanGenerationScreenTest {
         composeRule.onNodeWithText("Review").assertIsDisplayed()
         composeRule.onNodeWithText("Block 1").assertIsDisplayed()
         
-        val totalMinutesStr = context.getString(R.string.total_minutes, 45)
-        val blockMinutesStr = context.getString(R.string.block_minutes, 45)
+        val totalMinutesStr = context.resources.getQuantityString(R.plurals.total_minutes, 45, 45)
+        val blockMinutesStr = context.resources.getQuantityString(R.plurals.block_minutes, 45, 45)
         composeRule.onNodeWithText(totalMinutesStr).assertIsDisplayed()
         composeRule.onNodeWithText(blockMinutesStr).assertIsDisplayed()
         composeRule.onNodeWithText("Summarize the chapter.").assertIsDisplayed()

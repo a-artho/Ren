@@ -9,15 +9,19 @@
     <string name="identifying_topics">Identifying key topics</string>
     <string name="creating_blocks">Creating study blocks</string>
     <string name="finalizing_plan">Finalizing your plan</string>
-    <string name="processing_note">This may take a moment. You can leave this screen.</string>
     <string name="plan_generation_failed">We couldn’t create the plan. Try again.</string>
     <string name="retry">Retry</string>
-    <string name="complete">Complete</string>
     <string name="your_study_plan">Your study plan</string>
     <string name="detected_topics">Detected topics</string>
     <string name="study_blocks">Study blocks</string>
-    <string name="total_minutes">%1$d minutes total</string>
-    <string name="block_minutes">%1$d minutes</string>
+    <plurals name="total_minutes">
+        <item quantity="one">%1$d minute total</item>
+        <item quantity="other">%1$d minutes total</item>
+    </plurals>
+    <plurals name="block_minutes">
+        <item quantity="one">%1$d minute</item>
+        <item quantity="other">%1$d minutes</item>
+    </plurals>
     <string name="step_subtitle_uploading">Sending your file…</string>
     <string name="step_subtitle_analyzing">Processing document…</string>
     <string name="step_subtitle_identifying">Analyzing content…</string>
@@ -32,5 +36,7 @@
     <string name="cancel_generation_confirm">Yes, cancel</string>
     <string name="cancel_generation_dismiss">No, keep waiting</string>
     <string name="error_icon_description">Error indicator</string>
+    <string name="home_feature_unavailable">This feature isn’t available yet.</string>
+    <string name="pdf_too_large">This PDF is larger than the 25 MB upload limit.</string>
 </resources>
 

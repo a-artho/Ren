@@ -7,6 +7,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
+import java.io.IOException
 import java.util.UUID
 
 class PlanApiRepository(
@@ -22,19 +23,25 @@ class PlanApiRepository(
         "http://127.0.0.1:8000"
     },
 ) {
-    fun uploadDocument(uri: Uri): String {
+    fun uploadDocument(uri: Uri, requestId: String): String {
         val boundary = "Ren-${UUID.randomUUID()}"
         val connection = open("/documents", "POST").apply {
             setRequestProperty("Content-Type", "multipart/form-data; boundary=$boundary")
+            setChunkedStreamingMode(64 * 1024)
             doOutput = true
         }
-        connection.outputStream.buffered().use { output ->
-            output.write("--$boundary\r\nContent-Disposition: form-data; name=\"file\"; filename=\"document.pdf\"\r\nContent-Type: application/pdf\r\n\r\n".toByteArray())
-            contentResolver.openInputStream(uri)?.use { it.copyTo(output) }
-                ?: error("The selected PDF is no longer accessible")
-            output.write("\r\n--$boundary--\r\n".toByteArray())
+        return try {
+            connection.outputStream.buffered(64 * 1024).use { output ->
+                output.write("--$boundary\r\nContent-Disposition: form-data; name=\"requestId\"\r\n\r\n$requestId\r\n".toByteArray())
+                output.write("--$boundary\r\nContent-Disposition: form-data; name=\"file\"; filename=\"document.pdf\"\r\nContent-Type: application/pdf\r\n\r\n".toByteArray())
+                contentResolver.openInputStream(uri)?.use { it.copyTo(output, 64 * 1024) }
+                    ?: error("The selected PDF is no longer accessible")
+                output.write("\r\n--$boundary--\r\n".toByteArray())
+            }
+            responseJson(connection).getString("documentId")
+        } finally {
+            connection.disconnect()
         }
-        return responseJson(connection).getString("documentId")
     }
 
     fun createPlan(documentId: String, submission: PlanSetupSubmission, requestId: String): String {
@@ -69,20 +76,28 @@ class PlanApiRepository(
 
     fun cancelPlan(planId: String) {
         val connection = open("/plans/$planId/cancel", "POST")
-        val responseCode = connection.responseCode
-        val stream = if (responseCode in 200..299) connection.inputStream else connection.errorStream
-        val text = stream?.bufferedReader()?.use { it.readText() }.orEmpty()
-        if (responseCode !in 200..299) error("Server request failed ($responseCode): $text")
+        try {
+            val responseCode = connection.responseCode
+            val stream = if (responseCode in 200..299) connection.inputStream else connection.errorStream
+            stream?.bufferedReader()?.use { it.readText() }
+            if (responseCode !in 200..299) throw PlanApiException(responseCode)
+        } finally {
+            connection.disconnect()
+        }
     }
 
     private fun jsonRequest(path: String, method: String, body: JSONObject? = null): JSONObject {
         val connection = open(path, method)
-        if (body != null) {
-            connection.doOutput = true
-            connection.setRequestProperty("Content-Type", "application/json")
-            connection.outputStream.bufferedWriter().use { it.write(body.toString()) }
+        return try {
+            if (body != null) {
+                connection.doOutput = true
+                connection.setRequestProperty("Content-Type", "application/json")
+                connection.outputStream.bufferedWriter().use { it.write(body.toString()) }
+            }
+            responseJson(connection)
+        } finally {
+            connection.disconnect()
         }
-        return responseJson(connection)
     }
 
     private fun open(path: String, method: String) = (URL("$baseUrl$path").openConnection() as HttpURLConnection).apply {
@@ -92,12 +107,17 @@ class PlanApiRepository(
     }
 
     private fun responseJson(connection: HttpURLConnection): JSONObject {
-        val stream = if (connection.responseCode in 200..299) connection.inputStream else connection.errorStream
+        val responseCode = connection.responseCode
+        val stream = if (responseCode in 200..299) connection.inputStream else connection.errorStream
         val text = stream?.bufferedReader()?.use { it.readText() }.orEmpty()
-        if (connection.responseCode !in 200..299) error("Server request failed (${connection.responseCode}): $text")
+        if (responseCode !in 200..299) throw PlanApiException(responseCode)
         return JSONObject(text)
     }
 }
+
+internal class PlanApiException(
+    val statusCode: Int,
+) : IOException("Server request failed ($statusCode)")
 
 private fun JSONArray.objects() = (0 until length()).map { getJSONObject(it) }
 private fun JSONArray.strings() = (0 until length()).map { getString(it) }

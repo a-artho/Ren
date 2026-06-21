@@ -17,6 +17,21 @@ enum class PlanStatus {
     }
 }
 
+enum class GenerationFailurePhase {
+    UploadOrCreate,
+    Polling,
+    BackendTerminal,
+}
+
+internal fun requestIdForRetry(
+    previousRequestId: String,
+    phase: GenerationFailurePhase,
+    newId: () -> String,
+): String = if (phase == GenerationFailurePhase.BackendTerminal) newId() else previousRequestId
+
+internal fun isRetryableStatusCode(code: Int): Boolean =
+    code == 408 || code == 429 || code >= 500
+
 data class StudyTopic(val id: String, val title: String, val order: Int)
 data class GeneratedStudyBlock(
     val id: String,

@@ -63,6 +63,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SelectableDates
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberDatePickerState
@@ -117,7 +118,13 @@ fun PlanSetupScreen(
     var isDatePickerOpen by rememberSaveable { mutableStateOf(false) }
     var isNavigationLocked by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
-    val datePickerState = rememberDatePickerState()
+    val selectableDates = remember {
+        object : SelectableDates {
+            override fun isSelectableDate(utcTimeMillis: Long): Boolean =
+                isSelectableDeadlineUtc(utcTimeMillis, System.currentTimeMillis())
+        }
+    }
+    val datePickerState = rememberDatePickerState(selectableDates = selectableDates)
     fun navigateOnce(action: () -> Unit) {
         if (isNavigationLocked) return
         isNavigationLocked = true

@@ -44,6 +44,7 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
@@ -51,6 +52,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.unit.IntOffset
 import com.hci.ren.R
 import kotlinx.coroutines.delay
 import kotlin.time.Duration.Companion.milliseconds
@@ -102,6 +104,7 @@ fun PlanGenerationScreen(state: PlanGenerationUiState, onBack: () -> Unit, onRet
             Modifier
                 .fillMaxSize()
                 .statusBarsPadding()
+                .navigationBarsPadding()
         ) {
             Row(
                 Modifier
@@ -451,7 +454,7 @@ private fun BouncingDots() {
             Canvas(
                 modifier = Modifier
                     .size(8.dp)
-                    .offset(y = offset.dp),
+                    .offset { IntOffset(x = 0, y = offset.dp.roundToPx()) },
             ) {
                 drawCircle(color = dotColor)
             }
@@ -643,6 +646,7 @@ fun PlanDetailsScreen(plan: GeneratedStudyPlan, onBack: () -> Unit) {
             Modifier
                 .fillMaxSize()
                 .statusBarsPadding()
+                .navigationBarsPadding()
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = 24.dp, vertical = 16.dp),
         ) {
@@ -666,7 +670,11 @@ fun PlanDetailsScreen(plan: GeneratedStudyPlan, onBack: () -> Unit) {
                         color = MaterialTheme.colorScheme.onBackground
                     )
                     Text(
-                        text = stringResource(R.string.total_minutes, plan.totalEstimatedMinutes),
+                        text = pluralStringResource(
+                            R.plurals.total_minutes,
+                            plan.totalEstimatedMinutes,
+                            plan.totalEstimatedMinutes,
+                        ),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -778,7 +786,11 @@ fun PlanDetailsScreen(plan: GeneratedStudyPlan, onBack: () -> Unit) {
                                 modifier = Modifier.size(16.dp)
                             )
                             Text(
-                                text = stringResource(R.string.block_minutes, block.durationMinutes),
+                                text = pluralStringResource(
+                                    R.plurals.block_minutes,
+                                    block.durationMinutes,
+                                    block.durationMinutes,
+                                ),
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.primary,
                                 fontWeight = FontWeight.SemiBold

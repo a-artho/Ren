@@ -16,7 +16,6 @@ data class PdfUploadUiState(
     val thumbnailPageIndexes: List<Int>
         get() = thumbnailPageIndexes(
             pageCount = document?.pageCount ?: 0,
-            selectedPageIndex = selectedPageIndex,
         )
 }
 
@@ -53,10 +52,8 @@ sealed interface PdfPageRenderState {
     data class Error(val message: String) : PdfPageRenderState
 }
 
-@Suppress("UNUSED_PARAMETER")
 fun thumbnailPageIndexes(
     pageCount: Int,
-    selectedPageIndex: Int,
 ): List<Int> = (0 until pageCount).toList()
 
 fun formatFileSize(sizeBytes: Long): String {
@@ -78,28 +75,53 @@ fun formatFileSize(sizeBytes: Long): String {
 }
 
 class BoundedPageCache<K, V>(
-    private val maxEntries: Int,
+    private val maxWeight: Long,
+    private val weightOf: (V) -> Long,
 ) {
+    constructor(maxEntries: Int) : this(maxEntries.toLong(), { 1L })
+
     init {
-        require(maxEntries > 0) { "maxEntries must be positive." }
+        require(maxWeight > 0) { "maxWeight must be positive." }
     }
 
-    private val entries = LinkedHashMap<K, V>(maxEntries, 0.75f, true)
+    private val entries = LinkedHashMap<K, V>(16, 0.75f, true)
+    private var storedWeight = 0L
+
+    @get:Synchronized
+    val currentWeight: Long
+        get() = storedWeight
 
     @Synchronized
     fun get(key: K): V? = entries[key]
 
     @Synchronized
-    fun put(key: K, value: V): K? {
+    fun put(key: K, value: V): List<K> {
+        val valueWeight = weightOf(value)
+        require(valueWeight in 0..maxWeight) { "Entry exceeds cache weight limit." }
+        entries.remove(key)?.let { storedWeight -= weightOf(it) }
         entries[key] = value
-        if (entries.size <= maxEntries) return null
-        val eldestKey = entries.entries.first().key
-        entries.remove(eldestKey)
-        return eldestKey
+        storedWeight += valueWeight
+        val evictedKeys = mutableListOf<K>()
+        while (storedWeight > maxWeight) {
+            val eldest = entries.entries.first()
+            entries.remove(eldest.key)
+            storedWeight -= weightOf(eldest.value)
+            evictedKeys += eldest.key
+        }
+        return evictedKeys
     }
 
     @Synchronized
     fun clear() {
         entries.clear()
+        storedWeight = 0
     }
 }
+
+const val MaxPdfUploadBytes = 25L * 1024 * 1024
+
+fun isUploadSizeAllowed(sizeBytes: Long): Boolean =
+    sizeBytes <= 0L || sizeBytes <= MaxPdfUploadBytes
+
+fun restoredPageIndex(savedIndex: Int, pageCount: Int): Int =
+    if (pageCount <= 0) 0 else savedIndex.coerceIn(0, pageCount - 1)

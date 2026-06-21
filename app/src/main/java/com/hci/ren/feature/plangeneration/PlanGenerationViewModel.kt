@@ -2,6 +2,7 @@ package com.hci.ren.feature.plangeneration
 
 import android.app.Application
 import android.util.Log
+import android.os.SystemClock
 import androidx.core.content.edit
 import androidx.core.net.toUri
 import androidx.lifecycle.AndroidViewModel
@@ -30,6 +31,7 @@ class PlanGenerationViewModel(application: Application) : AndroidViewModel(appli
     private var requestId: String? = preferences.getString(KEY_REQUEST_ID, null)
     private var polling = false
     private var activeJob: Job? = null
+    private var failurePhase = GenerationFailurePhase.UploadOrCreate
 
     // Visual progression tracking
     private val backendStatus = MutableStateFlow(PlanStatus.Uploading)
@@ -48,10 +50,16 @@ class PlanGenerationViewModel(application: Application) : AndroidViewModel(appli
         val planId = _uiState.value.planId ?: preferences.getString(KEY_PLAN_ID, null)
         val pendingSubmission = submission
         val pendingRequestId = requestId
-        val shouldCancelRemotely = planId != null &&
+        val cancelPlanId = planId?.takeIf {
             _uiState.value.status !in setOf(PlanStatus.Completed, PlanStatus.Failed)
-        val shouldRecoverAndCancel = planId == null && pendingSubmission != null &&
-            pendingRequestId != null && _uiState.value.status != PlanStatus.Failed
+        }
+        val recoveryRequest = if (
+            planId == null && pendingSubmission != null && pendingRequestId != null
+        ) {
+            pendingSubmission to pendingRequestId
+        } else {
+            null
+        }
         activeJob?.cancel()
         activeJob = null
         visualProgressJob?.cancel()
@@ -63,16 +71,24 @@ class PlanGenerationViewModel(application: Application) : AndroidViewModel(appli
         _uiState.value = PlanGenerationUiState(status = PlanStatus.Uploading)
         submission = null
         requestId = null
-        if (shouldCancelRemotely && planId != null) {
+        if (cancelPlanId != null) {
             viewModelScope.launch(Dispatchers.IO) {
-                runCatching { repository.cancelPlan(planId) }
-                    .onFailure { Log.w("PlanGeneration", "Failed to cancel plan $planId", it) }
+                runCatching { repository.cancelPlan(cancelPlanId) }
+                    .onFailure { Log.w("PlanGeneration", "Failed to cancel plan $cancelPlanId", it) }
             }
-        } else if (shouldRecoverAndCancel && pendingSubmission != null && pendingRequestId != null) {
+        } else if (recoveryRequest != null) {
+            val (recoverySubmission, recoveryRequestId) = recoveryRequest
             viewModelScope.launch(Dispatchers.IO) {
                 runCatching {
-                    val documentId = repository.uploadDocument(pendingSubmission.documentUri.toUri())
-                    val recoveredPlanId = repository.createPlan(documentId, pendingSubmission, pendingRequestId)
+                    val documentId = repository.uploadDocument(
+                        recoverySubmission.documentUri.toUri(),
+                        recoveryRequestId,
+                    )
+                    val recoveredPlanId = repository.createPlan(
+                        documentId,
+                        recoverySubmission,
+                        recoveryRequestId,
+                    )
                     repository.cancelPlan(recoveredPlanId)
                 }.onFailure { Log.w("PlanGeneration", "Failed to cancel pending request", it) }
             }
@@ -82,8 +98,9 @@ class PlanGenerationViewModel(application: Application) : AndroidViewModel(appli
     fun start(value: PlanSetupSubmission) {
         if (_uiState.value.planId != null || polling) return
         submission = value
-        requestId = UUID.randomUUID().toString()
-        persistRequest(value, requestId!!)
+        val newRequestId = UUID.randomUUID().toString()
+        requestId = newRequestId
+        persistRequest(value, newRequestId)
         startPersistedRequest()
     }
 
@@ -93,18 +110,20 @@ class PlanGenerationViewModel(application: Application) : AndroidViewModel(appli
         activeJob?.cancel()
         visualProgressJob?.cancel()
         backendStatus.value = PlanStatus.Uploading
+        failurePhase = GenerationFailurePhase.UploadOrCreate
         fetchedPlan = null
         activeJob = viewModelScope.launch {
             try {
                 _uiState.value = PlanGenerationUiState(status = PlanStatus.Uploading)
                 startVisualProgress()
                 val planId = withContext(Dispatchers.IO) {
-                    val documentId = repository.uploadDocument(value.documentUri.toUri())
+                    val documentId = repository.uploadDocument(value.documentUri.toUri(), persistedRequestId)
                     repository.createPlan(documentId, value, persistedRequestId)
                 }
                 preferences.edit { putString(KEY_PLAN_ID, planId) }
                 _uiState.value = _uiState.value.copy(planId = planId)
                 backendStatus.value = PlanStatus.Analyzing
+                failurePhase = GenerationFailurePhase.Polling
                 poll(planId)
             } catch (e: CancellationException) {
                 throw e
@@ -117,6 +136,7 @@ class PlanGenerationViewModel(application: Application) : AndroidViewModel(appli
 
     fun resume(planId: String) {
         if (polling) return
+        failurePhase = GenerationFailurePhase.Polling
         backendStatus.value = PlanStatus.Analyzing
         fetchedPlan = null
         _uiState.value = PlanGenerationUiState(PlanStatus.Analyzing, planId)
@@ -128,9 +148,11 @@ class PlanGenerationViewModel(application: Application) : AndroidViewModel(appli
 
     fun retry() {
         val value = submission ?: run { fail(); return }
-        val newRequestId = UUID.randomUUID().toString()
-        requestId = newRequestId
-        persistRequest(value, newRequestId)
+        val retryRequestId = requestId?.let { existing ->
+            requestIdForRetry(existing, failurePhase) { UUID.randomUUID().toString() }
+        } ?: UUID.randomUUID().toString()
+        requestId = retryRequestId
+        persistRequest(value, retryRequestId)
         preferences.edit { remove(KEY_PLAN_ID) }
         activeJob?.cancel()
         visualProgressJob?.cancel()
@@ -179,11 +201,13 @@ class PlanGenerationViewModel(application: Application) : AndroidViewModel(appli
     private suspend fun poll(planId: String) {
         polling = true
         var retryDelay = 1.seconds
+        var firstTransientFailureAt: Long? = null
         try {
             while (true) {
                 try {
                     val status = withContext(Dispatchers.IO) { repository.status(planId) }
                     retryDelay = 1.seconds
+                    firstTransientFailureAt = null
                     when (status) {
                         PlanStatus.Completed -> {
                             fetchedPlan = withContext(Dispatchers.IO) { repository.plan(planId) }
@@ -191,6 +215,7 @@ class PlanGenerationViewModel(application: Application) : AndroidViewModel(appli
                             return
                         }
                         PlanStatus.Failed -> {
+                            failurePhase = GenerationFailurePhase.BackendTerminal
                             backendStatus.value = PlanStatus.Failed
                             Log.e("PlanGeneration", "Plan generation failed on backend side")
                             fail()
@@ -203,7 +228,27 @@ class PlanGenerationViewModel(application: Application) : AndroidViewModel(appli
                     }
                 } catch (e: CancellationException) {
                     throw e
+                } catch (e: PlanApiException) {
+                    if (!isRetryableStatusCode(e.statusCode)) {
+                        preferences.edit { remove(KEY_PLAN_ID) }
+                        Log.e("PlanGeneration", "Permanent plan request failure (${e.statusCode})", e)
+                        fail()
+                        return
+                    }
+                    firstTransientFailureAt = firstTransientFailureAt ?: SystemClock.elapsedRealtime()
+                    if (SystemClock.elapsedRealtime() - firstTransientFailureAt >= MAX_TRANSIENT_FAILURE_MILLIS) {
+                        fail()
+                        return
+                    }
+                    Log.w("PlanGeneration", "Transient plan request failure", e)
+                    delay(retryDelay)
+                    retryDelay = (retryDelay * 2).coerceAtMost(30.seconds)
                 } catch (e: Exception) {
+                    firstTransientFailureAt = firstTransientFailureAt ?: SystemClock.elapsedRealtime()
+                    if (SystemClock.elapsedRealtime() - firstTransientFailureAt >= MAX_TRANSIENT_FAILURE_MILLIS) {
+                        fail()
+                        return
+                    }
                     Log.w("PlanGeneration", "Transient plan request failure", e)
                     delay(retryDelay)
                     retryDelay = (retryDelay * 2).coerceAtMost(30.seconds)
@@ -256,5 +301,6 @@ class PlanGenerationViewModel(application: Application) : AndroidViewModel(appli
         const val KEY_PLAN_ID = "pending_plan_id"
         const val KEY_SUBMISSION = "pending_submission"
         const val KEY_REQUEST_ID = "pending_request_id"
+        const val MAX_TRANSIENT_FAILURE_MILLIS = 5 * 60 * 1000L
     }
 }

@@ -91,7 +91,7 @@ class PdfDocumentRepository(
 }
 
 internal const val MaxPdfRenderDimension = 8_192
-internal const val MaxPdfRenderPixels = 8_000_000L
+internal const val MaxPdfRenderPixels = 4_000_000L
 
 internal data class PdfRenderDimensions(
     val width: Int,
