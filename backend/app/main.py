@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio, logging, os
 from contextlib import asynccontextmanager
 from pathlib import Path
-from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from dotenv import load_dotenv
 from .models import CreatePlanRequest, GeneratedPlan, PlanStatus, Setup
 from .provider import AIProvider, GeminiProvider
@@ -51,7 +51,8 @@ async def process(plan_id: str):
         STORE.set_status(plan_id, PlanStatus.FINALIZING)
         STORE.set_status(plan_id, PlanStatus.COMPLETED, result=result)
     except asyncio.CancelledError:
-        STORE.set_status(plan_id, PlanStatus.CANCELED)
+        # The cancel endpoint marks user cancellations before cancelling the task.
+        # Infrastructure shutdown must leave other jobs resumable on next startup.
         raise
     except Exception as exc:
         logger.exception("Plan %s generation failed", plan_id)
@@ -65,28 +66,60 @@ async def process(plan_id: str):
 async def lifespan(app: FastAPI):
     global provider
     UPLOADS.mkdir(parents=True, exist_ok=True)
+    for document_id in STORE.abandoned_document_ids(max_age_hours=24):
+        cleanup_document(document_id)
     key = os.getenv("GEMINI_API_KEY")
     if key: provider = GeminiProvider(key, os.getenv("GEMINI_MODEL", "gemini-2.5-flash"))
     for plan_id in STORE.pending_ids(): schedule(plan_id)
-    yield
+    try:
+        yield
+    finally:
+        tasks = [task for task in TASKS.values() if not task.done()]
+        for task in tasks:
+            task.cancel()
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
 
 app = FastAPI(title="Ren API", lifespan=lifespan)
 
 @app.post("/documents", status_code=201)
-async def upload_document(file: UploadFile = File(...)):
+async def upload_document(
+    file: UploadFile = File(...),
+    requestId: str | None = Form(default=None),
+):
     if file.content_type != "application/pdf": raise HTTPException(415, "A PDF is required")
+    if requestId:
+        completed_request_document_id = STORE.plan_document_id_for_request(requestId)
+        if completed_request_document_id:
+            await file.close()
+            return {"documentId": completed_request_document_id}
+        existing_id = STORE.document_id_for_request(requestId)
+        if existing_id:
+            existing_path = STORE.document_path(existing_id)
+            if existing_path and existing_path.exists():
+                await file.close()
+                return {"documentId": existing_id}
+            STORE.delete_document(existing_id)
     UPLOADS.mkdir(parents=True, exist_ok=True)
     path = UPLOADS / f"upload-{os.urandom(12).hex()}.pdf"
     size = 0
-    with path.open("wb") as output:
-        while chunk := await file.read(1024 * 1024):
-            size += len(chunk)
-            if size > 25 * 1024 * 1024:
-                output.close(); path.unlink(missing_ok=True); raise HTTPException(413, "PDF is too large")
-            output.write(chunk)
-    if size < 5 or path.read_bytes()[:5] != b"%PDF-":
-        path.unlink(missing_ok=True); raise HTTPException(422, "Invalid PDF")
-    return {"documentId": STORE.add_document(path)}
+    try:
+        with path.open("wb") as output:
+            while chunk := await file.read(1024 * 1024):
+                size += len(chunk)
+                if size > 25 * 1024 * 1024:
+                    raise HTTPException(413, "PDF is too large")
+                output.write(chunk)
+        with path.open("rb") as uploaded:
+            header = uploaded.read(5)
+        if size < 5 or header != b"%PDF-":
+            raise HTTPException(422, "Invalid PDF")
+        return {"documentId": STORE.add_document(path, request_id=requestId)}
+    except Exception:
+        path.unlink(missing_ok=True)
+        raise
+    finally:
+        await file.close()
 
 @app.post("/plans", status_code=202)
 async def create_plan(request: CreatePlanRequest):

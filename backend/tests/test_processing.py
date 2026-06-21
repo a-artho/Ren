@@ -1,3 +1,4 @@
+import asyncio
 from pathlib import Path
 import pytest
 
@@ -17,6 +18,12 @@ class FakeProvider(AIProvider):
             "blocks": [{"id": "b1", "title": "Block", "order": 1, "durationMinutes": 20,
                         "instructions": "Review the topic.", "topicIds": ["t1"]}],
         })
+
+
+class SlowProvider(AIProvider):
+    async def create_plan(self, pdf: Path, setup: Setup) -> GeneratedPlan:
+        await asyncio.sleep(60)
+        raise AssertionError("Provider should have been cancelled")
 
 
 def create_job(tmp_path, monkeypatch, provider):
@@ -48,4 +55,19 @@ async def test_processing_fails_safely_after_second_error(tmp_path, monkeypatch)
     assert row[4] == "invalid provider output"
     assert not pdf.exists()
     assert store.document_path(row[0]) is None
+
+
+@pytest.mark.asyncio
+async def test_infrastructure_cancellation_preserves_pending_job(tmp_path, monkeypatch):
+    store, pdf, plan_id = create_job(tmp_path, monkeypatch, SlowProvider())
+    task = asyncio.create_task(main.process(plan_id))
+    await asyncio.sleep(0)
+
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+    assert store.get(plan_id)[2] != PlanStatus.CANCELED
+    assert store.document_path(store.get(plan_id)[0]) == pdf
+    assert pdf.exists()
 

@@ -37,6 +37,46 @@ def test_document_plan_status_contract_and_idempotency(tmp_path, monkeypatch):
         assert api.get(f"/plans/{created.json()['planId']}").status_code == 409
 
 
+def test_document_upload_is_idempotent_by_request_id(tmp_path, monkeypatch):
+    with client(tmp_path, monkeypatch) as api:
+        first = api.post(
+            "/documents",
+            data={"requestId": "upload-request-1"},
+            files={"file": ("first.pdf", b"%PDF-first", "application/pdf")},
+        )
+        second = api.post(
+            "/documents",
+            data={"requestId": "upload-request-1"},
+            files={"file": ("second.pdf", b"%PDF-second", "application/pdf")},
+        )
+
+        assert first.status_code == 201
+        assert second.status_code == 201
+        assert second.json()["documentId"] == first.json()["documentId"]
+        assert len(list(main.UPLOADS.glob("*.pdf"))) == 1
+
+
+def test_completed_plan_retry_does_not_reupload_deleted_document(tmp_path, monkeypatch):
+    with client(tmp_path, monkeypatch) as api:
+        first = api.post(
+            "/documents",
+            data={"requestId": "completed-request"},
+            files={"file": ("first.pdf", b"%PDF-first", "application/pdf")},
+        )
+        document_id = first.json()["documentId"]
+        api.post("/plans", json=setup(document_id, request_id="completed-request"))
+        main.cleanup_document(document_id)
+
+        repeated = api.post(
+            "/documents",
+            data={"requestId": "completed-request"},
+            files={"file": ("second.pdf", b"%PDF-second", "application/pdf")},
+        )
+
+        assert repeated.json()["documentId"] == document_id
+        assert list(main.UPLOADS.glob("*.pdf")) == []
+
+
 def test_upload_rejects_wrong_type_and_invalid_pdf(tmp_path, monkeypatch):
     with client(tmp_path, monkeypatch) as api:
         assert api.post("/documents", files={"file": ("x.txt", b"hello", "text/plain")}).status_code == 415

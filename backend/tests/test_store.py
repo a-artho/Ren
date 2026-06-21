@@ -44,3 +44,30 @@ def test_pending_ids_excludes_terminal_jobs(tmp_path: Path):
     store.set_status(second, PlanStatus.FAILED, error="PLAN_GENERATION_FAILED")
     assert store.pending_ids() == [first]
 
+
+def test_store_reuses_document_for_upload_request(tmp_path: Path):
+    store = Store(tmp_path / "ren.db")
+    pdf = tmp_path / "doc.pdf"
+    pdf.write_bytes(b"%PDF-test")
+
+    document_id = store.add_document(pdf, request_id="upload-request")
+
+    assert store.document_id_for_request("upload-request") == document_id
+
+
+def test_store_finds_only_old_unclaimed_documents(tmp_path: Path):
+    store = Store(tmp_path / "ren.db")
+    old_pdf = tmp_path / "old.pdf"
+    claimed_pdf = tmp_path / "claimed.pdf"
+    old_pdf.write_bytes(b"%PDF-old")
+    claimed_pdf.write_bytes(b"%PDF-claimed")
+    old_id = store.add_document(old_pdf)
+    claimed_id = store.add_document(claimed_pdf)
+    claimed_request = request("claimed-request")
+    claimed_request.documentId = claimed_id
+    store.create_plan(claimed_request)
+    with store.connect() as db:
+        db.execute("UPDATE documents SET created_at='2000-01-01 00:00:00'")
+
+    assert store.abandoned_document_ids(max_age_hours=24) == [old_id]
+
