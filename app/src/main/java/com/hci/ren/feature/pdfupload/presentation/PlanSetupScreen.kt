@@ -69,11 +69,13 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -171,7 +173,17 @@ fun PlanSetupScreen(
                 modifier = Modifier
                     .weight(1f),
             ) { step ->
-                Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
+                val stepScrollState = rememberScrollState()
+
+                // Auto-scroll to show the custom-minutes field when Custom is selected
+                LaunchedEffect(state.selectedDailyTime == DailyStudyTime.Custom) {
+                    if (state.selectedDailyTime == DailyStudyTime.Custom) {
+                        withFrameNanos { }
+                        stepScrollState.animateScrollTo(stepScrollState.maxValue)
+                    }
+                }
+
+                Column(Modifier.fillMaxSize().verticalScroll(stepScrollState)) {
                 when (step) {
                     PlanSetupStep.Goal -> GoalStep(
                         selectedGoal = state.selectedGoal,

@@ -10,7 +10,6 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
-import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextInput
 import com.hci.ren.ui.theme.RenTheme
 import org.junit.Assert.assertEquals
@@ -76,7 +75,7 @@ class PlanSetupScreenTest {
         }
 
         composeRule.onNodeWithText("3 OF 4").assertIsDisplayed()
-        composeRule.onNodeWithTag("custom-minutes").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithTag("custom-minutes").assertIsDisplayed()
         composeRule.onNodeWithTag("plan-next").assertIsNotEnabled()
         composeRule.onNodeWithTag("custom-minutes").performTextInput("90")
 
