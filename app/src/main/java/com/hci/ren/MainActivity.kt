@@ -148,6 +148,8 @@ class MainActivity : ComponentActivity() {
                         acceptedTightPlan = generationState.acceptedTightPlan,
                         changeMessage = generationState.changeMessage,
                         suggestedDeadline = planGenerationViewModel.suggestedDeadline(),
+                        recommendedDaysBalanced = generationState.feasibility?.recommendedDaysBalanced ?: 0,
+                        recommendedDaysIntensive = generationState.feasibility?.recommendedDaysIntensive ?: 0,
                         onHome = {
                             if (!transition.isRunning) {
                                 forward = false
@@ -166,6 +168,7 @@ class MainActivity : ComponentActivity() {
                         },
                         onInsights = {},
                         onConsumeMessage = planGenerationViewModel::consumeChangeMessage,
+                        onExtendDeadline = planGenerationViewModel::extendDeadline,
                         onApplyDeadline = planGenerationViewModel::applyDeadline,
                         onIncreaseDailyTime = planGenerationViewModel::increaseDailyTime,
                         onReduceScope = planGenerationViewModel::reduceScope,
