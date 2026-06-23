@@ -2,7 +2,6 @@ package com.hci.ren.feature.plangeneration
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
@@ -247,7 +246,11 @@ private fun ProcessingContent(state: PlanGenerationUiState) {
             trackColor = MaterialTheme.colorScheme.primaryContainer,
         )
         Spacer(Modifier.width(8.dp))
-        SparkleIcon()
+        CircularProgressIndicator(
+            modifier = Modifier.size(20.dp),
+            strokeWidth = 2.dp,
+            color = MaterialTheme.colorScheme.primary,
+        )
     }
 
     Spacer(Modifier.height(24.dp))
@@ -330,13 +333,13 @@ private fun ProcessingStep(icon: ImageVector, label: String, subtitle: String?, 
         else -> 1f
     }
     val iconTint = when (visual) {
-        StepVisual.Complete -> MaterialTheme.colorScheme.primary
-        StepVisual.Current -> MaterialTheme.colorScheme.primary
+        StepVisual.Complete -> Color.White
+        StepVisual.Current -> Color.White
         StepVisual.Upcoming -> MaterialTheme.colorScheme.onSurfaceVariant
     }
     val circleBg = when (visual) {
-        StepVisual.Complete -> MaterialTheme.colorScheme.primaryContainer
-        StepVisual.Current -> MaterialTheme.colorScheme.primaryContainer
+        StepVisual.Complete -> MaterialTheme.colorScheme.primary
+        StepVisual.Current -> MaterialTheme.colorScheme.primary
         StepVisual.Upcoming -> MaterialTheme.colorScheme.surfaceVariant
     }
 
@@ -411,7 +414,7 @@ private fun ProcessingStep(icon: ImageVector, label: String, subtitle: String?, 
 @Composable
 private fun CompletedCheckmark() {
     val green = MaterialTheme.colorScheme.primary
-    val checkColor = MaterialTheme.colorScheme.onPrimary
+    val checkColor = Color.White
     Canvas(modifier = Modifier.size(28.dp)) {
         val r = size.minDimension / 2f
         drawCircle(color = green, radius = r)
@@ -502,43 +505,6 @@ private fun ConnectorLine(color: Color) {
 
 // endregion
 
-// region — Sparkle icon (animated)
-
-@Composable
-private fun SparkleIcon() {
-    val infiniteTransition = rememberInfiniteTransition(label = "sparkle")
-    val rotation by infiniteTransition.animateFloat(
-        initialValue = 0f,
-        targetValue = 360f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(4000, easing = LinearEasing),
-            repeatMode = RepeatMode.Restart,
-        ),
-        label = "sparkle-rotation",
-    )
-    val sparkleColor = MaterialTheme.colorScheme.primary
-    Canvas(modifier = Modifier.size(20.dp)) {
-        val cx = center.x
-        val cy = center.y
-        val arm = size.minDimension * 0.38f
-        val small = size.minDimension * 0.18f
-        val strokeW = 1.8.dp.toPx()
-        val radians = Math.toRadians(rotation.toDouble()).toFloat()
-
-        // Main cross star
-        drawLine(sparkleColor, Offset(cx, cy - arm), Offset(cx, cy + arm), strokeW, StrokeCap.Round)
-        drawLine(sparkleColor, Offset(cx - arm, cy), Offset(cx + arm, cy), strokeW, StrokeCap.Round)
-
-        // Diagonal small arms (rotate slowly)
-        val cos45 = kotlin.math.cos(radians + 0.785f)
-        val sin45 = kotlin.math.sin(radians + 0.785f)
-        drawLine(sparkleColor, Offset(cx + small * cos45, cy + small * sin45), Offset(cx - small * cos45, cy - small * sin45), strokeW * 0.7f, StrokeCap.Round)
-        drawLine(sparkleColor, Offset(cx - small * sin45, cy + small * cos45), Offset(cx + small * sin45, cy - small * cos45), strokeW * 0.7f, StrokeCap.Round)
-    }
-}
-
-// endregion
-
 // region — While you wait card
 
 @Composable
@@ -554,12 +520,14 @@ private fun WhileYouWaitCard() {
 
     Card(
         modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.tertiaryContainer),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer),
         shape = RoundedCornerShape(20.dp),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
     ) {
         Row(
-            Modifier.padding(20.dp),
+            Modifier
+                .padding(20.dp)
+                .height(IntrinsicSize.Min),
             verticalAlignment = Alignment.Top,
         ) {
             Column(Modifier.weight(1f)) {
@@ -575,58 +543,32 @@ private fun WhileYouWaitCard() {
                         stringResource(R.string.while_you_wait),
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onTertiaryContainer,
+                        color = MaterialTheme.colorScheme.onSecondaryContainer,
                     )
                 }
                 Spacer(Modifier.height(8.dp))
                 Text(
                     stringResource(tips[tipIndex]),
                     style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onTertiaryContainer.copy(alpha = 0.85f),
+                    color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.85f),
                     lineHeight = 20.sp,
                 )
             }
             Spacer(Modifier.width(12.dp))
-            // Decorative plant illustration drawn via Canvas
-            PlantIllustration()
+            Box(
+                Modifier
+                    .fillMaxHeight()
+                    .aspectRatio(1f),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    Icons.Default.Lightbulb,
+                    contentDescription = null,
+                    modifier = Modifier.size(32.dp),
+                    tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.7f),
+                )
+            }
         }
-    }
-}
-
-/** Simple decorative plant illustration drawn with Canvas. */
-@Composable
-private fun PlantIllustration() {
-    val leafGreen = MaterialTheme.colorScheme.primary
-    val potColor = MaterialTheme.colorScheme.tertiaryContainer
-    val potBorder = MaterialTheme.colorScheme.outline
-    Canvas(modifier = Modifier.size(56.dp)) {
-        val w = size.width
-        val h = size.height
-        // Pot
-        val potTop = h * 0.55f
-        val potW = w * 0.45f
-        val potH = h * 0.35f
-        drawRoundRect(
-            color = potBorder,
-            topLeft = Offset(center.x - potW / 2, potTop),
-            size = androidx.compose.ui.geometry.Size(potW, potH),
-            cornerRadius = androidx.compose.ui.geometry.CornerRadius(6.dp.toPx()),
-        )
-        drawRoundRect(
-            color = potColor,
-            topLeft = Offset(center.x - potW / 2 + 2.dp.toPx(), potTop + 2.dp.toPx()),
-            size = androidx.compose.ui.geometry.Size(potW - 4.dp.toPx(), potH - 4.dp.toPx()),
-            cornerRadius = androidx.compose.ui.geometry.CornerRadius(4.dp.toPx()),
-        )
-        // Stem
-        val stemBottom = potTop + 2.dp.toPx()
-        val stemTop = h * 0.15f
-        drawLine(leafGreen, Offset(center.x, stemBottom), Offset(center.x, stemTop), 2.dp.toPx(), StrokeCap.Round)
-        // Leaves (simple ovals)
-        val leafSize = androidx.compose.ui.geometry.Size(w * 0.25f, h * 0.12f)
-        drawOval(color = leafGreen, topLeft = Offset(center.x, h * 0.22f), size = leafSize)
-        drawOval(color = leafGreen, topLeft = Offset(center.x - leafSize.width, h * 0.32f), size = leafSize)
-        drawOval(color = leafGreen, topLeft = Offset(center.x + 2.dp.toPx(), h * 0.40f), size = leafSize)
     }
 }
 

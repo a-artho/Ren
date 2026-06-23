@@ -44,8 +44,13 @@ import androidx.compose.material.icons.filled.School
 import androidx.compose.material.icons.filled.WarningAmber
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.DatePicker
+import androidx.compose.material3.DatePickerDialog
+import androidx.compose.material3.SelectableDates
+import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.DropdownMenu
@@ -91,13 +96,16 @@ import androidx.compose.ui.unit.dp
 import com.hci.ren.R
 import com.hci.ren.feature.pdfupload.presentation.PlanSetupSubmission
 import com.hci.ren.feature.pdfupload.presentation.StudyDeadline
+import com.hci.ren.feature.pdfupload.presentation.isSelectableDeadlineUtc
 import com.hci.ren.feature.plangeneration.GeneratedStudyBlock
 import com.hci.ren.feature.plangeneration.GeneratedStudyPlan
 import com.hci.ren.feature.plangeneration.StudyTaskStatus
 import com.hci.ren.feature.plangeneration.StudyTaskType
 import java.text.SimpleDateFormat
 import java.util.Calendar
+import java.util.Date
 import java.util.Locale
+import java.util.TimeZone
 import kotlinx.coroutines.launch
 
 private enum class AdjustmentSheet { Deadline, DailyTime, Scope, Continue }
@@ -112,10 +120,13 @@ fun StudyMapScreen(
     acceptedTightPlan: Boolean = false,
     changeMessage: String? = null,
     suggestedDeadline: String? = null,
+    recommendedDaysBalanced: Int = 0,
+    recommendedDaysIntensive: Int = 0,
     onHome: () -> Unit,
     onCreateProject: () -> Unit,
     onInsights: () -> Unit,
     onConsumeMessage: () -> Unit,
+    onExtendDeadline: (studyDays: Int, intensive: Boolean) -> Unit = { _, _ -> },
     onApplyDeadline: (String) -> Unit,
     onIncreaseDailyTime: (Int) -> Unit,
     onReduceScope: (ScopeReduction, Set<String>) -> Unit,
@@ -153,9 +164,7 @@ fun StudyMapScreen(
         return
     }
 
-    val data = remember(plan, preferences, dailyMinutesOverride) {
-        buildStudyMapData(plan, preferences, dailyMinutesOverride)
-    }
+    val data = buildStudyMapData(plan, preferences, dailyMinutesOverride)
     val allComplete = data.activeTasks.isNotEmpty() && data.activeTasks.all { it.status == StudyTaskStatus.Completed }
     val today = Calendar.getInstance().toStudyDate()
     val todayTasks = data.schedule.days.firstOrNull { it.date == today }?.tasks.orEmpty()
@@ -174,23 +183,26 @@ fun StudyMapScreen(
         snackbarHost = { SnackbarHost(snackbar) },
         topBar = { StudyMapHeader(plan.projectName) },
         bottomBar = {
-            Column(Modifier.navigationBarsPadding()) {
-                Button(
-                    onClick = {
-                        when {
-                            allComplete -> onInsights()
-                            ctaTask != null -> onTaskStatusChange(ctaTask.id, StudyTaskStatus.InProgress)
-                            data.schedule.unscheduledTasks.isNotEmpty() -> selectedTask = data.schedule.unscheduledTasks.first()
-                        }
-                    },
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp).height(52.dp),
-                    enabled = allComplete || ctaTask != null || data.schedule.unscheduledTasks.isNotEmpty(),
-                ) {
-                    Icon(if (allComplete) Icons.Default.Insights else Icons.Default.PlayArrow, contentDescription = null)
-                    Spacer(Modifier.width(8.dp))
-                    Text(ctaLabel)
+            Surface(color = MaterialTheme.colorScheme.background, tonalElevation = 0.dp) {
+                Column(Modifier.navigationBarsPadding()) {
+                    Button(
+                        onClick = {
+                            when {
+                                allComplete -> onInsights()
+                                ctaTask != null -> onTaskStatusChange(ctaTask.id, StudyTaskStatus.InProgress)
+                                data.schedule.unscheduledTasks.isNotEmpty() -> selectedTask = data.schedule.unscheduledTasks.first()
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp).height(52.dp),
+                        enabled = allComplete || ctaTask != null || data.schedule.unscheduledTasks.isNotEmpty(),
+                        colors = ButtonDefaults.buttonColors(contentColor = Color.White),
+                    ) {
+                        Icon(if (allComplete) Icons.Default.Insights else Icons.Default.PlayArrow, contentDescription = null)
+                        Spacer(Modifier.width(8.dp))
+                        Text(ctaLabel)
+                    }
+                    StudyMapNavigation(onHome = onHome, onInsights = { scope.launch { snackbar.showSnackbar(unavailable) }; onInsights() })
                 }
-                StudyMapNavigation(onHome = onHome, onInsights = { scope.launch { snackbar.showSnackbar(unavailable) }; onInsights() })
             }
         },
     ) { padding ->
@@ -243,9 +255,16 @@ fun StudyMapScreen(
     when (adjustment) {
         AdjustmentSheet.Deadline -> DeadlineSheet(
             current = deadlineLabel(preferences),
-            suggested = suggestedDeadline,
+            recommendedDaysBalanced = recommendedDaysBalanced,
+            recommendedDaysIntensive = recommendedDaysIntensive,
             onDismiss = { adjustment = null },
-            onApply = { onApplyDeadline(it); adjustment = null },
+            onExtendDeadline = { days, intensive -> onExtendDeadline(days, intensive); adjustment = null },
+            onCustomDeadline = { millis ->
+                val date = SimpleDateFormat("yyyy-MM-dd", Locale.US).apply {
+                    timeZone = TimeZone.getTimeZone("UTC")
+                }.format(Date(millis))
+                onApplyDeadline(date); adjustment = null
+            },
         )
         AdjustmentSheet.DailyTime -> DailyTimeSheet(
             currentMinutes = data.dailyMinutes,
@@ -268,15 +287,17 @@ fun StudyMapScreen(
 
 @Composable
 private fun StudyMapHeader(projectName: String) {
-    Column(
-        Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 20.dp, vertical = 12.dp),
-        verticalArrangement = Arrangement.spacedBy(2.dp),
-    ) {
-        Text(stringResource(R.string.study_map), style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Icon(Icons.AutoMirrored.Filled.MenuBook, contentDescription = null, modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.primary)
-            Spacer(Modifier.width(6.dp))
-            Text(projectName, style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+    Surface(color = MaterialTheme.colorScheme.background, tonalElevation = 0.dp) {
+        Column(
+            Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 20.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(2.dp),
+        ) {
+            Text(stringResource(R.string.study_map), style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.AutoMirrored.Filled.MenuBook, contentDescription = null, modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.primary)
+                Spacer(Modifier.width(6.dp))
+                Text(projectName, style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+            }
         }
     }
 }
@@ -292,7 +313,7 @@ private fun ProjectSummaryCard(data: StudyMapData) {
         Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Surface(shape = RoundedCornerShape(12.dp), color = MaterialTheme.colorScheme.primaryContainer, modifier = Modifier.size(46.dp)) {
-                    Box(contentAlignment = Alignment.Center) { Icon(Icons.Default.School, contentDescription = null, tint = MaterialTheme.colorScheme.primary) }
+                    Box(contentAlignment = Alignment.Center) { Icon(Icons.Default.School, contentDescription = null, tint = MaterialTheme.colorScheme.onPrimaryContainer) }
                 }
                 Spacer(Modifier.width(12.dp))
                 Column(Modifier.weight(1f)) {
@@ -420,12 +441,12 @@ private fun NextTaskCard(task: GeneratedStudyBlock, onClick: () -> Unit, onStart
         shape = RoundedCornerShape(18.dp),
     ) {
         Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text(stringResource(R.string.next_up), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
+                Text(stringResource(R.string.next_up), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onPrimaryContainer, fontWeight = FontWeight.Bold)
             Text(task.title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
             Text("${formatMinutes(task.durationMinutes)} • ${taskTypeLabel(task.taskType)}", style = MaterialTheme.typography.bodyMedium)
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(stringResource(R.string.start_here), modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
-                Button(onClick = onStart) { Icon(Icons.Default.PlayArrow, null); Spacer(Modifier.width(4.dp)); Text(stringResource(R.string.start)) }
+                Button(onClick = onStart, colors = ButtonDefaults.buttonColors(contentColor = Color.White)) { Icon(Icons.Default.PlayArrow, null); Spacer(Modifier.width(4.dp)); Text(stringResource(R.string.start)) }
             }
         }
     }
@@ -580,17 +601,66 @@ private fun TaskDetailSheet(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun DeadlineSheet(current: String, suggested: String?, onDismiss: () -> Unit, onApply: (String) -> Unit) {
+private fun DeadlineSheet(
+    current: String,
+    recommendedDaysBalanced: Int,
+    recommendedDaysIntensive: Int,
+    onDismiss: () -> Unit,
+    onExtendDeadline: (studyDays: Int, intensive: Boolean) -> Unit,
+    onCustomDeadline: (epochMillis: Long) -> Unit,
+) {
+    var showDatePicker by remember { mutableStateOf(false) }
     ModalBottomSheet(onDismissRequest = onDismiss) {
-        Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 28.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-            Text(if (current == stringResource(R.string.no_deadline)) stringResource(R.string.add_deadline) else stringResource(R.string.choose_new_deadline), style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+        Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 28.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Text(stringResource(R.string.choose_better_deadline), style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
             DetailRow(stringResource(R.string.current_deadline), current)
-            DetailRow(stringResource(R.string.suggested_deadline), suggested?.let(::formatDate) ?: stringResource(R.string.not_scheduled))
-            Text(stringResource(R.string.deadline_help_message), color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(onClick = onDismiss, modifier = Modifier.weight(1f)) { Text(stringResource(android.R.string.cancel)) }
-                Button(onClick = { suggested?.let(onApply) }, enabled = suggested != null, modifier = Modifier.weight(1f)) { Text(stringResource(R.string.apply_changes)) }
+            DeadlineOption(
+                title = stringResource(R.string.balanced),
+                description = pluralStringResource(R.plurals.balanced_option_description, recommendedDaysBalanced, recommendedDaysBalanced),
+                onClick = { onExtendDeadline(recommendedDaysBalanced, false); onDismiss() },
+            )
+            DeadlineOption(
+                title = stringResource(R.string.intensive),
+                description = pluralStringResource(R.plurals.intensive_option_description, recommendedDaysIntensive, recommendedDaysIntensive),
+                onClick = { onExtendDeadline(recommendedDaysIntensive, true); onDismiss() },
+            )
+            DeadlineOption(
+                title = stringResource(R.string.custom_deadline),
+                description = stringResource(R.string.pick_your_own_date),
+                onClick = { showDatePicker = true },
+            )
+        }
+    }
+    if (showDatePicker) {
+        val selectableDates = remember {
+            object : SelectableDates {
+                override fun isSelectableDate(utcTimeMillis: Long): Boolean =
+                    isSelectableDeadlineUtc(utcTimeMillis, System.currentTimeMillis())
             }
+        }
+        val datePickerState = rememberDatePickerState(selectableDates = selectableDates)
+        DatePickerDialog(
+            onDismissRequest = { showDatePicker = false },
+            confirmButton = {
+                TextButton(
+                    enabled = datePickerState.selectedDateMillis != null,
+                    onClick = {
+                        datePickerState.selectedDateMillis?.let(onCustomDeadline)
+                        showDatePicker = false
+                    },
+                ) { Text(stringResource(R.string.apply)) }
+            },
+            dismissButton = { TextButton(onClick = { showDatePicker = false }) { Text(stringResource(R.string.cancel)) } },
+        ) { DatePicker(state = datePickerState) }
+    }
+}
+
+@Composable
+private fun DeadlineOption(title: String, description: String, onClick: () -> Unit) {
+    Card(onClick = onClick, modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text(title, style = MaterialTheme.typography.titleMedium)
+            Text(description, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }
@@ -670,7 +740,10 @@ private fun ContinueAnywayDialog(onDismiss: () -> Unit, onContinue: () -> Unit) 
 
 @Composable
 private fun StudyMapNavigation(onHome: () -> Unit, onInsights: () -> Unit) {
-    NavigationBar {
+    NavigationBar(
+        containerColor = MaterialTheme.colorScheme.background,
+        tonalElevation = 0.dp,
+    ) {
         listOf(
             Triple(stringResource(R.string.home), Icons.Default.Home, onHome),
             Triple(stringResource(R.string.study_map), Icons.Default.Map, {}),
@@ -683,10 +756,10 @@ private fun StudyMapNavigation(onHome: () -> Unit, onInsights: () -> Unit) {
 
 @Composable
 private fun EmptyStudyMap(onHome: () -> Unit, onCreateProject: () -> Unit, onInsights: () -> Unit, snackbar: SnackbarHostState, modifier: Modifier) {
-    Scaffold(modifier = modifier, snackbarHost = { SnackbarHost(snackbar) }, topBar = { StudyMapHeader(stringResource(R.string.no_study_project_selected)) }, bottomBar = { StudyMapNavigation(onHome, onInsights) }) { padding ->
+    Scaffold(modifier = modifier, snackbarHost = { SnackbarHost(snackbar) }, topBar = { StudyMapHeader(stringResource(R.string.no_study_project_selected)) }, bottomBar = { Surface(color = MaterialTheme.colorScheme.background, tonalElevation = 0.dp) { StudyMapNavigation(onHome, onInsights) } }) { padding ->
         Box(Modifier.fillMaxSize().padding(padding).padding(24.dp), contentAlignment = Alignment.Center) {
             Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Surface(shape = CircleShape, color = MaterialTheme.colorScheme.primaryContainer, modifier = Modifier.size(72.dp)) { Box(contentAlignment = Alignment.Center) { Icon(Icons.Default.Map, null, modifier = Modifier.size(32.dp), tint = MaterialTheme.colorScheme.primary) } }
+                Surface(shape = CircleShape, color = MaterialTheme.colorScheme.primaryContainer, modifier = Modifier.size(72.dp)) { Box(contentAlignment = Alignment.Center) { Icon(Icons.Default.Map, null, modifier = Modifier.size(32.dp), tint = MaterialTheme.colorScheme.onPrimaryContainer) } }
                 Text(stringResource(R.string.no_study_project_selected), style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
                 Text(stringResource(R.string.no_study_project_message), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Button(onClick = onCreateProject) { Text(stringResource(R.string.create_project)) }
@@ -696,7 +769,7 @@ private fun EmptyStudyMap(onHome: () -> Unit, onCreateProject: () -> Unit, onIns
 }
 
 @Composable private fun EmptyTasksCard(onGenerate: () -> Unit) { Card { Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) { Text(stringResource(R.string.no_tasks_yet), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold); Button(onClick = onGenerate) { Text(stringResource(R.string.generate_tasks)) } } } }
-@Composable private fun CompletionCard() { Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)) { Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) { Icon(Icons.Default.CheckCircle, null, tint = MaterialTheme.colorScheme.primary); Text(stringResource(R.string.finished_study_map), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold); Text(stringResource(R.string.all_tasks_complete_message)) } } }
+@Composable private fun CompletionCard() { Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)) { Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) { Icon(Icons.Default.CheckCircle, null, tint = MaterialTheme.colorScheme.onPrimaryContainer); Text(stringResource(R.string.finished_study_map), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold); Text(stringResource(R.string.all_tasks_complete_message)) } } }
 @Composable private fun SectionTitle(title: String, subtitle: String) { Column { Text(title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, modifier = Modifier.semantics { heading() }); Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) } }
 @Composable private fun DetailRow(label: String, value: String) { Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) { Text(label, color = MaterialTheme.colorScheme.onSurfaceVariant); Spacer(Modifier.width(12.dp)); Text(value, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis) } }
 @Composable private fun StatusPill(label: String, container: Color, content: Color) { Surface(shape = RoundedCornerShape(50), color = container) { Text(label, modifier = Modifier.padding(horizontal = 9.dp, vertical = 4.dp), style = MaterialTheme.typography.labelSmall, color = content, fontWeight = FontWeight.SemiBold) } }
