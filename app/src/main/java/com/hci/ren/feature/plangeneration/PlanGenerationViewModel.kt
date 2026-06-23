@@ -114,6 +114,14 @@ class PlanGenerationViewModel(application: Application) : AndroidViewModel(appli
         }
     }
 
+    /**
+     * Removes the persisted plan ID so process death does not auto-resume
+     * this plan. Keeps study-map state in memory for the current session.
+     */
+    fun clearPendingPlanId() {
+        preferences.edit { remove(KEY_PLAN_ID) }
+    }
+
     fun start(value: PlanSetupSubmission) {
         if (_uiState.value.planId != null || polling) return
         submission = value
@@ -260,7 +268,6 @@ class PlanGenerationViewModel(application: Application) : AndroidViewModel(appli
                     throw e
                 } catch (e: PlanApiException) {
                     if (!isRetryableStatusCode(e.statusCode)) {
-                        preferences.edit { remove(KEY_PLAN_ID) }
                         Log.e("PlanGeneration", "Permanent plan request failure (${e.statusCode})", e)
                         fail()
                         return
@@ -290,6 +297,11 @@ class PlanGenerationViewModel(application: Application) : AndroidViewModel(appli
     private fun fail() {
         backendStatus.value = PlanStatus.Failed
         _uiState.value = _uiState.value.copy(status = PlanStatus.Failed, errorMessage = "We couldn’t create the plan. Try again.")
+        preferences.edit {
+            remove(KEY_PLAN_ID)
+            remove(KEY_SUBMISSION)
+            remove(KEY_REQUEST_ID)
+        }
     }
 
     fun prioritiseMostImportant() = adaptCompletedPlan(prioritised = true)

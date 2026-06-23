@@ -151,6 +151,7 @@ class MainActivity : ComponentActivity() {
                         onHome = {
                             if (!transition.isRunning) {
                                 forward = false
+                                planGenerationViewModel.clearPendingPlanId()
                                 screen = ScreenHome
                             }
                         },
