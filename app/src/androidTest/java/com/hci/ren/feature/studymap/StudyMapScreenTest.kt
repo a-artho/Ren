@@ -29,12 +29,14 @@ class StudyMapScreenTest {
     }
 
     @Test fun unrealisticPlanShowsInPlaceAdjustmentSheet() {
-        setScreen(plan(), submission(StudyDeadline.Today, 15), suggestedDeadline = "2099-06-30")
+        setScreen(plan(), submission(StudyDeadline.Today, 15), suggestedDeadline = "2099-06-30", balancedDays = 5, intensiveDays = 3)
 
         composeRule.onNodeWithText("This plan may need changes").assertIsDisplayed()
         composeRule.onNodeWithText("Extend deadline").performClick()
-        composeRule.onNodeWithText("Choose new deadline").assertIsDisplayed()
-        composeRule.onNodeWithText("Apply changes").assertIsDisplayed()
+        composeRule.onNodeWithText("Choose a better deadline").assertIsDisplayed()
+        composeRule.onNodeWithText("Balanced").assertIsDisplayed()
+        composeRule.onNodeWithText("Intensive").assertIsDisplayed()
+        composeRule.onNodeWithText("Custom deadline").assertIsDisplayed()
     }
 
     @Test fun emptyStudyMapShowsCreateProjectAction() {
@@ -48,6 +50,8 @@ class StudyMapScreenTest {
         plan: GeneratedStudyPlan?,
         submission: PlanSetupSubmission?,
         suggestedDeadline: String? = null,
+        balancedDays: Int = 0,
+        intensiveDays: Int = 0,
     ) {
         composeRule.setContent {
             RenTheme {
@@ -55,11 +59,14 @@ class StudyMapScreenTest {
                     plan = plan,
                     preferences = submission,
                     suggestedDeadline = suggestedDeadline,
+                    recommendedDaysBalanced = balancedDays,
+                    recommendedDaysIntensive = intensiveDays,
                     onHome = {},
                     onCreateProject = {},
                     onInsights = {},
                     onConsumeMessage = {},
                     onApplyDeadline = {},
+                    onExtendDeadline = { _, _ -> },
                     onIncreaseDailyTime = {},
                     onReduceScope = { _, _ -> },
                     onContinueAnyway = {},
