@@ -21,8 +21,8 @@ Ren turns a PDF plus study preferences into an AI-generated study plan.
 - Android app: Kotlin, Jetpack Compose, Material 3, single `:app` module
 - Package: `com.hci.ren`; min SDK 24; target SDK 36; compile SDK 36.1
 - State: `StateFlow` in ViewModels; `rememberSaveable` for app routing
-- Persistence: `SavedStateHandle` for upload/setup; `SharedPreferences` for an
-  in-flight generation request that must survive process death
+- Persistence: `SavedStateHandle` for upload/setup; `SharedPreferences` for
+  generation recovery and durable Study Map adjustments
 - Backend: FastAPI, Pydantic, SQLite, `google-genai`, Uvicorn
 - Build: Gradle Kotlin DSL, version catalog, Java 11 source/target, Java 21 daemon
 - Theme: custom Ren palette and Inter type; dynamic color is off by default
@@ -38,15 +38,14 @@ Home
   -> POST setup /plans
   -> poll /plans/{id}/status
   -> GET /plans/{id}
-  -> deterministic feasibility check
-  -> Reality Check when the workload is unrealistic
-  -> plan details
+  -> deterministic schedule + realism calculations
+  -> Study Map (Schedule or Topics)
 ```
 
-`MainActivity.kt` owns the six-screen state machine:
+`MainActivity.kt` owns the five-screen state machine:
 
 ```text
-home -> pdf_upload -> pdf_setup -> plan_processing -> reality_check? -> plan_details
+home -> pdf_upload -> pdf_setup -> plan_processing -> study_map
 ```
 
 Navigation uses `rememberSaveable`, `AnimatedContent`, and `RenMotion`. It does
@@ -85,7 +84,9 @@ local recovery state and attempts backend cancellation.
 | Setup questions/validation/persistence | `PlanSetupUiState.kt`, `PlanSetupViewModel.kt`, `PlanSetupScreen.kt` | `PlanSetupUiStateTest`, `PlanSetupScreenTest` |
 | Upload/create/poll/cancel HTTP contract | Android `PlanApiRepository.kt`; backend `main.py`, `models.py` | `PlanGenerationModelsTest`; `test_api.py` |
 | Generation recovery/retry/progress | `PlanGenerationViewModel.kt`, `PlanGenerationModels.kt` | `PlanGenerationModelsTest`, `PlanGenerationScreenTest` |
-| Feasibility, emergency adaptation, Reality Check | `StudyPlanFeasibilityChecker.kt`, `RealityCheckScreen.kt`, generation ViewModel/models | `StudyPlanFeasibilityCheckerTest`; compile Compose tests |
+| Study Map schedule/topics/task actions | `studymap/StudyMapScreen.kt`, `StudyMapModels.kt`; generation ViewModel/models | `StudyMapModelsTest`, `StudyMapScreenTest` |
+| Realism and in-place plan adjustments | `studymap/StudyMapModels.kt`, generation ViewModel | `StudyMapModelsTest`; compile Compose tests |
+| Legacy feasibility/adaptation helpers | `StudyPlanFeasibilityChecker.kt`, `RealityCheckScreen.kt`, generation ViewModel/models | `StudyPlanFeasibilityCheckerTest`; compile Compose tests |
 | Generated-plan validation | backend `models.py`, `provider.py`; Android generation models | `test_models.py`, `test_provider.py` |
 | Job lifecycle, cleanup, restart | backend `main.py`, `store.py` | `test_processing.py`, `test_store.py`, `test_api.py` |
 | Colors/type/dark theme | `ui/theme/Color.kt`, `Theme.kt`, `Type.kt` | affected screen tests; visual check |
@@ -104,6 +105,11 @@ Paths under `feature/` above are relative to
 empty or active content. Reusable dashboard UI lives under `components/`.
 Some home actions intentionally show “not available” feedback; do not silently
 make placeholder actions appear functional.
+
+The shared product navigation currently presents Home, Study Map, and Insights.
+The Study Map item opens the generated active plan; it is not a separate Tasks
+destination. Insights remains an unavailable placeholder until its feature is
+implemented.
 
 ### PDF upload and preview
 
@@ -141,23 +147,49 @@ Wire status mapping is in `PlanGenerationModels.kt`. Android presents backend
 `CANCELED` as a failed/terminal visible state; cancellation normally follows a
 user exit and local reset.
 
-After a completed plan is fetched, `StudyPlanFeasibilityChecker` deterministically
-compares buffered task estimates with selected weekdays, deadline, and daily
-minutes. It classifies the result as realistic, intensive, or unrealistic. An
-unrealistic result routes through `RealityCheckScreen`; intensive plans use a
-banner on the existing details screen with estimated and available time.
-`StudyPlanAdapter` fits active work within the available-minute budget without
-going below task minimums; overflow is labelled if-time-remains or postponed and
-does not count toward the scheduled total. Plan details render those dispositions
-as separate sections and number only active blocks.
+After a completed plan is fetched, `MainActivity` routes directly to Study Map.
+The generated plan is active immediately; there is no draft/confirm-plan state.
+`PlanGenerationViewModel` remains the plan owner and persists a local overlay for
+task duration/status, optional/excluded disposition, daily-time override, project
+name, and acceptance of a tight plan. The backend plan remains the recoverable
+base; saved overlays are reapplied by matching task IDs after process restart.
 
-Reality Check actions reuse the fetched task list. Deadline changes are selected
-inline as balanced, intensive, or custom options and do not repeat setup or AI
-analysis. `StudyPlanScopeAdjuster` deterministically applies pass-exam,
-revision-only, fundamentals, skim-everything, selected-topic, and complete-all
-strategies before feasibility is checked again. The intensive deadline option
-uses 1.5 times the normal daily capacity for that recalculation without replacing
-the user's saved normal daily-time answer.
+Legacy `StudyPlanFeasibilityChecker`, `StudyPlanAdapter`,
+`StudyPlanScopeAdjuster`, and `RealityCheckScreen` remain in the source tree for
+compatibility with their existing tests, but normal navigation no longer routes
+through the standalone Reality Check or plan-details screens.
+
+### Study Map
+
+`feature/studymap/StudyMapModels.kt` contains pure source-of-truth calculations:
+
+- `PlanRealismCalculator`: remaining required minutes versus capacity through
+  the deadline; statuses are on-track, tight, unrealistic, or no-deadline
+- `StudyScheduleCalculator`: schedules remaining required tasks only on selected
+  study days, preserves completed work, and exposes work that does not fit as
+  unscheduled or over-capacity
+- `PlanAdjustmentService`: calculates the earliest buffered deadline and applies
+  recoverable scope reductions or practice-duration reductions
+- `TaskProgressCalculator`: project/topic completion from non-excluded tasks
+
+Daily totals are derived from each day's visible tasks, never a cached total.
+Optional tasks do not count toward required time and remain recoverable. Locked
+tasks cannot start while dependencies are unresolved. Unknown task types map to
+the safe Custom presentation.
+
+`StudyMapScreen.kt` uses the existing Ren Material theme and provides:
+
+- project summary, progress, deadline, total estimate, available time, realism
+- in-page Schedule/Topics switcher
+- next task, expandable day/topic sections, unscheduled work, completion state
+- task detail sheet with start, complete, duration, skip, optional, and restore
+- in-place Reduce scope, Increase daily time, Extend deadline, and Continue
+  anyway adjustments
+- sticky context-sensitive CTA above Home/Study Map/Insights navigation
+
+Normal plan adjustments stay inside Study Map and recalculate immediately. Start
+currently changes task status to in-progress; there is no timer/focus destination
+to launch yet. Multiple-project switching and Insights are also not implemented.
 
 ## Backend contract
 
