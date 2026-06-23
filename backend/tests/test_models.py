@@ -11,3 +11,10 @@ def test_plan_rejects_non_contiguous_order():
     with pytest.raises(ValidationError):
         GeneratedPlan.model_validate({"topics":[{"id":"t1","title":"One","order":2}],
           "blocks":[{"id":"b1","title":"Block","order":1,"durationMinutes":30,"instructions":"Read","topicIds":["t1"]}]})
+
+def test_plan_rejects_duration_below_minimum_useful_time():
+    with pytest.raises(ValidationError):
+        GeneratedPlan.model_validate({"topics":[{"id":"t1","title":"One","order":1}],
+          "blocks":[{"id":"b1","title":"Block","order":1,"durationMinutes":10,
+            "minimumUsefulMinutes":20,"priority":"HIGH","taskType":"LEARN",
+            "priorityReason":"Foundation","isSkippable":False,"instructions":"Read","topicIds":["t1"]}]})

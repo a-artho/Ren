@@ -100,11 +100,30 @@ class PlanGenerationScreenTest {
         composeRule.onNodeWithText("Review").assertIsDisplayed()
         composeRule.onNodeWithText("Block 1").assertIsDisplayed()
         
-        val totalMinutesStr = context.resources.getQuantityString(R.plurals.total_minutes, 45, 45)
+        val totalMinutesStr = context.resources.getQuantityString(R.plurals.scheduled_minutes, 45, 45)
         val blockMinutesStr = context.resources.getQuantityString(R.plurals.block_minutes, 45, 45)
         composeRule.onNodeWithText(totalMinutesStr).assertIsDisplayed()
         composeRule.onNodeWithText(blockMinutesStr).assertIsDisplayed()
         composeRule.onNodeWithText("Summarize the chapter.").assertIsDisplayed()
+    }
+
+    @Test fun postponedTasksAreSeparatedAndOnlyActiveTasksAreNumbered() {
+        val plan = GeneratedStudyPlan(
+            id = "plan",
+            topics = emptyList(),
+            blocks = listOf(
+                GeneratedStudyBlock("active", "Active task", 8, 45, "Study", emptyList()),
+                GeneratedStudyBlock("later", "Later task", 15, 45, "Study later", emptyList(), disposition = TaskDisposition.Postponed),
+            ),
+            totalEstimatedMinutes = 45,
+        )
+        composeRule.setContent { RenTheme { PlanDetailsScreen(plan) {} } }
+
+        composeRule.onNodeWithText(context.getString(R.string.scheduled_now)).assertIsDisplayed()
+        composeRule.onNodeWithText(context.getString(R.string.postponed)).assertIsDisplayed()
+        composeRule.onNodeWithText("Block 1").assertIsDisplayed()
+        composeRule.onNodeWithText("Block 8").assertDoesNotExist()
+        composeRule.onNodeWithText("Block 15").assertDoesNotExist()
     }
 
     @Test fun systemBackLeavesFailedScreen() {

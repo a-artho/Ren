@@ -122,6 +122,10 @@ class PlanSetupViewModel(
         return submission
     }
 
+    fun editDeadline() {
+        updateAndPersist { it.copy(currentStep = PlanSetupStep.Deadline, generatedSubmission = null) }
+    }
+
     private inline fun updateAndPersist(crossinline transform: (PlanSetupUiState) -> PlanSetupUiState) {
         _uiState.update { state ->
             transform(state).also(::persistState)

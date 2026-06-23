@@ -13,10 +13,9 @@
     <string name="retry">Retry</string>
     <string name="your_study_plan">Your study plan</string>
     <string name="detected_topics">Detected topics</string>
-    <string name="study_blocks">Study blocks</string>
-    <plurals name="total_minutes">
-        <item quantity="one">%1$d minute total</item>
-        <item quantity="other">%1$d minutes total</item>
+    <plurals name="scheduled_minutes">
+        <item quantity="one">%1$d minute scheduled</item>
+        <item quantity="other">%1$d minutes scheduled</item>
     </plurals>
     <plurals name="block_minutes">
         <item quantity="one">%1$d minute</item>
@@ -38,5 +37,66 @@
     <string name="error_icon_description">Error indicator</string>
     <string name="home_feature_unavailable">This feature isn’t available yet.</string>
     <string name="pdf_too_large">This PDF is larger than the 25 MB upload limit.</string>
+    <string name="reality_check">Reality Check</string>
+    <string name="reality_check_subtitle">This plan may not fit into your available time.</string>
+    <string name="reality_check_body">Ren estimates that this material needs around %1$s, but your current setup gives you around %2$s. You can still continue, but some topics may need to be prioritised, skimmed, or postponed.</string>
+    <string name="reality_check_explanation">Ren can still create a plan, but it would not be realistic to cover everything deeply. Choose how you want to adapt the schedule.</string>
+    <string name="no_available_study_time">None of your selected study days occur before this deadline. Return to setup to select another day or extend the deadline.</string>
+    <string name="required_time">Estimated required time</string>
+    <string name="available_time">Available study time</string>
+    <string name="current_coverage">Current coverage</string>
+    <string name="shortage">Shortage</string>
+    <string name="about_percent">About %1$d%%</string>
+    <string name="prioritise_matters">Prioritise what matters most</string>
+    <string name="prioritise_description">Create an emergency plan focused on high-value topics, foundations, practice, and likely exam material.</string>
+    <string name="extend_deadline">Extend deadline</string>
+    <plurals name="balanced_study_days">
+        <item quantity="one">Balanced: about %1$d study day.</item>
+        <item quantity="other">Balanced: about %1$d study days.</item>
+    </plurals>
+    <plurals name="intensive_study_days">
+        <item quantity="one">Intensive: about %1$d study day.</item>
+        <item quantity="other">Intensive: about %1$d study days.</item>
+    </plurals>
+    <string name="reduce_goal">Reduce goal</string>
+    <string name="reduce_goal_description">Choose a narrower goal, then Ren will check the workload again.</string>
+    <string name="continue_anyway">Continue anyway</string>
+    <string name="continue_anyway_description">Keep the deadline while clearly marking lower-priority tasks as optional or postponed.</string>
+    <string name="goal_pass_exam">Pass the exam</string>
+    <string name="goal_revise_only">Revise only</string>
+    <string name="goal_fundamentals">Understand fundamentals</string>
+    <string name="goal_skim_everything">Skim everything</string>
+    <string name="goal_complete_everything">Complete everything</string>
+    <string name="goal_selected_chapters">Focus on selected chapters</string>
+    <string name="apply">Apply</string>
+    <string name="cancel">Cancel</string>
+    <string name="intensive_plan">Intensive plan</string>
+    <string name="limited_coverage_message">Your original goal does not fully fit. This schedule covers approximately %1$d%% of the material. Lower-priority tasks are optional or postponed.</string>
+    <string name="must_complete">Must complete</string>
+    <string name="if_time_remains">If time remains</string>
+    <string name="postponed">Postponed</string>
+    <string name="scheduled_now">Scheduled now</string>
+    <string name="choose_better_deadline">Choose a better deadline</string>
+    <string name="balanced">Balanced</string>
+    <string name="intensive">Intensive</string>
+    <string name="custom_deadline">Custom deadline</string>
+    <string name="pick_your_own_date">Pick your own date</string>
+    <plurals name="balanced_option_description">
+        <item quantity="one">About %1$d study day at your normal pace</item>
+        <item quantity="other">About %1$d study days at your normal pace</item>
+    </plurals>
+    <plurals name="intensive_option_description">
+        <item quantity="one">About %1$d study day at a heavier pace</item>
+        <item quantity="other">About %1$d study days at a heavier pace</item>
+    </plurals>
+    <string name="intensive_plan_context">Estimated: %1$s. Available: %2$s. This plan fits, but it may feel demanding.</string>
+    <plurals name="more_topics">
+        <item quantity="one">+%1$d more</item>
+        <item quantity="other">+%1$d more</item>
+    </plurals>
+    <plurals name="estimated_plan_length">
+        <item quantity="one">At your current pace, this material will likely take about %1$d study day.</item>
+        <item quantity="other">At your current pace, this material will likely take about %1$d study days.</item>
+    </plurals>
 </resources>
 

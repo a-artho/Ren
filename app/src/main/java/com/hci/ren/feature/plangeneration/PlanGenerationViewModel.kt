@@ -17,6 +17,11 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.util.UUID
+import java.text.SimpleDateFormat
+import java.util.Calendar
+import java.util.Date
+import java.util.Locale
+import java.util.TimeZone
 import org.json.JSONArray
 import org.json.JSONObject
 import kotlin.time.Duration.Companion.milliseconds
@@ -32,6 +37,11 @@ class PlanGenerationViewModel(application: Application) : AndroidViewModel(appli
     private var polling = false
     private var activeJob: Job? = null
     private var failurePhase = GenerationFailurePhase.UploadOrCreate
+    private val feasibilityChecker = StudyPlanFeasibilityChecker()
+    private val planAdapter = StudyPlanAdapter()
+    private val scopeAdjuster = StudyPlanScopeAdjuster()
+    private var sourcePlan: GeneratedStudyPlan? = null
+    private var scheduleDailyMinutesOverride: Int? = null
 
     // Visual progression tracking
     private val backendStatus = MutableStateFlow(PlanStatus.Uploading)
@@ -68,6 +78,8 @@ class PlanGenerationViewModel(application: Application) : AndroidViewModel(appli
         preferences.edit { clear() }
         backendStatus.value = PlanStatus.Uploading
         fetchedPlan = null
+        sourcePlan = null
+        scheduleDailyMinutesOverride = null
         _uiState.value = PlanGenerationUiState(status = PlanStatus.Uploading)
         submission = null
         requestId = null
@@ -190,7 +202,15 @@ class PlanGenerationViewModel(application: Application) : AndroidViewModel(appli
                 
                 if (step == PlanStatus.Completed) {
                     delay(1500.milliseconds) // Completion animation time
-                    _uiState.value = _uiState.value.copy(plan = fetchedPlan)
+                    val plan = fetchedPlan
+                    val currentSubmission = submission
+                    sourcePlan = plan
+                    _uiState.value = _uiState.value.copy(
+                        plan = plan?.withScheduledTotal(),
+                        feasibility = if (plan != null && currentSubmission != null) {
+                            feasibilityChecker.check(plan.blocks, currentSubmission)
+                        } else null,
+                    )
                 } else {
                     delay(2000.milliseconds) // At least 2.0 seconds per step
                 }
@@ -262,6 +282,83 @@ class PlanGenerationViewModel(application: Application) : AndroidViewModel(appli
         _uiState.value = _uiState.value.copy(status = PlanStatus.Failed, errorMessage = "We couldn’t create the plan. Try again.")
     }
 
+    fun prioritiseMostImportant() = adaptCompletedPlan(prioritised = true)
+
+    fun continueAnyway() = adaptCompletedPlan(prioritised = false)
+
+    fun reduceGoal(goal: StudyScopeGoal): FeasibilityStatus? = applyScope(goal)
+
+    fun focusOnTopics(topicIds: Set<String>): FeasibilityStatus? =
+        if (topicIds.isEmpty()) null else applyScope(StudyScopeGoal.SelectedTopics, topicIds)
+
+    fun extendDeadline(studyDays: Int, intensive: Boolean = false): FeasibilityStatus? {
+        val current = submission ?: return null
+        val dailyMinutes = if (intensive) (current.dailyStudyMinutes * 1.5).toInt() else current.dailyStudyMinutes
+        return updateDeadline(deadlineAfterStudyDays(studyDays, current.studyDays), dailyMinutes.takeIf { intensive })
+    }
+
+    fun extendDeadlineTo(epochMillis: Long): FeasibilityStatus? {
+        val date = SimpleDateFormat("yyyy-MM-dd", Locale.US).apply {
+            timeZone = TimeZone.getTimeZone("UTC")
+        }.format(Date(epochMillis))
+        return updateDeadline(date, null)
+    }
+
+    private fun updateDeadline(date: String, effectiveDailyMinutes: Int?): FeasibilityStatus? {
+        val plan = _uiState.value.plan ?: return null
+        val updated = submission?.copy(
+            deadline = com.hci.ren.feature.pdfupload.presentation.StudyDeadline.ChooseDate,
+            deadlineDate = date,
+        ) ?: return null
+        submission = updated
+        scheduleDailyMinutesOverride = effectiveDailyMinutes
+        requestId?.let { persistRequest(updated, it) }
+        val result = feasibilityChecker.check(plan.blocks, updated, dailyMinutesOverride = effectiveDailyMinutes)
+        _uiState.value = _uiState.value.copy(feasibility = result, originalGoalDoesNotFit = false)
+        return result.status
+    }
+
+    private fun applyScope(goal: StudyScopeGoal, selectedTopics: Set<String> = emptySet()): FeasibilityStatus? {
+        val base = sourcePlan ?: _uiState.value.plan ?: return null
+        val currentSubmission = submission ?: return null
+        val blocks = scopeAdjuster.applyGoalStrategy(base.blocks, goal, selectedTopics)
+        if (blocks.isEmpty()) return null
+        val usedTopics = blocks.flatMapTo(mutableSetOf()) { it.topicIds }
+        val adjustedPlan = base.copy(
+            topics = base.topics.filter { it.id in usedTopics },
+            blocks = blocks,
+            totalEstimatedMinutes = blocks.sumOf { it.durationMinutes },
+        )
+        val result = feasibilityChecker.check(
+            blocks,
+            currentSubmission,
+            dailyMinutesOverride = scheduleDailyMinutesOverride,
+        )
+        _uiState.value = _uiState.value.copy(
+            plan = adjustedPlan,
+            feasibility = result,
+            originalGoalDoesNotFit = false,
+        )
+        return result.status
+    }
+
+    private fun adaptCompletedPlan(prioritised: Boolean) {
+        val state = _uiState.value
+        val plan = state.plan ?: return
+        val feasibility = state.feasibility ?: return
+        val adaptedBlocks = planAdapter.fit(
+            plan.blocks,
+            feasibility.availableMinutes,
+            prioritised,
+            preservePractice = submission?.goal == com.hci.ren.feature.pdfupload.presentation.StudyGoal.PrepareForExam,
+        )
+        val adaptedPlan = plan.copy(
+            blocks = adaptedBlocks,
+            totalEstimatedMinutes = adaptedBlocks.filter { it.disposition == TaskDisposition.MustComplete }.sumOf { it.durationMinutes },
+        )
+        _uiState.value = state.copy(plan = adaptedPlan, originalGoalDoesNotFit = true)
+    }
+
     private fun persistRequest(value: PlanSetupSubmission, id: String) {
         val json = JSONObject()
             .put("documentUri", value.documentUri)
@@ -303,4 +400,19 @@ class PlanGenerationViewModel(application: Application) : AndroidViewModel(appli
         const val KEY_REQUEST_ID = "pending_request_id"
         const val MAX_TRANSIENT_FAILURE_MILLIS = 5 * 60 * 1000L
     }
+}
+
+private fun GeneratedStudyPlan.withScheduledTotal() = copy(
+    totalEstimatedMinutes = blocks.filter { it.disposition == TaskDisposition.MustComplete }.sumOf { it.durationMinutes },
+)
+
+private fun deadlineAfterStudyDays(days: Int, selectedDays: Set<com.hci.ren.feature.pdfupload.presentation.StudyDay>): String {
+    val cursor = Calendar.getInstance()
+    var counted = 0
+    while (counted < days.coerceAtLeast(1)) {
+        val day = com.hci.ren.feature.pdfupload.presentation.StudyDay.entries[(cursor.get(Calendar.DAY_OF_WEEK) + 5) % 7]
+        if (day in selectedDays) counted++
+        if (counted < days) cursor.add(Calendar.DAY_OF_MONTH, 1)
+    }
+    return SimpleDateFormat("yyyy-MM-dd", Locale.US).format(cursor.time)
 }

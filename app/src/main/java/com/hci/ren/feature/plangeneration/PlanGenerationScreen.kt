@@ -635,7 +635,12 @@ private fun PlantIllustration() {
 // region — Plan details screen (unchanged)
 
 @Composable
-fun PlanDetailsScreen(plan: GeneratedStudyPlan, onBack: () -> Unit) {
+fun PlanDetailsScreen(
+    plan: GeneratedStudyPlan,
+    feasibility: FeasibilityResult? = null,
+    originalGoalDoesNotFit: Boolean = false,
+    onBack: () -> Unit,
+) {
     BackHandler(onBack = onBack)
     Surface(
         modifier = Modifier.fillMaxSize(),
@@ -671,7 +676,7 @@ fun PlanDetailsScreen(plan: GeneratedStudyPlan, onBack: () -> Unit) {
                     )
                     Text(
                         text = pluralStringResource(
-                            R.plurals.total_minutes,
+                            R.plurals.scheduled_minutes,
                             plan.totalEstimatedMinutes,
                             plan.totalEstimatedMinutes,
                         ),
@@ -681,6 +686,34 @@ fun PlanDetailsScreen(plan: GeneratedStudyPlan, onBack: () -> Unit) {
                 }
             }
             Spacer(Modifier.height(24.dp))
+
+            if (originalGoalDoesNotFit && feasibility != null) {
+                FeasibilityBanner(
+                    title = stringResource(R.string.reality_check),
+                    message = stringResource(R.string.limited_coverage_message, feasibility.estimatedCoveragePercent),
+                )
+                Spacer(Modifier.height(16.dp))
+            } else if (feasibility?.status == FeasibilityStatus.Intensive) {
+                FeasibilityBanner(
+                    title = stringResource(R.string.intensive_plan),
+                    message = stringResource(
+                        R.string.intensive_plan_context,
+                        formatStudyMinutes(feasibility.totalRequiredMinutes),
+                        formatStudyMinutes(feasibility.availableMinutes),
+                    ),
+                )
+                Spacer(Modifier.height(16.dp))
+            } else if (feasibility != null && !feasibility.hasDeadline) {
+                FeasibilityBanner(
+                    title = stringResource(R.string.your_study_plan),
+                    message = pluralStringResource(
+                        R.plurals.estimated_plan_length,
+                        feasibility.recommendedDaysBalanced,
+                        feasibility.recommendedDaysBalanced,
+                    ),
+                )
+                Spacer(Modifier.height(16.dp))
+            }
             
             Text(
                 text = stringResource(R.string.detected_topics),
@@ -725,26 +758,38 @@ fun PlanDetailsScreen(plan: GeneratedStudyPlan, onBack: () -> Unit) {
             }
             
             Spacer(Modifier.height(28.dp))
-            Text(
-                text = stringResource(R.string.study_blocks),
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onBackground
+            val sections = listOf(
+                Triple(R.string.scheduled_now, plan.blocks.filter { it.disposition == TaskDisposition.MustComplete }, true),
+                Triple(R.string.if_time_remains, plan.blocks.filter { it.disposition == TaskDisposition.IfTimeRemains }, false),
+                Triple(R.string.postponed, plan.blocks.filter { it.disposition == TaskDisposition.Postponed }, false),
             )
-            Spacer(Modifier.height(10.dp))
-            plan.blocks.forEach { block ->
-                Card(
+            sections.forEach { (title, blocks, numbered) ->
+                if (blocks.isNotEmpty()) {
+                    Text(
+                        text = stringResource(title),
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onBackground,
+                    )
+                    Spacer(Modifier.height(10.dp))
+                }
+                blocks.forEachIndexed { index, block ->
+                    Card(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(vertical = 6.dp),
                     shape = RoundedCornerShape(16.dp),
                     colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.surface,
+                        containerColor = if (block.disposition == TaskDisposition.Postponed) {
+                            MaterialTheme.colorScheme.surfaceVariant
+                        } else {
+                            MaterialTheme.colorScheme.surface
+                        },
                     ),
                     border = CardDefaults.outlinedCardBorder(),
                     elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
-                ) {
-                    Column(
+                    ) {
+                        Column(
                         modifier = Modifier.padding(18.dp),
                         verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
@@ -760,18 +805,29 @@ fun PlanDetailsScreen(plan: GeneratedStudyPlan, onBack: () -> Unit) {
                                 fontWeight = FontWeight.Bold,
                                 color = MaterialTheme.colorScheme.onSurface
                             )
-                            Spacer(Modifier.width(8.dp))
+                            if (numbered) {
+                                Spacer(Modifier.width(8.dp))
+                                Text(
+                                    text = "Block ${index + 1}",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                    fontWeight = FontWeight.Bold,
+                                    modifier = Modifier
+                                        .background(
+                                            color = MaterialTheme.colorScheme.primaryContainer,
+                                            shape = RoundedCornerShape(50)
+                                        )
+                                        .padding(horizontal = 8.dp, vertical = 4.dp)
+                                )
+                            }
+                        }
+
+                        if (block.disposition == TaskDisposition.MustComplete) {
                             Text(
-                                text = "Block ${block.order}",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onPrimaryContainer,
-                                fontWeight = FontWeight.Bold,
-                                modifier = Modifier
-                                    .background(
-                                        color = MaterialTheme.colorScheme.primaryContainer,
-                                        shape = RoundedCornerShape(50)
-                                    )
-                                    .padding(horizontal = 8.dp, vertical = 4.dp)
+                                text = stringResource(R.string.must_complete),
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.primary,
+                                fontWeight = FontWeight.SemiBold,
                             )
                         }
                         
@@ -806,18 +862,19 @@ fun PlanDetailsScreen(plan: GeneratedStudyPlan, onBack: () -> Unit) {
                         val associatedTopics = plan.topics.filter { it.id in block.topicIds }
                         if (associatedTopics.isNotEmpty()) {
                             Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .horizontalScroll(rememberScrollState()),
+                                modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.spacedBy(6.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                associatedTopics.forEach { topic ->
+                                associatedTopics.take(2).forEach { topic ->
                                     Text(
                                         text = topic.title,
                                         style = MaterialTheme.typography.labelSmall,
                                         color = MaterialTheme.colorScheme.onSecondaryContainer,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
                                         modifier = Modifier
+                                            .widthIn(max = 120.dp)
                                             .background(
                                                 color = MaterialTheme.colorScheme.secondaryContainer,
                                                 shape = RoundedCornerShape(6.dp)
@@ -825,13 +882,50 @@ fun PlanDetailsScreen(plan: GeneratedStudyPlan, onBack: () -> Unit) {
                                             .padding(horizontal = 8.dp, vertical = 4.dp)
                                     )
                                 }
+                                if (associatedTopics.size > 2) {
+                                    Text(
+                                        text = pluralStringResource(
+                                            R.plurals.more_topics,
+                                            associatedTopics.size - 2,
+                                            associatedTopics.size - 2,
+                                        ),
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSecondaryContainer,
+                                    )
+                                }
                             }
+                        }
                         }
                     }
                 }
             }
         }
     }
+}
+
+@Composable
+fun PlanDetailsScreen(plan: GeneratedStudyPlan, onBack: () -> Unit) {
+    PlanDetailsScreen(plan = plan, feasibility = null, originalGoalDoesNotFit = false, onBack = onBack)
+}
+
+@Composable
+private fun FeasibilityBanner(title: String, message: String) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer),
+        shape = RoundedCornerShape(16.dp),
+    ) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            Text(message, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSecondaryContainer)
+        }
+    }
+}
+
+private fun formatStudyMinutes(minutes: Int): String = when {
+    minutes < 60 -> "$minutes min"
+    minutes % 60 == 0 -> "${minutes / 60} hr"
+    else -> "${minutes / 60} hr ${minutes % 60} min"
 }
 
 // endregion

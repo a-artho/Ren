@@ -38,13 +38,15 @@ Home
   -> POST setup /plans
   -> poll /plans/{id}/status
   -> GET /plans/{id}
+  -> deterministic feasibility check
+  -> Reality Check when the workload is unrealistic
   -> plan details
 ```
 
-`MainActivity.kt` owns the five-screen state machine:
+`MainActivity.kt` owns the six-screen state machine:
 
 ```text
-home -> pdf_upload -> pdf_setup -> plan_processing -> plan_details
+home -> pdf_upload -> pdf_setup -> plan_processing -> reality_check? -> plan_details
 ```
 
 Navigation uses `rememberSaveable`, `AnimatedContent`, and `RenMotion`. It does
@@ -83,6 +85,7 @@ local recovery state and attempts backend cancellation.
 | Setup questions/validation/persistence | `PlanSetupUiState.kt`, `PlanSetupViewModel.kt`, `PlanSetupScreen.kt` | `PlanSetupUiStateTest`, `PlanSetupScreenTest` |
 | Upload/create/poll/cancel HTTP contract | Android `PlanApiRepository.kt`; backend `main.py`, `models.py` | `PlanGenerationModelsTest`; `test_api.py` |
 | Generation recovery/retry/progress | `PlanGenerationViewModel.kt`, `PlanGenerationModels.kt` | `PlanGenerationModelsTest`, `PlanGenerationScreenTest` |
+| Feasibility, emergency adaptation, Reality Check | `StudyPlanFeasibilityChecker.kt`, `RealityCheckScreen.kt`, generation ViewModel/models | `StudyPlanFeasibilityCheckerTest`; compile Compose tests |
 | Generated-plan validation | backend `models.py`, `provider.py`; Android generation models | `test_models.py`, `test_provider.py` |
 | Job lifecycle, cleanup, restart | backend `main.py`, `store.py` | `test_processing.py`, `test_store.py`, `test_api.py` |
 | Colors/type/dark theme | `ui/theme/Color.kt`, `Theme.kt`, `Type.kt` | affected screen tests; visual check |
@@ -138,6 +141,24 @@ Wire status mapping is in `PlanGenerationModels.kt`. Android presents backend
 `CANCELED` as a failed/terminal visible state; cancellation normally follows a
 user exit and local reset.
 
+After a completed plan is fetched, `StudyPlanFeasibilityChecker` deterministically
+compares buffered task estimates with selected weekdays, deadline, and daily
+minutes. It classifies the result as realistic, intensive, or unrealistic. An
+unrealistic result routes through `RealityCheckScreen`; intensive plans use a
+banner on the existing details screen with estimated and available time.
+`StudyPlanAdapter` fits active work within the available-minute budget without
+going below task minimums; overflow is labelled if-time-remains or postponed and
+does not count toward the scheduled total. Plan details render those dispositions
+as separate sections and number only active blocks.
+
+Reality Check actions reuse the fetched task list. Deadline changes are selected
+inline as balanced, intensive, or custom options and do not repeat setup or AI
+analysis. `StudyPlanScopeAdjuster` deterministically applies pass-exam,
+revision-only, fundamentals, skim-everything, selected-topic, and complete-all
+strategies before feasibility is checked again. The intensive deadline option
+uses 1.5 times the normal daily capacity for that recalculation without replacing
+the user's saved normal daily-time answer.
+
 ## Backend contract
 
 | Method | Endpoint | Meaning |
@@ -148,8 +169,10 @@ user exit and local reset.
 | `GET` | `/plans/{id}/status` | returns status and internal error field |
 | `GET` | `/plans/{id}` | returns completed topics, blocks, and total minutes |
 
-The backend validates content type, `%PDF-` header, size, referenced IDs, and
-contiguous topic/block ordering. SQLite stores documents and plan jobs. Both
+The backend validates content type, `%PDF-` header, size, referenced IDs,
+contiguous topic/block ordering, and that estimated durations meet task-type
+minimums. Generated blocks include task type, priority, priority rationale,
+minimum useful minutes, and emergency skip eligibility. SQLite stores documents and plan jobs. Both
 document upload and plan creation are idempotent by request ID. Processing tries
 the AI provider twice, persists status changes, and removes the PDF after any
 terminal outcome. Startup removes old unclaimed uploads and resumes pending jobs.

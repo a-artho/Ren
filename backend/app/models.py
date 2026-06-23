@@ -44,8 +44,22 @@ class StudyBlock(BaseModel):
     title: str = Field(min_length=1)
     order: int = Field(ge=1)
     durationMinutes: int = Field(gt=0, le=1440)
+    minimumUsefulMinutes: int = Field(default=10, gt=0, le=1440)
+    priority: str = Field(default="MEDIUM", pattern="^(HIGH|MEDIUM|LOW)$")
+    taskType: str = Field(default="REVIEW", pattern="^(LEARN|PRACTICE|REVIEW|QUIZ|MOCK_EXAM|SKIM)$")
+    priorityReason: str = Field(default="Supports the study goal", min_length=1)
+    isSkippable: bool = True
     instructions: str = Field(min_length=1)
     topicIds: list[str] = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def validate_useful_duration(self):
+        minimums = {"LEARN": 20, "PRACTICE": 15, "REVIEW": 10, "QUIZ": 10, "MOCK_EXAM": 30, "SKIM": 5}
+        if self.durationMinutes < self.minimumUsefulMinutes:
+            raise ValueError("Duration cannot be below the minimum useful duration")
+        if self.minimumUsefulMinutes < minimums[self.taskType]:
+            raise ValueError("Minimum useful duration is too short for this task type")
+        return self
 
 
 class GeneratedPlan(BaseModel):

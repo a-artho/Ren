@@ -33,6 +33,10 @@ internal fun isRetryableStatusCode(code: Int): Boolean =
     code == 408 || code == 429 || code >= 500
 
 data class StudyTopic(val id: String, val title: String, val order: Int)
+enum class TaskPriority { High, Medium, Low }
+enum class StudyTaskType(val defaultMinimumMinutes: Int) { Learn(20), Practice(15), Review(10), Quiz(10), MockExam(30), Skim(5) }
+enum class TaskDisposition { MustComplete, IfTimeRemains, Postponed }
+enum class StudyScopeGoal { PassExam, ReviseOnly, Fundamentals, SkimEverything, SelectedTopics, CompleteEverything }
 data class GeneratedStudyBlock(
     val id: String,
     val title: String,
@@ -40,6 +44,12 @@ data class GeneratedStudyBlock(
     val durationMinutes: Int,
     val instructions: String,
     val topicIds: List<String>,
+    val minimumUsefulMinutes: Int = 10,
+    val priority: TaskPriority = TaskPriority.Medium,
+    val taskType: StudyTaskType = StudyTaskType.Review,
+    val priorityReason: String = "Supports the study goal",
+    val isSkippable: Boolean = true,
+    val disposition: TaskDisposition = TaskDisposition.MustComplete,
 )
 data class GeneratedStudyPlan(
     val id: String,
@@ -52,6 +62,8 @@ data class PlanGenerationUiState(
     val status: PlanStatus = PlanStatus.Uploading,
     val planId: String? = null,
     val plan: GeneratedStudyPlan? = null,
+    val feasibility: FeasibilityResult? = null,
+    val originalGoalDoesNotFit: Boolean = false,
     val errorMessage: String? = null,
 )
 

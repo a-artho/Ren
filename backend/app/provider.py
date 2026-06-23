@@ -33,11 +33,17 @@ GEMINI_PLAN_SCHEMA = {
                     "title": {"type": "string"},
                     "order": {"type": "integer"},
                     "durationMinutes": {"type": "integer"},
+                    "minimumUsefulMinutes": {"type": "integer"},
+                    "priority": {"type": "string", "enum": ["HIGH", "MEDIUM", "LOW"]},
+                    "taskType": {"type": "string", "enum": ["LEARN", "PRACTICE", "REVIEW", "QUIZ", "MOCK_EXAM", "SKIM"]},
+                    "priorityReason": {"type": "string"},
+                    "isSkippable": {"type": "boolean"},
                     "instructions": {"type": "string"},
                     "topicIds": {"type": "array", "items": {"type": "string"}},
                 },
                 "required": [
-                    "id", "title", "order", "durationMinutes", "instructions", "topicIds",
+                    "id", "title", "order", "durationMinutes", "minimumUsefulMinutes",
+                    "priority", "taskType", "priorityReason", "isSkippable", "instructions", "topicIds",
                 ],
             },
         },
@@ -63,7 +69,11 @@ class GeminiProvider(AIProvider):
             "Create a faithful study plan from this PDF. Use only material in the document. "
             "Return JSON matching the supplied schema. Topics and blocks must use contiguous "
             "1-based order. Each block must reference valid topic IDs. Keep instructions short "
-            f"and actionable. Learner setup: {setup.model_dump_json()}"
+            "and actionable. Estimate honest task durations without compressing work to fit the deadline. "
+            "For every block include its task type, HIGH/MEDIUM/LOW priority, a short priority reason, "
+            "whether it can be skipped in an emergency, and a minimum useful duration. Minimums are "
+            "LEARN 20, PRACTICE 15, REVIEW 10, QUIZ 10, MOCK_EXAM 30 (or its actual duration), and SKIM 5 minutes. "
+            f"Learner setup: {setup.model_dump_json()}"
         )
         response = await self.client.aio.models.generate_content(
             model=self.model,

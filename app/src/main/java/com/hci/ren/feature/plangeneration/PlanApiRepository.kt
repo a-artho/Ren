@@ -69,6 +69,11 @@ class PlanApiRepository(
                 it.getString("id"), it.getString("title"), it.getInt("order"),
                 it.getInt("durationMinutes"), it.getString("instructions"),
                 it.getJSONArray("topicIds").strings(),
+                it.optInt("minimumUsefulMinutes", 10),
+                it.optString("priority", "MEDIUM").toTaskPriority(),
+                it.optString("taskType", "REVIEW").toStudyTaskType(),
+                it.optString("priorityReason", "Supports the study goal"),
+                it.optBoolean("isSkippable", true),
             )
         }.sortedBy { it.order }
         return GeneratedStudyPlan(planId, topics, blocks, json.getInt("totalEstimatedMinutes"))
@@ -121,4 +126,8 @@ internal class PlanApiException(
 
 private fun JSONArray.objects() = (0 until length()).map { getJSONObject(it) }
 private fun JSONArray.strings() = (0 until length()).map { getString(it) }
+private fun String.toTaskPriority() = runCatching { TaskPriority.valueOf(lowercase().replaceFirstChar(Char::uppercase)) }.getOrDefault(TaskPriority.Medium)
+private fun String.toStudyTaskType() = runCatching {
+    StudyTaskType.valueOf(lowercase().split('_').joinToString("") { it.replaceFirstChar(Char::uppercase) })
+}.getOrDefault(StudyTaskType.Review)
 
