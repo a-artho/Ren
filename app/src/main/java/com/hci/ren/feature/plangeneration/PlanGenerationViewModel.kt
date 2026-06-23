@@ -442,7 +442,9 @@ class PlanGenerationViewModel(application: Application) : AndroidViewModel(appli
     fun extendDeadline(studyDays: Int, intensive: Boolean = false): FeasibilityStatus? {
         val current = submission ?: return null
         val dailyMinutes = if (intensive) (current.dailyStudyMinutes * 1.5).toInt() else current.dailyStudyMinutes
-        return updateDeadline(deadlineAfterStudyDays(studyDays, current.studyDays), dailyMinutes.takeIf { intensive })
+        val result = updateDeadline(deadlineAfterStudyDays(studyDays, current.studyDays), dailyMinutes.takeIf { intensive })
+        _uiState.value = _uiState.value.copy(changeMessage = getApplication<Application>().getString(R.string.deadline_updated_message))
+        return result
     }
 
     fun extendDeadlineTo(epochMillis: Long): FeasibilityStatus? {
