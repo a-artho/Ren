@@ -1,13 +1,19 @@
 package com.hci.ren.feature.plangeneration
 
 import android.app.Application
+import android.provider.OpenableColumns
 import android.util.Log
 import android.os.SystemClock
 import androidx.core.content.edit
 import androidx.core.net.toUri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.hci.ren.R
 import com.hci.ren.feature.pdfupload.presentation.PlanSetupSubmission
+import com.hci.ren.feature.pdfupload.presentation.StudyDeadline
+import com.hci.ren.feature.studymap.PlanAdjustmentService
+import com.hci.ren.feature.studymap.ScopeReduction
+import com.hci.ren.feature.studymap.dayOnly
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
@@ -40,6 +46,7 @@ class PlanGenerationViewModel(application: Application) : AndroidViewModel(appli
     private val feasibilityChecker = StudyPlanFeasibilityChecker()
     private val planAdapter = StudyPlanAdapter()
     private val scopeAdjuster = StudyPlanScopeAdjuster()
+    private val adjustmentService = PlanAdjustmentService()
     private var sourcePlan: GeneratedStudyPlan? = null
     private var scheduleDailyMinutesOverride: Int? = null
 
@@ -230,7 +237,10 @@ class PlanGenerationViewModel(application: Application) : AndroidViewModel(appli
                     firstTransientFailureAt = null
                     when (status) {
                         PlanStatus.Completed -> {
-                            fetchedPlan = withContext(Dispatchers.IO) { repository.plan(planId) }
+                            fetchedPlan = withContext(Dispatchers.IO) {
+                                val fetched = repository.plan(planId).copy(projectName = resolveProjectName())
+                                restoreStudyMapPlan(fetched) ?: fetched
+                            }
                             backendStatus.value = PlanStatus.Completed
                             return
                         }
@@ -284,7 +294,133 @@ class PlanGenerationViewModel(application: Application) : AndroidViewModel(appli
 
     fun prioritiseMostImportant() = adaptCompletedPlan(prioritised = true)
 
-    fun continueAnyway() = adaptCompletedPlan(prioritised = false)
+    fun continueAnyway() {
+        val plan = _uiState.value.plan ?: return
+        _uiState.value = _uiState.value.copy(
+            plan = plan,
+            acceptedTightPlan = true,
+            originalGoalDoesNotFit = true,
+            changeMessage = getApplication<Application>().getString(R.string.plan_kept_message),
+        )
+        persistStudyMapState()
+    }
+
+    fun currentSubmission(): PlanSetupSubmission? = submission
+
+    fun suggestedDeadline(): String? {
+        val plan = _uiState.value.plan ?: return null
+        val current = submission ?: return null
+        return adjustmentService.suggestedDeadline(
+            plan.blocks,
+            current,
+            dailyMinutesOverride = scheduleDailyMinutesOverride,
+        )
+    }
+
+    fun applyDeadline(date: String) {
+        val parsed = runCatching {
+            SimpleDateFormat("yyyy-MM-dd", Locale.US).apply {
+                isLenient = false
+                timeZone = TimeZone.getTimeZone("UTC")
+            }.parse(date)
+        }.getOrNull() ?: return
+        extendDeadlineTo(parsed.time)
+        _uiState.value = _uiState.value.copy(changeMessage = getApplication<Application>().getString(R.string.deadline_updated_message))
+        persistStudyMapState()
+    }
+
+    fun increaseDailyTime(minutes: Int) {
+        val plan = _uiState.value.plan ?: return
+        val current = submission ?: return
+        val updatedMinutes = minutes.coerceIn(1, 1_440)
+        scheduleDailyMinutesOverride = updatedMinutes
+        val result = feasibilityChecker.check(plan.blocks.filter(::isRequiredStudyMapTask), current, dailyMinutesOverride = updatedMinutes)
+        _uiState.value = _uiState.value.copy(
+            feasibility = result,
+            dailyStudyMinutesOverride = updatedMinutes,
+            changeMessage = getApplication<Application>().getString(R.string.daily_time_updated_message),
+        )
+        persistStudyMapState()
+    }
+
+    fun reduceScope(strategy: ScopeReduction, selectedTopicIds: Set<String> = emptySet()) {
+        val plan = _uiState.value.plan ?: return
+        val current = submission ?: return
+        val adjusted = adjustmentService.applyScope(plan.blocks, strategy, selectedTopicIds)
+        val changed = adjusted.zip(plan.blocks).count { (after, before) -> after != before }
+        val updatedPlan = plan.copy(
+            blocks = adjusted,
+            totalEstimatedMinutes = adjusted.filter(::isRequiredStudyMapTask).sumOf { it.durationMinutes },
+        )
+        val result = feasibilityChecker.check(
+            adjusted.filter(::isRequiredStudyMapTask),
+            current,
+            dailyMinutesOverride = scheduleDailyMinutesOverride,
+        )
+        _uiState.value = _uiState.value.copy(
+            plan = updatedPlan,
+            feasibility = result,
+            originalGoalDoesNotFit = false,
+            changeMessage = when (strategy) {
+                ScopeReduction.ReducePractice -> getApplication<Application>().resources.getQuantityString(R.plurals.practice_tasks_shortened, changed, changed)
+                else -> getApplication<Application>().resources.getQuantityString(R.plurals.tasks_moved_optional, changed, changed)
+            },
+        )
+        persistStudyMapState()
+    }
+
+    fun updateTaskStatus(taskId: String, status: StudyTaskStatus) {
+        updatePlanTask(taskId) { task ->
+            val unresolvedDependency = task.dependencies.any { dependency ->
+                _uiState.value.plan?.blocks?.firstOrNull { it.id == dependency }?.status != StudyTaskStatus.Completed
+            }
+            if (
+                status == StudyTaskStatus.InProgress &&
+                (unresolvedDependency || task.status == StudyTaskStatus.Locked && task.dependencies.isEmpty())
+            ) task else task.copy(status = status)
+        }
+    }
+
+    fun updateTaskDuration(taskId: String, minutes: Int) {
+        updatePlanTask(taskId) { it.copy(durationMinutes = minutes.coerceIn(1, 1_440)) }
+    }
+
+    fun excludeTask(taskId: String) {
+        updatePlanTask(taskId) {
+            it.copy(
+                isOptional = true,
+                isExcluded = false,
+                disposition = TaskDisposition.IfTimeRemains,
+                status = StudyTaskStatus.Optional,
+                scheduledDate = null,
+            )
+        }
+    }
+
+    fun restoreTask(taskId: String) {
+        updatePlanTask(taskId) {
+            it.copy(
+                isOptional = false,
+                isExcluded = false,
+                disposition = TaskDisposition.MustComplete,
+                status = StudyTaskStatus.NotStarted,
+            )
+        }
+    }
+
+    fun consumeChangeMessage() {
+        if (_uiState.value.changeMessage != null) _uiState.value = _uiState.value.copy(changeMessage = null)
+    }
+
+    private fun updatePlanTask(taskId: String, transform: (GeneratedStudyBlock) -> GeneratedStudyBlock) {
+        val plan = _uiState.value.plan ?: return
+        val updated = plan.copy(blocks = plan.blocks.map { if (it.id == taskId) transform(it) else it })
+        _uiState.value = _uiState.value.copy(
+            plan = updated.copy(totalEstimatedMinutes = updated.blocks.filter(::isRequiredStudyMapTask).sumOf { it.durationMinutes }),
+            changeMessage = getApplication<Application>().getString(R.string.study_map_updated_message),
+        )
+        persistStudyMapState()
+    }
 
     fun reduceGoal(goal: StudyScopeGoal): FeasibilityStatus? = applyScope(goal)
 
@@ -313,8 +449,10 @@ class PlanGenerationViewModel(application: Application) : AndroidViewModel(appli
         submission = updated
         scheduleDailyMinutesOverride = effectiveDailyMinutes
         requestId?.let { persistRequest(updated, it) }
-        val result = feasibilityChecker.check(plan.blocks, updated, dailyMinutesOverride = effectiveDailyMinutes)
+        val result = feasibilityChecker.check(plan.blocks.filter(::isRequiredStudyMapTask), updated, dailyMinutesOverride = effectiveDailyMinutes)
         _uiState.value = _uiState.value.copy(feasibility = result, originalGoalDoesNotFit = false)
+        _uiState.value = _uiState.value.copy(dailyStudyMinutesOverride = scheduleDailyMinutesOverride)
+        persistStudyMapState()
         return result.status
     }
 
@@ -373,6 +511,64 @@ class PlanGenerationViewModel(application: Application) : AndroidViewModel(appli
         }
     }
 
+    private fun resolveProjectName(): String {
+        val fallback = getApplication<Application>().getString(R.string.study_plan_default)
+        val uri = submission?.documentUri?.toUri() ?: return fallback
+        return runCatching {
+            getApplication<Application>().contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
+                if (cursor.moveToFirst()) cursor.getString(0).substringBeforeLast('.').ifBlank { fallback } else fallback
+            } ?: fallback
+        }.getOrDefault(fallback)
+    }
+
+    private fun persistStudyMapState() {
+        val plan = _uiState.value.plan ?: return
+        val json = JSONObject()
+            .put("planId", plan.id)
+            .put("projectName", plan.projectName)
+            .put("dailyMinutesOverride", scheduleDailyMinutesOverride)
+            .put("acceptedTightPlan", _uiState.value.acceptedTightPlan)
+            .put("blocks", JSONArray(plan.blocks.map { block ->
+                JSONObject()
+                    .put("id", block.id)
+                    .put("durationMinutes", block.durationMinutes)
+                    .put("status", block.status.name)
+                    .put("scheduledDate", block.scheduledDate)
+                    .put("isOptional", block.isOptional)
+                    .put("isExcluded", block.isExcluded)
+                    .put("disposition", block.disposition.name)
+            }))
+        preferences.edit { putString(KEY_STUDY_MAP_STATE, json.toString()) }
+    }
+
+    private fun restoreStudyMapPlan(fetched: GeneratedStudyPlan): GeneratedStudyPlan? = runCatching {
+        val json = JSONObject(preferences.getString(KEY_STUDY_MAP_STATE, null) ?: return null)
+        if (json.optString("planId") != fetched.id) return null
+        scheduleDailyMinutesOverride = json.optInt("dailyMinutesOverride").takeIf { it > 0 }
+        val savedBlocks = json.getJSONArray("blocks").objectsById()
+        val restoredBlocks = fetched.blocks.map { block ->
+            val saved = savedBlocks[block.id] ?: return@map block
+            block.copy(
+                durationMinutes = saved.optInt("durationMinutes", block.durationMinutes).coerceAtLeast(1),
+                status = saved.optString("status").toTaskStatus(block.status),
+                scheduledDate = saved.optString("scheduledDate").takeUnless { it.isBlank() || it == "null" },
+                isOptional = saved.optBoolean("isOptional", block.isOptional),
+                isExcluded = saved.optBoolean("isExcluded", block.isExcluded),
+                disposition = saved.optString("disposition").toDisposition(block.disposition),
+            )
+        }
+        fetched.copy(
+            blocks = restoredBlocks,
+            totalEstimatedMinutes = restoredBlocks.filter(::isRequiredStudyMapTask).sumOf { it.durationMinutes },
+            projectName = json.optString("projectName", fetched.projectName),
+        ).also {
+            _uiState.value = _uiState.value.copy(
+                dailyStudyMinutesOverride = scheduleDailyMinutesOverride,
+                acceptedTightPlan = json.optBoolean("acceptedTightPlan"),
+            )
+        }
+    }.onFailure { Log.w("PlanGeneration", "Discarding invalid Study Map state", it) }.getOrNull()
+
     private fun restoreSubmission(): PlanSetupSubmission? = runCatching {
         val json = JSONObject(preferences.getString(KEY_SUBMISSION, null) ?: return null)
         PlanSetupSubmission(
@@ -398,6 +594,7 @@ class PlanGenerationViewModel(application: Application) : AndroidViewModel(appli
         const val KEY_PLAN_ID = "pending_plan_id"
         const val KEY_SUBMISSION = "pending_submission"
         const val KEY_REQUEST_ID = "pending_request_id"
+        const val KEY_STUDY_MAP_STATE = "study_map_state"
         const val MAX_TRANSIENT_FAILURE_MILLIS = 5 * 60 * 1000L
     }
 }
@@ -407,7 +604,7 @@ private fun GeneratedStudyPlan.withScheduledTotal() = copy(
 )
 
 private fun deadlineAfterStudyDays(days: Int, selectedDays: Set<com.hci.ren.feature.pdfupload.presentation.StudyDay>): String {
-    val cursor = Calendar.getInstance()
+    val cursor = dayOnly(Calendar.getInstance())
     var counted = 0
     while (counted < days.coerceAtLeast(1)) {
         val day = com.hci.ren.feature.pdfupload.presentation.StudyDay.entries[(cursor.get(Calendar.DAY_OF_WEEK) + 5) % 7]
@@ -416,3 +613,19 @@ private fun deadlineAfterStudyDays(days: Int, selectedDays: Set<com.hci.ren.feat
     }
     return SimpleDateFormat("yyyy-MM-dd", Locale.US).format(cursor.time)
 }
+
+private fun JSONArray.objectsById(): Map<String, JSONObject> = buildMap {
+    repeat(length()) {
+        val value = getJSONObject(it)
+        put(value.getString("id"), value)
+    }
+}
+
+private fun String.toTaskStatus(default: StudyTaskStatus): StudyTaskStatus =
+    runCatching { StudyTaskStatus.valueOf(this) }.getOrDefault(default)
+
+private fun String.toDisposition(default: TaskDisposition): TaskDisposition =
+    runCatching { TaskDisposition.valueOf(this) }.getOrDefault(default)
+
+private fun isRequiredStudyMapTask(task: GeneratedStudyBlock): Boolean =
+    !task.isExcluded && !task.isOptional && task.disposition == TaskDisposition.MustComplete

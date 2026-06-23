@@ -188,7 +188,7 @@ private fun HomeNavigationBar(
     onAction: (HomeAction) -> Unit,
 ) {
     NavigationBar {
-        HomeDestination.entries.forEach { destination ->
+        listOf(HomeDestination.Home, HomeDestination.StudyMap, HomeDestination.Insights).forEach { destination ->
             NavigationBarItem(
                 selected = destination == HomeDestination.Home,
                 onClick = {

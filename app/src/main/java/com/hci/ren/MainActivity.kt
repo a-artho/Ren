@@ -23,11 +23,9 @@ import com.hci.ren.feature.pdfupload.presentation.PlanSetupRoute
 import com.hci.ren.feature.pdfupload.presentation.PlanSetupViewModel
 import com.hci.ren.feature.pdfupload.presentation.PdfUploadRoute
 import com.hci.ren.feature.pdfupload.presentation.PdfUploadViewModel
-import com.hci.ren.feature.plangeneration.PlanDetailsScreen
 import com.hci.ren.feature.plangeneration.PlanGenerationScreen
 import com.hci.ren.feature.plangeneration.PlanGenerationViewModel
-import com.hci.ren.feature.plangeneration.FeasibilityStatus
-import com.hci.ren.feature.plangeneration.RealityCheckScreen
+import com.hci.ren.feature.studymap.StudyMapScreen
 import com.hci.ren.ui.theme.RenTheme
 import com.hci.ren.ui.motion.isReducedMotionEnabled
 import com.hci.ren.ui.motion.renScreenTransform
@@ -51,10 +49,7 @@ class MainActivity : ComponentActivity() {
                 LaunchedEffect(generationState.planId, generationState.plan, generationState.feasibility, generationState.originalGoalDoesNotFit) {
                     if (generationState.plan != null) {
                         forward = true
-                        screen = if (
-                            generationState.feasibility?.status == FeasibilityStatus.Unrealistic &&
-                            !generationState.originalGoalDoesNotFit
-                        ) ScreenRealityCheck else ScreenPlanDetails
+                        screen = ScreenStudyMap
                     } else if (generationState.planId != null && screen == ScreenHome) {
                         forward = true
                         screen = ScreenPlanProcessing
@@ -74,6 +69,12 @@ class MainActivity : ComponentActivity() {
                     ) { currentScreen ->
                         when (currentScreen) {
                     ScreenHome -> HomeRoute(
+                        onStudyMap = {
+                            if (!transition.isRunning) {
+                                forward = true
+                                screen = ScreenStudyMap
+                            }
+                        },
                         onUploadPdf = {
                             if (!transition.isRunning) {
                                 forward = true
@@ -134,94 +135,45 @@ class MainActivity : ComponentActivity() {
                             if (!transition.isRunning) {
                                 forward = false
                                 planGenerationViewModel.reset()
-                                screen = ScreenHome
+                                screen = ScreenPdfSetup
                             }
                         },
                         onRetry = planGenerationViewModel::retry,
                     )
 
-                    ScreenRealityCheck -> {
-                        val result = generationState.feasibility
-                        if (result == null) {
-                            PlanGenerationScreen(generationState, onBack = {
-                                planGenerationViewModel.reset(); screen = ScreenHome
-                            }, onRetry = planGenerationViewModel::retry)
-                        } else {
-                            RealityCheckScreen(
-                                result = result,
-                                topics = generationState.plan?.topics.orEmpty(),
-                                onPrioritise = {
-                                    planGenerationViewModel.prioritiseMostImportant()
-                                    forward = true
-                                    screen = ScreenPlanDetails
-                                },
-                                onExtendDeadline = { days, intensive ->
-                                    if (planGenerationViewModel.extendDeadline(days, intensive) != FeasibilityStatus.Unrealistic) {
-                                        forward = true
-                                        screen = ScreenPlanDetails
-                                    }
-                                },
-                                onCustomDeadline = { epochMillis ->
-                                    if (planGenerationViewModel.extendDeadlineTo(epochMillis) != FeasibilityStatus.Unrealistic) {
-                                        forward = true
-                                        screen = ScreenPlanDetails
-                                    }
-                                },
-                                onReduceGoal = { goal ->
-                                    if (planGenerationViewModel.reduceGoal(goal) != FeasibilityStatus.Unrealistic) {
-                                        forward = true
-                                        screen = ScreenPlanDetails
-                                    }
-                                },
-                                onFocusTopics = { topicIds ->
-                                    if (planGenerationViewModel.focusOnTopics(topicIds) != FeasibilityStatus.Unrealistic) {
-                                        forward = true
-                                        screen = ScreenPlanDetails
-                                    }
-                                },
-                                onContinueAnyway = {
-                                    planGenerationViewModel.continueAnyway()
-                                    forward = true
-                                    screen = ScreenPlanDetails
-                                },
-                                onBack = {
-                                    planGenerationViewModel.reset()
-                                    forward = false
-                                    screen = ScreenPdfSetup
-                                },
-                            )
-                        }
-                    }
-
-                    ScreenPlanDetails -> {
-                        val plan = generationState.plan
-                        if (plan == null) {
-                            PlanGenerationScreen(
-                                state = generationState,
-                                onBack = {
-                                    if (!transition.isRunning) {
-                                        forward = false
-                                        planGenerationViewModel.reset()
-                                        screen = ScreenHome
-                                    }
-                                },
-                                onRetry = planGenerationViewModel::retry,
-                            )
-                        } else {
-                            PlanDetailsScreen(
-                                plan = plan,
-                                feasibility = generationState.feasibility,
-                                originalGoalDoesNotFit = generationState.originalGoalDoesNotFit,
-                                onBack = {
-                                    if (!transition.isRunning) {
-                                        forward = false
-                                        planGenerationViewModel.reset()
-                                        screen = ScreenHome
-                                    }
-                                },
-                            )
-                        }
-                    }
+                    ScreenStudyMap -> StudyMapScreen(
+                        plan = generationState.plan,
+                        preferences = planGenerationViewModel.currentSubmission(),
+                        dailyMinutesOverride = generationState.dailyStudyMinutesOverride,
+                        acceptedTightPlan = generationState.acceptedTightPlan,
+                        changeMessage = generationState.changeMessage,
+                        suggestedDeadline = planGenerationViewModel.suggestedDeadline(),
+                        onHome = {
+                            if (!transition.isRunning) {
+                                forward = false
+                                screen = ScreenHome
+                            }
+                        },
+                        onCreateProject = {
+                            if (!transition.isRunning) {
+                                forward = true
+                                pdfUploadViewModel.beginNewSession()
+                                setupStartedForUploadSession = false
+                                openPickerOnStart = true
+                                screen = ScreenPdfUpload
+                            }
+                        },
+                        onInsights = {},
+                        onConsumeMessage = planGenerationViewModel::consumeChangeMessage,
+                        onApplyDeadline = planGenerationViewModel::applyDeadline,
+                        onIncreaseDailyTime = planGenerationViewModel::increaseDailyTime,
+                        onReduceScope = planGenerationViewModel::reduceScope,
+                        onContinueAnyway = planGenerationViewModel::continueAnyway,
+                        onTaskStatusChange = planGenerationViewModel::updateTaskStatus,
+                        onTaskDurationChange = planGenerationViewModel::updateTaskDuration,
+                        onExcludeTask = planGenerationViewModel::excludeTask,
+                        onRestoreTask = planGenerationViewModel::restoreTask,
+                    )
                         }
                     }
                 }
@@ -234,5 +186,4 @@ private const val ScreenHome = "home"
 private const val ScreenPdfUpload = "pdf_upload"
 private const val ScreenPdfSetup = "pdf_setup"
 private const val ScreenPlanProcessing = "plan_processing"
-private const val ScreenRealityCheck = "reality_check"
-private const val ScreenPlanDetails = "plan_details"
+private const val ScreenStudyMap = "study_map"

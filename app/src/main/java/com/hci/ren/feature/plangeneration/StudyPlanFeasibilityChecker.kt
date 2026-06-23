@@ -1,11 +1,10 @@
 package com.hci.ren.feature.plangeneration
 
 import com.hci.ren.feature.pdfupload.presentation.PlanSetupSubmission
-import com.hci.ren.feature.pdfupload.presentation.StudyDay
 import com.hci.ren.feature.pdfupload.presentation.StudyDeadline
 import com.hci.ren.feature.pdfupload.presentation.StudyGoal
+import com.hci.ren.feature.studymap.availableStudyDates
 import java.util.Calendar
-import java.util.GregorianCalendar
 import kotlin.math.ceil
 import kotlin.math.roundToInt
 
@@ -36,7 +35,7 @@ class StudyPlanFeasibilityChecker {
         val baseMinutes = tasks.sumOf { it.durationMinutes.coerceAtLeast(it.minimumUsefulMinutes) }
         val required = (baseMinutes * (100 + preferences.goal.bufferPercent) + 99) / 100
         val hasDeadline = preferences.deadline != StudyDeadline.NoFixedDeadline
-        val availableStudyDays = if (hasDeadline) countAvailableDays(preferences, today) else 0
+        val availableStudyDays = if (hasDeadline) availableStudyDates(preferences, today).size else 0
         val dailyMinutes = dailyMinutesOverride ?: preferences.dailyStudyMinutes
         val available = if (hasDeadline) availableStudyDays * dailyMinutes else required
         val availableMinutesPerStudyDay = if (availableStudyDays > 0) {
@@ -63,26 +62,6 @@ class StudyPlanFeasibilityChecker {
             hasDeadline, if (status == FeasibilityStatus.Unrealistic) RealityCheckAction.entries else emptyList())
     }
 
-    private fun countAvailableDays(preferences: PlanSetupSubmission, today: Calendar): Int {
-        val end = deadlineDate(preferences, today) ?: return 0
-        val cursor = dayOnly(today)
-        if (end.before(cursor)) return 0
-        var count = 0
-        while (!cursor.after(end)) {
-            if (cursor.studyDay in preferences.studyDays) count++
-            cursor.add(Calendar.DAY_OF_MONTH, 1)
-        }
-        return count
-    }
-
-    private fun deadlineDate(preferences: PlanSetupSubmission, today: Calendar): Calendar? = when (preferences.deadline) {
-        StudyDeadline.Today -> dayOnly(today)
-        StudyDeadline.InThreeDays -> dayOnly(today).apply { add(Calendar.DAY_OF_MONTH, 2) }
-        StudyDeadline.InOneWeek -> dayOnly(today).apply { add(Calendar.DAY_OF_MONTH, 6) }
-        StudyDeadline.ChooseDate -> preferences.deadlineDate?.toCalendarDate()
-        StudyDeadline.NoFixedDeadline -> null
-    }
-
     private fun daysNeeded(minutes: Int, dailyMinutes: Int) = if (minutes == 0) 0 else ceil(minutes.toDouble() / dailyMinutes.coerceAtLeast(1)).toInt()
 }
 
@@ -93,25 +72,6 @@ private val StudyGoal.bufferPercent: Int get() = when (this) {
     StudyGoal.FinishQuickly -> 5
     StudyGoal.OngoingStudy -> 10
 }
-
-private val Calendar.studyDay: StudyDay get() = when (get(Calendar.DAY_OF_WEEK)) {
-    Calendar.MONDAY -> StudyDay.Monday
-    Calendar.TUESDAY -> StudyDay.Tuesday
-    Calendar.WEDNESDAY -> StudyDay.Wednesday
-    Calendar.THURSDAY -> StudyDay.Thursday
-    Calendar.FRIDAY -> StudyDay.Friday
-    Calendar.SATURDAY -> StudyDay.Saturday
-    else -> StudyDay.Sunday
-}
-
-private fun dayOnly(value: Calendar): Calendar = (value.clone() as Calendar).apply {
-    set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
-}
-
-private fun String.toCalendarDate(): Calendar? = runCatching {
-    val parts = split('-').map(String::toInt); require(parts.size == 3)
-    GregorianCalendar(parts[0], parts[1] - 1, parts[2]).apply { isLenient = false; timeInMillis }
-}.getOrNull()
 
 class StudyPlanAdapter {
     fun fit(
