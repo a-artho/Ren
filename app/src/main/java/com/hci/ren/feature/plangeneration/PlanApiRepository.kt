@@ -67,13 +67,18 @@ class PlanApiRepository(
         val blocks = json.getJSONArray("blocks").objects().map {
             GeneratedStudyBlock(
                 it.getString("id"), it.getString("title"), it.getInt("order"),
-                it.getInt("durationMinutes"), it.getString("instructions"),
+                it.getInt("durationMinutes").coerceAtLeast(1), it.getString("instructions"),
                 it.getJSONArray("topicIds").strings(),
-                it.optInt("minimumUsefulMinutes", 10),
+                it.optInt("minimumUsefulMinutes", 10).coerceAtLeast(1),
                 it.optString("priority", "MEDIUM").toTaskPriority(),
                 it.optString("taskType", "REVIEW").toStudyTaskType(),
                 it.optString("priorityReason", "Supports the study goal"),
                 it.optBoolean("isSkippable", true),
+                status = it.optString("status", "NOT_STARTED").toTaskStatus(),
+                scheduledDate = it.optString("scheduledDate").takeUnless { value -> value.isBlank() || value == "null" },
+                dependencies = it.optJSONArray("dependencies")?.strings().orEmpty(),
+                isOptional = it.optBoolean("isOptional", false),
+                isExcluded = it.optBoolean("isExcluded", false),
             )
         }.sortedBy { it.order }
         return GeneratedStudyPlan(planId, topics, blocks, json.getInt("totalEstimatedMinutes"))
@@ -129,5 +134,9 @@ private fun JSONArray.strings() = (0 until length()).map { getString(it) }
 private fun String.toTaskPriority() = runCatching { TaskPriority.valueOf(lowercase().replaceFirstChar(Char::uppercase)) }.getOrDefault(TaskPriority.Medium)
 private fun String.toStudyTaskType() = runCatching {
     StudyTaskType.valueOf(lowercase().split('_').joinToString("") { it.replaceFirstChar(Char::uppercase) })
-}.getOrDefault(StudyTaskType.Review)
+}.getOrDefault(StudyTaskType.Custom)
+
+private fun String.toTaskStatus() = runCatching {
+    StudyTaskStatus.valueOf(lowercase().split('_').joinToString("") { it.replaceFirstChar(Char::uppercase) })
+}.getOrDefault(StudyTaskStatus.NotStarted)
 
