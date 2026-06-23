@@ -74,7 +74,7 @@ class PlanSetupViewModel(
 
     fun updateCustomMinutes(value: String) {
         updateAndPersist {
-            it.copy(customMinutesText = value.filter(Char::isDigit).take(3))
+            it.copy(customMinutesText = value.filter(Char::isDigit).take(4))
         }
     }
 

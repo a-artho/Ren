@@ -30,7 +30,7 @@ data class PlanSetupUiState(
         }
 
     val customMinutes: Int?
-        get() = customMinutesText.toIntOrNull()?.takeIf { it > 0 }
+        get() = customMinutesText.toIntOrNull()?.takeIf { it in 1..1_440 }
 
     val progress: Float
         get() = currentStep.number / PlanSetupStep.entries.size.toFloat()

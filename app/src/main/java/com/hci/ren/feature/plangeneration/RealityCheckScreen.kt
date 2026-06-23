@@ -23,6 +23,7 @@ import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.SelectableDates
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -36,6 +37,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.unit.dp
 import com.hci.ren.R
+import com.hci.ren.feature.pdfupload.presentation.isSelectableDeadlineUtc
 
 @Composable
 fun RealityCheckScreen(
@@ -111,7 +113,13 @@ fun RealityCheckScreen(
         )
     }
     if (showDatePicker) {
-        val datePickerState = rememberDatePickerState()
+        val selectableDates = remember {
+            object : SelectableDates {
+                override fun isSelectableDate(utcTimeMillis: Long): Boolean =
+                    isSelectableDeadlineUtc(utcTimeMillis, System.currentTimeMillis())
+            }
+        }
+        val datePickerState = rememberDatePickerState(selectableDates = selectableDates)
         DatePickerDialog(
             onDismissRequest = { showDatePicker = false },
             confirmButton = {
