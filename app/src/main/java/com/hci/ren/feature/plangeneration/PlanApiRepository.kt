@@ -44,14 +44,23 @@ class PlanApiRepository(
         }
     }
 
-    fun createPlan(documentId: String, submission: PlanSetupSubmission, requestId: String): String {
+    fun uploadDocuments(uris: List<Uri>, requestId: String): List<String> {
+        return uris.mapIndexed { index, uri ->
+            uploadDocument(uri, "${requestId}-${index}")
+        }
+    }
+
+    fun createPlan(documentIds: List<String>, submission: PlanSetupSubmission, requestId: String): String {
         val setup = JSONObject()
             .put("goal", submission.goal.name)
             .put("deadline", submission.deadline.name)
             .put("deadlineDate", submission.deadlineDate)
             .put("dailyStudyMinutes", submission.dailyStudyMinutes)
             .put("studyDays", JSONArray(submission.studyDays.sortedBy { it.ordinal }.map { it.name }))
-        val body = JSONObject().put("documentId", documentId).put("requestId", requestId).put("setup", setup)
+        val body = JSONObject()
+            .put("documentIds", JSONArray(documentIds))
+            .put("requestId", requestId)
+            .put("setup", setup)
         return jsonRequest("/plans", "POST", body).getString("planId")
     }
 
@@ -81,7 +90,11 @@ class PlanApiRepository(
                 isExcluded = it.optBoolean("isExcluded", false),
             )
         }.sortedBy { it.order }
-        return GeneratedStudyPlan(planId, topics, blocks, json.getInt("totalEstimatedMinutes"))
+        val title = if (json.has("title") && !json.isNull("title")) {
+            json.optString("title", "").takeIf { it.isNotBlank() }
+        } else null
+        return GeneratedStudyPlan(planId, topics, blocks, json.getInt("totalEstimatedMinutes"),
+            projectName = title ?: DEFAULT_PROJECT_NAME)
     }
 
     fun cancelPlan(planId: String) {

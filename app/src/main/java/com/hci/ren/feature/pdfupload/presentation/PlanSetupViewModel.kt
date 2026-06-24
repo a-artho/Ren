@@ -18,19 +18,19 @@ class PlanSetupViewModel(
     private val _uiState = MutableStateFlow(restoreState())
     val uiState: StateFlow<PlanSetupUiState> = _uiState.asStateFlow()
 
-    fun setDocument(documentUri: String) {
+    fun setDocuments(documentUris: List<String>) {
         _uiState.update { state ->
-            if (state.documentUri == documentUri) {
+            if (state.documentUris == documentUris) {
                 state
             } else {
-                PlanSetupUiState(documentUri = documentUri).also(::persistState)
+                PlanSetupUiState(documentUris = documentUris).also(::persistState)
             }
         }
     }
 
-    fun beginNewSession(documentUri: String) {
+    fun beginNewSession(documentUris: List<String>) {
         savedStateHandle.keys().forEach { savedStateHandle.remove<Any>(it) }
-        val state = PlanSetupUiState(documentUri = documentUri)
+        val state = PlanSetupUiState(documentUris = documentUris)
         _uiState.value = state
         persistState(state)
     }
@@ -133,7 +133,7 @@ class PlanSetupViewModel(
     }
 
     private fun persistState(state: PlanSetupUiState) {
-        savedStateHandle[KEY_DOCUMENT_URI] = state.documentUri
+        savedStateHandle[KEY_DOCUMENT_URI_LIST] = state.documentUris.joinToString("|")
         savedStateHandle[KEY_STEP] = state.currentStep.name
         setOrRemove(KEY_GOAL, state.selectedGoal?.name)
         setOrRemove(KEY_DEADLINE, state.selectedDeadline?.name)
@@ -150,9 +150,12 @@ class PlanSetupViewModel(
     }
 
     private fun restoreState(): PlanSetupUiState {
-        val documentUri = savedStateHandle.get<String>(KEY_DOCUMENT_URI) ?: return PlanSetupUiState()
+        val documentUris = savedStateHandle.get<String>(KEY_DOCUMENT_URI_LIST)
+            ?.split("|")
+            ?.filter { it.isNotEmpty() }
+            ?: return PlanSetupUiState()
         return PlanSetupUiState(
-            documentUri = documentUri,
+            documentUris = documentUris,
             currentStep = savedStateHandle.get<String>(KEY_STEP)
                 ?.let { runCatching { PlanSetupStep.valueOf(it) }.getOrNull() }
                 ?: PlanSetupStep.Goal,
@@ -175,7 +178,7 @@ class PlanSetupViewModel(
     }
 
     private companion object {
-        const val KEY_DOCUMENT_URI = "setup_document_uri"
+        const val KEY_DOCUMENT_URI_LIST = "setup_document_uri_list"
         const val KEY_STEP = "setup_step"
         const val KEY_GOAL = "setup_goal"
         const val KEY_DEADLINE = "setup_deadline"

@@ -13,6 +13,7 @@ import com.hci.ren.feature.pdfupload.presentation.PlanSetupSubmission
 import com.hci.ren.feature.pdfupload.presentation.StudyDeadline
 import com.hci.ren.feature.studymap.PlanAdjustmentService
 import com.hci.ren.feature.studymap.ScopeReduction
+import com.hci.ren.feature.studymap.StudyProjectRepository
 import com.hci.ren.feature.studymap.dayOnly
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.CancellationException
@@ -35,6 +36,7 @@ import kotlin.time.Duration.Companion.seconds
 
 class PlanGenerationViewModel(application: Application) : AndroidViewModel(application) {
     private val repository = PlanApiRepository(application.contentResolver)
+    private val studyProjectRepository = StudyProjectRepository.create(application)
     private val preferences = application.getSharedPreferences(PREFERENCES, 0)
     private val _uiState = MutableStateFlow(PlanGenerationUiState())
     val uiState = _uiState.asStateFlow()
@@ -82,7 +84,12 @@ class PlanGenerationViewModel(application: Application) : AndroidViewModel(appli
         visualProgressJob?.cancel()
         visualProgressJob = null
         polling = false
-        preferences.edit { clear() }
+        preferences.edit {
+            remove(KEY_PLAN_ID)
+            remove(KEY_SUBMISSION)
+            remove(KEY_REQUEST_ID)
+            remove(KEY_STUDY_MAP_STATE)
+        }
         backendStatus.value = PlanStatus.Uploading
         fetchedPlan = null
         sourcePlan = null
@@ -99,12 +106,12 @@ class PlanGenerationViewModel(application: Application) : AndroidViewModel(appli
             val (recoverySubmission, recoveryRequestId) = recoveryRequest
             viewModelScope.launch(Dispatchers.IO) {
                 runCatching {
-                    val documentId = repository.uploadDocument(
-                        recoverySubmission.documentUri.toUri(),
+                    val documentIds = repository.uploadDocuments(
+                        recoverySubmission.documentUris.map { it.toUri() },
                         recoveryRequestId,
                     )
                     val recoveredPlanId = repository.createPlan(
-                        documentId,
+                        documentIds,
                         recoverySubmission,
                         recoveryRequestId,
                     )
@@ -144,8 +151,8 @@ class PlanGenerationViewModel(application: Application) : AndroidViewModel(appli
                 _uiState.value = PlanGenerationUiState(status = PlanStatus.Uploading)
                 startVisualProgress()
                 val planId = withContext(Dispatchers.IO) {
-                    val documentId = repository.uploadDocument(value.documentUri.toUri(), persistedRequestId)
-                    repository.createPlan(documentId, value, persistedRequestId)
+                    val documentIds = repository.uploadDocuments(value.documentUris.map { it.toUri() }, persistedRequestId)
+                    repository.createPlan(documentIds, value, persistedRequestId)
                 }
                 preferences.edit { putString(KEY_PLAN_ID, planId) }
                 _uiState.value = _uiState.value.copy(planId = planId)
@@ -174,6 +181,39 @@ class PlanGenerationViewModel(application: Application) : AndroidViewModel(appli
     }
 
     fun retry() {
+        val completedPlan = fetchedPlan?.withScheduledTotal()
+        val completedSubmission = submission
+        if (completedPlan != null && completedSubmission != null && _uiState.value.status == PlanStatus.Failed) {
+            viewModelScope.launch {
+                _uiState.value = _uiState.value.copy(status = PlanStatus.Finalizing, errorMessage = null)
+                try {
+                    withContext(Dispatchers.IO) {
+                        studyProjectRepository.saveGeneratedPlan(completedPlan, completedSubmission)
+                    }
+                    preferences.edit {
+                        remove(KEY_PLAN_ID)
+                        remove(KEY_SUBMISSION)
+                        remove(KEY_REQUEST_ID)
+                        remove(KEY_STUDY_MAP_STATE)
+                    }
+                    requestId = null
+                    _uiState.value = _uiState.value.copy(
+                        status = PlanStatus.Completed,
+                        plan = completedPlan,
+                        feasibility = feasibilityChecker.check(completedPlan.blocks, completedSubmission),
+                    )
+                } catch (error: CancellationException) {
+                    throw error
+                } catch (error: Exception) {
+                    Log.e("PlanGeneration", "Failed retrying completed project save", error)
+                    _uiState.value = _uiState.value.copy(
+                        status = PlanStatus.Failed,
+                        errorMessage = "Your plan was created, but we couldn’t save it. Try again.",
+                    )
+                }
+            }
+            return
+        }
         val value = submission ?: run { fail(); return }
         val retryRequestId = requestId?.let { existing ->
             requestIdForRetry(existing, failurePhase) { UUID.randomUUID().toString() }
@@ -217,15 +257,37 @@ class PlanGenerationViewModel(application: Application) : AndroidViewModel(appli
                 
                 if (step == PlanStatus.Completed) {
                     delay(1500.milliseconds) // Completion animation time
-                    val plan = fetchedPlan
+                    val plan = fetchedPlan?.withScheduledTotal()
                     val currentSubmission = submission
-                    sourcePlan = plan
-                    _uiState.value = _uiState.value.copy(
-                        plan = plan?.withScheduledTotal(),
-                        feasibility = if (plan != null && currentSubmission != null) {
-                            feasibilityChecker.check(plan.blocks, currentSubmission)
-                        } else null,
-                    )
+                    if (plan == null || currentSubmission == null) {
+                        fail()
+                        return@launch
+                    }
+                    try {
+                        withContext(Dispatchers.IO) {
+                            studyProjectRepository.saveGeneratedPlan(plan, currentSubmission)
+                        }
+                        sourcePlan = plan
+                        preferences.edit {
+                            remove(KEY_PLAN_ID)
+                            remove(KEY_SUBMISSION)
+                            remove(KEY_REQUEST_ID)
+                            remove(KEY_STUDY_MAP_STATE)
+                        }
+                        requestId = null
+                        _uiState.value = _uiState.value.copy(
+                            plan = plan,
+                            feasibility = feasibilityChecker.check(plan.blocks, currentSubmission),
+                        )
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        Log.e("PlanGeneration", "Failed saving completed study project", e)
+                        _uiState.value = _uiState.value.copy(
+                            status = PlanStatus.Failed,
+                            errorMessage = "Your plan was created, but we couldn’t save it. Try again.",
+                        )
+                    }
                 } else {
                     delay(2000.milliseconds) // At least 2.0 seconds per step
                 }
@@ -246,8 +308,13 @@ class PlanGenerationViewModel(application: Application) : AndroidViewModel(appli
                     when (status) {
                         PlanStatus.Completed -> {
                             fetchedPlan = withContext(Dispatchers.IO) {
-                                val fetched = repository.plan(planId).copy(projectName = resolveProjectName())
-                                restoreStudyMapPlan(fetched) ?: fetched
+                                val plan = repository.plan(planId)
+                                val named = if (plan.projectName == DEFAULT_PROJECT_NAME) {
+                                    plan.copy(projectName = resolveProjectName())
+                                } else {
+                                    plan
+                                }
+                                restoreStudyMapPlan(named) ?: named
                             }
                             backendStatus.value = PlanStatus.Completed
                             return
@@ -513,7 +580,7 @@ class PlanGenerationViewModel(application: Application) : AndroidViewModel(appli
 
     private fun persistRequest(value: PlanSetupSubmission, id: String) {
         val json = JSONObject()
-            .put("documentUri", value.documentUri)
+            .put("documentUris", JSONArray(value.documentUris))
             .put("goal", value.goal.name)
             .put("deadline", value.deadline.name)
             .put("deadlineDate", value.deadlineDate)
@@ -527,12 +594,20 @@ class PlanGenerationViewModel(application: Application) : AndroidViewModel(appli
 
     private fun resolveProjectName(): String {
         val fallback = getApplication<Application>().getString(R.string.study_plan_default)
-        val uri = submission?.documentUri?.toUri() ?: return fallback
-        return runCatching {
-            getApplication<Application>().contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
-                if (cursor.moveToFirst()) cursor.getString(0).substringBeforeLast('.').ifBlank { fallback } else fallback
-            } ?: fallback
-        }.getOrDefault(fallback)
+        val uris = submission?.documentUris ?: return fallback
+        val names = uris.mapNotNull { uri ->
+            runCatching {
+                getApplication<Application>().contentResolver.query(uri.toUri(), arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
+                    if (cursor.moveToFirst()) cursor.getString(0).substringBeforeLast('.').ifBlank { null } else cursor.getString(0).substringBeforeLast('.')
+                } ?: null
+            }.getOrNull()
+        }.filter { it.isNotBlank() }
+        return when {
+            names.isEmpty() -> fallback
+            names.size == 1 -> names[0]
+            names.size == 2 -> "${names[0]} + ${names[1]}"
+            else -> "${names[0]}, ${names[1]} + ${names.size - 2} more"
+        }
     }
 
     private fun persistStudyMapState() {
@@ -585,8 +660,18 @@ class PlanGenerationViewModel(application: Application) : AndroidViewModel(appli
 
     private fun restoreSubmission(): PlanSetupSubmission? = runCatching {
         val json = JSONObject(preferences.getString(KEY_SUBMISSION, null) ?: return null)
+        val documentUris = if (json.has("documentUris")) {
+            val arr = json.getJSONArray("documentUris")
+            buildList { repeat(arr.length()) { add(arr.getString(it)) } }
+        } else {
+            val single = json.optString("documentUri", null) ?: return null
+            json.put("documentUris", JSONArray(listOf(single)))
+            json.remove("documentUri")
+            preferences.edit { putString(KEY_SUBMISSION, json.toString()) }
+            listOf(single)
+        }
         PlanSetupSubmission(
-            documentUri = json.getString("documentUri"),
+            documentUris = documentUris,
             goal = com.hci.ren.feature.pdfupload.presentation.StudyGoal.valueOf(json.getString("goal")),
             deadline = com.hci.ren.feature.pdfupload.presentation.StudyDeadline.valueOf(json.getString("deadline")),
             deadlineDate = json.optString("deadlineDate").takeUnless { it.isBlank() || it == "null" },

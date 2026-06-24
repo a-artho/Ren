@@ -9,15 +9,15 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 
 @Composable
 fun PlanSetupRoute(
-    documentUri: String,
+    documentUris: List<String>,
     onExit: () -> Unit,
     onGeneratePlan: (PlanSetupSubmission) -> Unit,
     viewModel: PlanSetupViewModel = viewModel(),
 ) {
     val state by viewModel.uiState.collectAsState()
 
-    LaunchedEffect(documentUri) {
-        viewModel.setDocument(documentUri)
+    LaunchedEffect(documentUris) {
+        viewModel.setDocuments(documentUris)
     }
 
     val navigateBack = {

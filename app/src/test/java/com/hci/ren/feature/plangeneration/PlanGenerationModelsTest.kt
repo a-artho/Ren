@@ -38,4 +38,14 @@ class PlanGenerationModelsTest {
         assertTrue(isRetryableStatusCode(429))
         assertTrue(isRetryableStatusCode(503))
     }
+
+    @Test fun defaultProjectNameUsesConstant() {
+        val plan = GeneratedStudyPlan("p1", emptyList(), emptyList(), 60)
+        assertEquals(DEFAULT_PROJECT_NAME, plan.projectName)
+    }
+
+    @Test fun aiTitleIsUsedAsProjectNameWhenPresent() {
+        val plan = GeneratedStudyPlan("p1", emptyList(), emptyList(), 60, projectName = "Calculus I — Derivatives")
+        assertEquals("Calculus I — Derivatives", plan.projectName)
+    }
 }

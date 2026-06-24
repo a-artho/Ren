@@ -17,26 +17,45 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 @Composable
 fun PdfUploadRoute(
     onBack: () -> Unit,
-    onContinue: (String) -> Unit,
+    onContinue: (List<String>) -> Unit,
     openPickerOnStart: Boolean,
     viewModel: PdfUploadViewModel = viewModel(),
 ) {
     val context = LocalContext.current
     val state by viewModel.uiState.collectAsState()
-    val launcher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.OpenDocument(),
-        onResult = { uri ->
-            if (uri != null) {
-                runCatching {
-                    context.contentResolver.takePersistableUriPermission(
-                        uri,
-                        Intent.FLAG_GRANT_READ_URI_PERMISSION,
-                    )
+
+    val initialLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenMultipleDocuments(),
+        onResult = { uris ->
+            if (uris.isNotEmpty()) {
+                uris.forEach { uri ->
+                    runCatching {
+                        context.contentResolver.takePersistableUriPermission(
+                            uri, Intent.FLAG_GRANT_READ_URI_PERMISSION,
+                        )
+                    }
                 }
-                viewModel.selectDocument(uri)
+                viewModel.selectDocuments(uris)
             }
         },
     )
+
+    val addMoreLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenMultipleDocuments(),
+        onResult = { uris ->
+            if (uris.isNotEmpty()) {
+                uris.forEach { uri ->
+                    runCatching {
+                        context.contentResolver.takePersistableUriPermission(
+                            uri, Intent.FLAG_GRANT_READ_URI_PERMISSION,
+                        )
+                    }
+                }
+                viewModel.appendDocuments(uris)
+            }
+        },
+    )
+
     var pickerHandledSessionId by rememberSaveable { mutableStateOf<Long?>(null) }
 
     BackHandler(onBack = onBack)
@@ -48,17 +67,18 @@ fun PdfUploadRoute(
     LaunchedEffect(openPickerOnStart, state.sessionId) {
         if (openPickerOnStart && pickerHandledSessionId != state.sessionId) {
             pickerHandledSessionId = state.sessionId
-            launcher.launch(arrayOf("application/pdf"))
+            initialLauncher.launch(arrayOf("application/pdf"))
         }
     }
 
     PdfUploadScreen(
         state = state,
         onBack = onBack,
-        onPickPdf = { launcher.launch(arrayOf("application/pdf")) },
-        onContinue = {
-            viewModel.documentReference()?.let(onContinue)
-        },
+        onPickPdf = { initialLauncher.launch(arrayOf("application/pdf")) },
+        onAddMorePdf = { addMoreLauncher.launch(arrayOf("application/pdf")) },
+        onContinue = { viewModel.documentReferences().let(onContinue) },
+        onSelectPdf = viewModel::selectPdf,
+        onRemovePdf = viewModel::removeDocument,
         onPageSelected = viewModel::selectPage,
         onPageRequested = viewModel::requestPage,
     )

@@ -3,20 +3,28 @@ package com.hci.ren.feature.pdfupload.presentation
 import android.graphics.Bitmap
 import java.util.Locale
 
+data class DocumentGroup(
+    val documents: List<PdfDocumentUiModel>,
+    val selectedPdfIndex: Int = 0,
+)
+
 data class PdfUploadUiState(
     val sessionId: Long = 0,
-    val document: PdfDocumentUiModel? = null,
+    val documentGroup: DocumentGroup? = null,
     val selectedPageIndex: Int = 0,
     val loadStatus: PdfLoadStatus = PdfLoadStatus.Idle,
     val renderedPages: Map<PdfRenderKey, PdfPageRenderState> = emptyMap(),
 ) {
     val canContinue: Boolean
-        get() = document != null && loadStatus == PdfLoadStatus.Ready
+        get() = documentGroup != null && documentGroup.documents.isNotEmpty() && loadStatus == PdfLoadStatus.Ready
 
     val thumbnailPageIndexes: List<Int>
-        get() = thumbnailPageIndexes(
-            pageCount = document?.pageCount ?: 0,
-        )
+        get() {
+            val doc = documentGroup?.let { g ->
+                g.documents.getOrNull(g.selectedPdfIndex)
+            }
+            return thumbnailPageIndexes(pageCount = doc?.pageCount ?: 0)
+        }
 }
 
 data class PdfDocumentUiModel(
@@ -37,6 +45,7 @@ sealed interface PdfLoadStatus {
 }
 
 data class PdfRenderKey(
+    val documentIndex: Int,
     val pageIndex: Int,
     val kind: PdfRenderKind,
 )
@@ -109,6 +118,18 @@ class BoundedPageCache<K, V>(
             evictedKeys += eldest.key
         }
         return evictedKeys
+    }
+
+    @Synchronized
+    fun removeIf(predicate: (K) -> Boolean) {
+        val it = entries.iterator()
+        while (it.hasNext()) {
+            val entry = it.next()
+            if (predicate(entry.key)) {
+                storedWeight -= weightOf(entry.value)
+                it.remove()
+            }
+        }
     }
 
     @Synchronized

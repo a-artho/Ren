@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import json, sqlite3
+from collections import namedtuple
 from pathlib import Path
 from uuid import uuid4
 from .models import CreatePlanRequest, GeneratedPlan, PlanStatus
+
+PlanRow = namedtuple("PlanRow", ["document_ids", "setup_json", "status", "result_json", "error"])
 
 
 class Store:
@@ -23,6 +26,10 @@ class Store:
             db.execute(
                 "CREATE UNIQUE INDEX IF NOT EXISTS documents_request_id ON documents(request_id)"
             )
+            plan_columns = {row[1] for row in db.execute("PRAGMA table_info(plans)")}
+            if "document_ids" not in plan_columns:
+                db.execute("ALTER TABLE plans ADD COLUMN document_ids TEXT")
+                db.execute("UPDATE plans SET document_ids = json_array(document_id) WHERE document_ids IS NULL")
 
     def connect(self): return sqlite3.connect(self.db_path)
     def add_document(self, path: Path, request_id: str | None = None) -> str:
@@ -68,13 +75,14 @@ class Store:
             existing = db.execute("SELECT id FROM plans WHERE request_id=?", (request.requestId,)).fetchone()
             if existing: return existing[0], False
             plan_id = str(uuid4())
-            db.execute("INSERT INTO plans(id,request_id,document_id,setup_json,status) VALUES(?,?,?,?,?)",
-                       (plan_id, request.requestId, request.documentId, request.setup.model_dump_json(), PlanStatus.ANALYZING))
+            db.execute("INSERT INTO plans(id,request_id,document_ids,document_id,setup_json,status) VALUES(?,?,?,?,?,?)",
+                       (plan_id, request.requestId, json.dumps(request.documentIds),
+                        request.documentIds[0], request.setup.model_dump_json(), PlanStatus.ANALYZING))
         return plan_id, True
-    def get(self, plan_id: str):
+    def get(self, plan_id: str) -> PlanRow | None:
         with self.connect() as db:
-            row = db.execute("SELECT document_id,setup_json,status,result_json,error FROM plans WHERE id=?", (plan_id,)).fetchone()
-        return row
+            row = db.execute("SELECT document_ids,setup_json,status,result_json,error FROM plans WHERE id=?", (plan_id,)).fetchone()
+        return PlanRow(*row) if row else None
     def set_status(self, plan_id: str, status: PlanStatus, result: GeneratedPlan | None = None, error: str | None = None):
         with self.connect() as db: db.execute("UPDATE plans SET status=?,result_json=?,error=? WHERE id=?",
             (status, result.model_dump_json() if result else None, error, plan_id))
@@ -89,9 +97,11 @@ class Store:
                 row[0]
                 for row in db.execute(
                     """
-                    SELECT documents.id
+                    SELECT DISTINCT documents.id
                     FROM documents
-                    LEFT JOIN plans ON plans.document_id = documents.id
+                    LEFT JOIN plans ON EXISTS (
+                        SELECT 1 FROM json_each(plans.document_ids) WHERE value = documents.id
+                    )
                     WHERE plans.id IS NULL
                       AND documents.created_at < datetime('now', ?)
                     ORDER BY documents.created_at

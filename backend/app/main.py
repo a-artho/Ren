@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import asyncio, logging, os
+import asyncio, json, logging, os
 from contextlib import asynccontextmanager
 from pathlib import Path
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
@@ -34,16 +34,16 @@ def schedule(plan_id: str):
 async def process(plan_id: str):
     row = STORE.get(plan_id)
     if not row: return
-    document_id, setup_json, _, _, _ = row
-    path = STORE.document_path(document_id)
+    document_ids = json.loads(row.document_ids)
+    paths = [p for p in (STORE.document_path(did) for did in document_ids) if p and p.exists()]
     try:
-        if not path or not path.exists(): raise ValueError("Document unavailable")
+        if not paths: raise ValueError("No documents available")
         STORE.set_status(plan_id, PlanStatus.IDENTIFYING_TOPICS)
         if provider is None: raise RuntimeError("AI provider is not configured")
         result = None
         for attempt in range(2):
             try:
-                result = await provider.create_plan(path, Setup.model_validate_json(setup_json)); break
+                result = await provider.create_plan(paths, Setup.model_validate_json(row.setup_json)); break
             except Exception:
                 logger.warning("Attempt %d failed", attempt + 1, exc_info=True)
                 if attempt == 1: raise
@@ -59,8 +59,9 @@ async def process(plan_id: str):
         STORE.set_status(plan_id, PlanStatus.FAILED, error=str(exc)[:300])
     finally:
         row = STORE.get(plan_id)
-        if row and row[2] in (PlanStatus.COMPLETED, PlanStatus.FAILED, PlanStatus.CANCELED):
-            cleanup_document(document_id)
+        if row and row.status in (PlanStatus.COMPLETED, PlanStatus.FAILED, PlanStatus.CANCELED):
+            for did in json.loads(row.document_ids):
+                cleanup_document(did)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -125,8 +126,10 @@ async def upload_document(
 async def create_plan(request: CreatePlanRequest):
     existing = STORE.plan_id_for_request(request.requestId)
     if existing: return {"planId": existing}
-    document_path = STORE.document_path(request.documentId)
-    if not document_path or not document_path.exists(): raise HTTPException(404, "Document not found")
+    for doc_id in request.documentIds:
+        path = STORE.document_path(doc_id)
+        if not path or not path.exists():
+            raise HTTPException(404, f"Document {doc_id} not found")
     plan_id, created = STORE.create_plan(request)
     if created: schedule(plan_id)
     return {"planId": plan_id}
@@ -136,9 +139,10 @@ async def create_plan(request: CreatePlanRequest):
 async def cancel_plan(plan_id: str):
     row = STORE.get(plan_id)
     if not row: raise HTTPException(404, "Plan not found")
-    if row[2] == PlanStatus.CANCELED:
+    document_ids = json.loads(row.document_ids)
+    if row.status == PlanStatus.CANCELED:
         return {"planId": plan_id, "status": PlanStatus.CANCELED}
-    if row[2] in (PlanStatus.COMPLETED, PlanStatus.FAILED):
+    if row.status in (PlanStatus.COMPLETED, PlanStatus.FAILED):
         raise HTTPException(409, "Plan is already finished")
     STORE.set_status(plan_id, PlanStatus.CANCELED)
     task = TASKS.get(plan_id)
@@ -146,20 +150,24 @@ async def cancel_plan(plan_id: str):
         task.cancel()
         try: await task
         except asyncio.CancelledError: pass
-    cleanup_document(row[0])
+    for did in document_ids:
+        cleanup_document(did)
     return {"planId": plan_id, "status": PlanStatus.CANCELED}
 
 @app.get("/plans/{plan_id}/status")
 def plan_status(plan_id: str):
     row = STORE.get(plan_id)
     if not row: raise HTTPException(404, "Plan not found")
-    return {"planId": plan_id, "status": row[2], "error": row[4]}
+    return {"planId": plan_id, "status": row.status, "error": row.error}
 
 @app.get("/plans/{plan_id}")
 def get_plan(plan_id: str):
     row = STORE.get(plan_id)
     if not row: raise HTTPException(404, "Plan not found")
-    if row[2] != PlanStatus.COMPLETED: raise HTTPException(409, "Plan is not ready")
-    result = GeneratedPlan.model_validate_json(row[3])
-    return {"planId": plan_id, "documentId": row[0], "topics": result.model_dump()["topics"],
-            "blocks": result.model_dump()["blocks"], "totalEstimatedMinutes": sum(b.durationMinutes for b in result.blocks)}
+    if row.status != PlanStatus.COMPLETED: raise HTTPException(409, "Plan is not ready")
+    result = GeneratedPlan.model_validate_json(row.result_json)
+    document_ids = json.loads(row.document_ids)
+    return {"planId": plan_id, "documentIds": document_ids, "documentId": document_ids[0],
+            "title": result.title, "topics": result.model_dump()["topics"],
+            "blocks": result.model_dump()["blocks"],
+            "totalEstimatedMinutes": sum(b.durationMinutes for b in result.blocks)}

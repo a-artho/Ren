@@ -12,7 +12,7 @@ class PlanSetupUiStateTest {
     fun setupSelectionsAreRestoredFromSavedStateHandle() {
         val handle = SavedStateHandle()
         val original = PlanSetupViewModel(handle)
-        original.beginNewSession("content://ren/doc")
+        original.beginNewSession(listOf("content://ren/doc"))
         original.selectGoal(StudyGoal.PrepareForExam)
         original.selectDeadline(StudyDeadline.InOneWeek)
         original.selectDailyTime(DailyStudyTime.FortyFiveMinutes)
@@ -25,7 +25,7 @@ class PlanSetupUiStateTest {
         val restored = PlanSetupViewModel(restoredHandle)
         val state = restored.uiState.value
 
-        assertEquals("content://ren/doc", state.documentUri)
+        assertEquals(listOf("content://ren/doc"), state.documentUris)
         assertEquals(PlanSetupStep.Deadline, state.currentStep)
         assertEquals(StudyGoal.PrepareForExam, state.selectedGoal)
         assertEquals(StudyDeadline.InOneWeek, state.selectedDeadline)
@@ -54,12 +54,12 @@ class PlanSetupUiStateTest {
     @Test
     fun beginNewSessionClearsAnswersEvenForSameDocument() {
         val viewModel = PlanSetupViewModel(SavedStateHandle())
-        viewModel.setDocument("content://ren/document")
+        viewModel.setDocuments(listOf("content://ren/document"))
         viewModel.selectGoal(StudyGoal.PrepareForExam)
 
-        viewModel.beginNewSession("content://ren/document")
+        viewModel.beginNewSession(listOf("content://ren/document"))
 
-        assertEquals("content://ren/document", viewModel.uiState.value.documentUri)
+        assertEquals(listOf("content://ren/document"), viewModel.uiState.value.documentUris)
         assertEquals(null, viewModel.uiState.value.selectedGoal)
     }
     @Test
@@ -133,7 +133,7 @@ class PlanSetupUiStateTest {
     @Test
     fun completedSubmissionIncludesPdfReferenceAndSetupData() {
         val state = PlanSetupUiState(
-            documentUri = "content://ren/document",
+            documentUris = listOf("content://ren/document"),
             currentStep = PlanSetupStep.StudyDays,
             selectedGoal = StudyGoal.PrepareForExam,
             selectedDeadline = StudyDeadline.ChooseDate,
@@ -145,7 +145,7 @@ class PlanSetupUiStateTest {
 
         val submission = state.toSubmission()
 
-        assertEquals("content://ren/document", submission?.documentUri)
+        assertEquals("content://ren/document", submission?.documentUris?.first())
         assertEquals(StudyGoal.PrepareForExam, submission?.goal)
         assertEquals(StudyDeadline.ChooseDate, submission?.deadline)
         assertEquals("2026-06-21", submission?.deadlineDate)

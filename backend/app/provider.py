@@ -12,6 +12,7 @@ logger = logging.getLogger("ren")
 GEMINI_PLAN_SCHEMA = {
     "type": "object",
     "properties": {
+        "title": {"type": "string", "maxLength": 80},
         "topics": {
             "type": "array",
             "items": {
@@ -48,13 +49,13 @@ GEMINI_PLAN_SCHEMA = {
             },
         },
     },
-    "required": ["topics", "blocks"],
+    "required": ["title", "topics", "blocks"],
 }
 
 
 class AIProvider(ABC):
     @abstractmethod
-    async def create_plan(self, pdf: Path, setup: Setup) -> GeneratedPlan: ...
+    async def create_plan(self, pdfs: list[Path], setup: Setup) -> GeneratedPlan: ...
 
 
 class GeminiProvider(AIProvider):
@@ -63,10 +64,12 @@ class GeminiProvider(AIProvider):
         self.client = genai.Client(api_key=api_key)
         self.model = model
 
-    async def create_plan(self, pdf: Path, setup: Setup) -> GeneratedPlan:
+    async def create_plan(self, pdfs: list[Path], setup: Setup) -> GeneratedPlan:
         from google.genai import types
         prompt = (
-            "Create a faithful study plan from this PDF. Use only material in the document. "
+            "Create a faithful study plan from these PDF documents. Use only material in the documents. "
+            "Identify topics that span multiple documents and group related content together. "
+            "Assign a concise, meaningful title to this study plan based on the documents' subject matter. "
             "Return JSON matching the supplied schema. Topics and blocks must use contiguous "
             "1-based order. Each block must reference valid topic IDs. Keep instructions short "
             "and actionable. Estimate honest task durations without compressing work to fit the deadline. "
@@ -75,9 +78,13 @@ class GeminiProvider(AIProvider):
             "LEARN 20, PRACTICE 15, REVIEW 10, QUIZ 10, MOCK_EXAM 30 (or its actual duration), and SKIM 5 minutes. "
             f"Learner setup: {setup.model_dump_json()}"
         )
+        contents = [
+            *[types.Part.from_bytes(data=p.read_bytes(), mime_type="application/pdf") for p in pdfs],
+            prompt,
+        ]
         response = await self.client.aio.models.generate_content(
             model=self.model,
-            contents=[types.Part.from_bytes(data=pdf.read_bytes(), mime_type="application/pdf"), prompt],
+            contents=contents,
             config=types.GenerateContentConfig(
                 response_mime_type="application/json",
                 response_schema=GEMINI_PLAN_SCHEMA,
