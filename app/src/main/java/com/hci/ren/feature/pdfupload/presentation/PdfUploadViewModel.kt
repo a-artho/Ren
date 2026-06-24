@@ -112,8 +112,12 @@ class PdfUploadViewModel(
     }
 
     fun appendDocuments(uris: List<Uri>) {
+        val existingUris = _uiState.value.documentGroup?.documents?.map { it.uri }?.toSet()
+            ?: emptySet()
+        val newUris = uris.filter { it.toString() !in existingUris }
+        if (newUris.isEmpty()) return
         val currentCount = _uiState.value.documentGroup?.documents?.size ?: 0
-        if (currentCount + uris.size > MAX_DOCUMENTS) {
+        if (currentCount + newUris.size > MAX_DOCUMENTS) {
             _uiState.update { state ->
                 state.copy(loadStatus = PdfLoadStatus.Error(
                     getApplication<Application>().getString(R.string.too_many_pdfs, MAX_DOCUMENTS)
@@ -123,7 +127,7 @@ class PdfUploadViewModel(
         }
         val loadGeneration = ++documentLoadGeneration
         viewModelScope.launch {
-            val result = withContext(Dispatchers.IO) { repository.loadDocuments(uris) }
+            val result = withContext(Dispatchers.IO) { repository.loadDocuments(newUris) }
             if (loadGeneration != documentLoadGeneration) return@launch
             result
                 .onSuccess { newDocs ->
