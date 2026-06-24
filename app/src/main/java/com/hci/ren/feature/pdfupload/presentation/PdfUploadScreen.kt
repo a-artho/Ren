@@ -30,9 +30,17 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Color
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
@@ -275,38 +283,69 @@ private fun PdfPreviewPane(
 ) {
     val group = state.documentGroup ?: return
     val currentDocIndex = group.selectedPdfIndex
+    val listState = rememberLazyListState()
 
     Column(modifier = modifier) {
         if (group.documents.isNotEmpty()) {
-            LazyColumn(
+            Column(
                 modifier = Modifier
+                    .weight(0.45f)
                     .fillMaxWidth()
-                    .height(120.dp)
-                    .testTag("pdf-file-list"),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-                contentPadding = PaddingValues(bottom = 8.dp),
+                    .heightIn(max = 260.dp)
             ) {
-                itemsIndexed(group.documents) { index, doc ->
-                    PdfFileCard(
-                        document = doc,
-                        isSelected = index == currentDocIndex,
-                        onSelect = { onSelectPdf(index) },
-                        onRemove = { onRemovePdf(index) },
-                    )
-                }
-                item {
-                    TextButton(
-                        onClick = onAddMorePdf,
-                        modifier = Modifier.fillMaxWidth(),
+                Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
+                    LazyColumn(
+                        state = listState,
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .testTag("pdf-file-list"),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
-                        Text("+ Add more")
+                        itemsIndexed(group.documents) { index, doc ->
+                            PdfFileCard(
+                                document = doc,
+                                isSelected = index == currentDocIndex,
+                                onSelect = { onSelectPdf(index) },
+                                onRemove = { onRemovePdf(index) },
+                            )
+                        }
                     }
+
+                    val indicatorState = listState.scrollIndicatorState
+                    if (indicatorState != null && indicatorState.contentSize > indicatorState.viewportSize) {
+                        val thumbFraction = indicatorState.viewportSize.toFloat() / indicatorState.contentSize.toFloat()
+                        val scrollRange = (indicatorState.contentSize - indicatorState.viewportSize).coerceAtLeast(1)
+                        Canvas(
+                            modifier = Modifier
+                                .fillMaxHeight()
+                                .width(4.dp)
+                                .align(Alignment.CenterEnd)
+                        ) {
+                            val thumbHeight = size.height * thumbFraction
+                            val thumbOffset = (size.height - thumbHeight) * indicatorState.scrollOffset.toFloat() / scrollRange
+                            drawRoundRect(
+                                color = Color.Gray.copy(alpha = 0.35f),
+                                topLeft = Offset(0f, thumbOffset),
+                                size = Size(size.width, thumbHeight),
+                                cornerRadius = CornerRadius(size.width / 2f, size.width / 2f),
+                            )
+                        }
+                    }
+                }
+                TextButton(
+                    onClick = onAddMorePdf,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text("+ Add more")
                 }
             }
         }
 
         Row(
-            modifier = Modifier.weight(1f).fillMaxWidth(),
+            modifier = Modifier
+                .weight(0.55f)
+                .fillMaxWidth()
+                .heightIn(max = 340.dp),
             horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             AnimatedContent(
