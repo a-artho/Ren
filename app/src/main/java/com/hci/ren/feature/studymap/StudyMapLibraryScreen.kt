@@ -1,7 +1,12 @@
 package com.hci.ren.feature.studymap
 
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.ui.draw.scale
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -23,8 +28,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Sort
 import androidx.compose.material.icons.filled.Clear
-import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.Insights
 import androidx.compose.material.icons.filled.Map
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Search
@@ -41,8 +44,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
@@ -118,7 +119,6 @@ fun StudyMapLibraryScreen(
         modifier = modifier.fillMaxSize(),
         containerColor = MaterialTheme.colorScheme.background,
         snackbarHost = { SnackbarHost(snackbar) },
-        bottomBar = { StudyMapLibraryNavigation(onHome, onInsights) },
     ) { padding ->
         when {
             state.isLoading -> Column(Modifier.fillMaxSize().padding(padding).padding(horizontal = 20.dp)) {
@@ -171,6 +171,7 @@ fun StudyMapLibraryScreen(
                             project = project,
                             onOpen = { onOpenProject(project.id) },
                             onDelete = { pendingDelete = project },
+                            modifier = Modifier.animateItem(),
                         )
                     }
                 }
@@ -200,10 +201,17 @@ private fun StudyMapSortControl(selected: StudyMapSort, onSelected: (StudyMapSor
 }
 
 @Composable
-private fun StudyProjectCard(project: StudyProjectSummary, onOpen: () -> Unit, onDelete: () -> Unit) {
+private fun StudyProjectCard(project: StudyProjectSummary, onOpen: () -> Unit, onDelete: () -> Unit, modifier: Modifier = Modifier) {
     var menuExpanded by remember { mutableStateOf(false) }
+    val interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
+    val isPressed by interactionSource.collectIsPressedAsState()
+    val scale by androidx.compose.animation.core.animateFloatAsState(
+        targetValue = if (isPressed) 0.98f else 1f,
+        animationSpec = androidx.compose.animation.core.spring(),
+        label = "card-press",
+    )
     Card(
-        modifier = Modifier.fillMaxWidth().clickable(onClick = onOpen),
+        modifier = modifier.fillMaxWidth().scale(scale).clickable(interactionSource = interactionSource, indication = null, onClick = onOpen),
         shape = RoundedCornerShape(20.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
     ) {
@@ -382,21 +390,6 @@ private fun StudyMapLibraryTitle() {
         fontWeight = FontWeight.Bold,
         modifier = Modifier.statusBarsPadding().padding(top = 18.dp).semantics { heading() },
     )
-}
-
-@Composable
-private fun StudyMapLibraryNavigation(onHome: () -> Unit, onInsights: () -> Unit) {
-    Surface(color = MaterialTheme.colorScheme.background, tonalElevation = 0.dp) {
-        NavigationBar(modifier = Modifier.navigationBarsPadding(), containerColor = MaterialTheme.colorScheme.background) {
-            listOf(
-                Triple(stringResource(R.string.home), Icons.Default.Home, onHome),
-                Triple(stringResource(R.string.study_map), Icons.Default.Map, {}),
-                Triple(stringResource(R.string.insights), Icons.Default.Insights, onInsights),
-            ).forEachIndexed { index, (label, icon, action) ->
-                NavigationBarItem(selected = index == 1, onClick = action, icon = { Icon(icon, label) }, label = { Text(label) })
-            }
-        }
-    }
 }
 
 @Composable private fun filterLabel(filter: StudyMapFilter) = when (filter) {

@@ -1,8 +1,14 @@
 package com.hci.ren.feature.studymap
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.animation.animateContentSize
+import androidx.compose.ui.draw.scale
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -32,10 +38,8 @@ import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Event
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
-import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Insights
 import androidx.compose.material.icons.filled.Lock
-import androidx.compose.material.icons.filled.Map
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
@@ -61,8 +65,6 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
@@ -202,7 +204,6 @@ fun StudyMapScreen(
                         Spacer(Modifier.width(8.dp))
                         Text(ctaLabel)
                     }
-                    StudyMapNavigation(onHome = onHome, onInsights = { scope.launch { snackbar.showSnackbar(unavailable) }; onInsights() })
                 }
             }
         },
@@ -412,14 +413,14 @@ private fun androidx.compose.foundation.lazy.LazyListScope.scheduleItems(
     onSkip: (GeneratedStudyBlock) -> Unit,
     onExclude: (String) -> Unit,
 ) {
-    data.nextTask?.let { task -> item(key = "next-${task.id}") { NextTaskCard(task, { onTaskClick(task) }, { onStart(task) }) } }
+    data.nextTask?.let { task -> item(key = "next-${task.id}") { NextTaskCard(task, { onTaskClick(task) }, { onStart(task) }, Modifier.animateItem()) } }
     itemsIndexed(data.schedule.days, key = { _, day -> day.date }) { index, day ->
-        ScheduleDaySection(day, initiallyExpanded = index == 0, onTaskClick, onStart, onDone, onSkip, onExclude)
+        ScheduleDaySection(day, initiallyExpanded = index == 0, onTaskClick, onStart, onDone, onSkip, onExclude, Modifier.animateItem())
     }
     if (data.schedule.unscheduledTasks.isNotEmpty()) {
         item { SectionTitle(stringResource(R.string.unscheduled_tasks), stringResource(R.string.unscheduled_explanation)) }
         items(data.schedule.unscheduledTasks, key = { "unscheduled-${it.id}" }) { task ->
-            StudyTaskCard(task, emptySet(), { onTaskClick(task) }, onStart, onDone, onSkip, onExclude)
+            StudyTaskCard(task, emptySet(), { onTaskClick(task) }, onStart, onDone, onSkip, onExclude, Modifier.animateItem())
         }
     }
     if (data.activeTasks.isNotEmpty() && data.activeTasks.all { it.status == StudyTaskStatus.Completed }) {
@@ -430,14 +431,21 @@ private fun androidx.compose.foundation.lazy.LazyListScope.scheduleItems(
 private fun androidx.compose.foundation.lazy.LazyListScope.topicItems(data: StudyMapData, onTaskClick: (GeneratedStudyBlock) -> Unit) {
     items(data.plan.topics, key = { "topic-${it.id}" }) { topic ->
         val tasks = data.plan.blocks.filter { topic.id in it.topicIds && !it.isExcluded }
-        TopicSection(topic.title, tasks, onTaskClick)
+        TopicSection(topic.title, tasks, onTaskClick, Modifier.animateItem())
     }
 }
 
 @Composable
-private fun NextTaskCard(task: GeneratedStudyBlock, onClick: () -> Unit, onStart: () -> Unit) {
+private fun NextTaskCard(task: GeneratedStudyBlock, onClick: () -> Unit, onStart: () -> Unit, modifier: Modifier = Modifier) {
+    val interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
+    val isPressed by interactionSource.collectIsPressedAsState()
+    val scale by animateFloatAsState(
+        targetValue = if (isPressed) 0.98f else 1f,
+        animationSpec = spring(),
+        label = "card-press",
+    )
     Card(
-        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick),
+        modifier = modifier.fillMaxWidth().scale(scale).clickable(interactionSource = interactionSource, indication = null, onClick = onClick),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
         shape = RoundedCornerShape(18.dp),
     ) {
@@ -462,10 +470,11 @@ private fun ScheduleDaySection(
     onDone: (GeneratedStudyBlock) -> Unit,
     onSkip: (GeneratedStudyBlock) -> Unit,
     onExclude: (String) -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     var expanded by rememberSaveable(day.date) { mutableStateOf(initiallyExpanded) }
     val completedIds = day.tasks.filter { it.status == StudyTaskStatus.Completed }.mapTo(mutableSetOf()) { it.id }
-    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+    Column(modifier = modifier.animateContentSize(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Row(
             Modifier.fillMaxWidth().clickable { expanded = !expanded }.padding(vertical = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
@@ -492,12 +501,20 @@ private fun StudyTaskCard(
     onDone: (GeneratedStudyBlock) -> Unit,
     onSkip: (GeneratedStudyBlock) -> Unit,
     onExclude: (String) -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     val locked = task.status == StudyTaskStatus.Locked || task.dependencies.any { it !in completedIds }
     val status = if (locked) StudyTaskStatus.Locked else task.status
     var menu by remember { mutableStateOf(false) }
+    val interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
+    val isPressed by interactionSource.collectIsPressedAsState()
+    val scale by animateFloatAsState(
+        targetValue = if (isPressed) 0.98f else 1f,
+        animationSpec = spring(),
+        label = "card-press",
+    )
     Card(
-        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick),
+        modifier = modifier.fillMaxWidth().scale(scale).clickable(interactionSource = interactionSource, indication = null, onClick = onClick),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         shape = RoundedCornerShape(16.dp),
         border = CardDefaults.outlinedCardBorder(),
@@ -527,11 +544,11 @@ private fun StudyTaskCard(
 }
 
 @Composable
-private fun TopicSection(title: String, tasks: List<GeneratedStudyBlock>, onTaskClick: (GeneratedStudyBlock) -> Unit) {
+private fun TopicSection(title: String, tasks: List<GeneratedStudyBlock>, onTaskClick: (GeneratedStudyBlock) -> Unit, modifier: Modifier = Modifier) {
     var expanded by rememberSaveable(title) { mutableStateOf(false) }
     val progress = TaskProgressCalculator().projectProgress(tasks)
-    Card(shape = RoundedCornerShape(16.dp), border = CardDefaults.outlinedCardBorder(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
-        Column {
+    Card(modifier = modifier, shape = RoundedCornerShape(16.dp), border = CardDefaults.outlinedCardBorder(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
+        Column(Modifier.animateContentSize()) {
             Row(Modifier.fillMaxWidth().clickable { expanded = !expanded }.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.AutoMirrored.Filled.MenuBook, null, tint = MaterialTheme.colorScheme.primary)
                 Spacer(Modifier.width(10.dp))
@@ -740,24 +757,8 @@ private fun ContinueAnywayDialog(onDismiss: () -> Unit, onContinue: () -> Unit) 
 }
 
 @Composable
-private fun StudyMapNavigation(onHome: () -> Unit, onInsights: () -> Unit) {
-    NavigationBar(
-        containerColor = MaterialTheme.colorScheme.background,
-        tonalElevation = 0.dp,
-    ) {
-        listOf(
-            Triple(stringResource(R.string.home), Icons.Default.Home, onHome),
-            Triple(stringResource(R.string.study_map), Icons.Default.Map, {}),
-            Triple(stringResource(R.string.insights), Icons.Default.Insights, onInsights),
-        ).forEachIndexed { index, (label, icon, action) ->
-            NavigationBarItem(selected = index == 1, onClick = action, icon = { Icon(icon, label) }, label = { Text(label) })
-        }
-    }
-}
-
-@Composable
 private fun EmptyStudyMap(onHome: () -> Unit, onCreateProject: () -> Unit, onInsights: () -> Unit, snackbar: SnackbarHostState, modifier: Modifier) {
-    Scaffold(modifier = modifier, snackbarHost = { SnackbarHost(snackbar) }, topBar = { StudyMapHeader(stringResource(R.string.no_study_project_selected)) }, bottomBar = { Surface(color = MaterialTheme.colorScheme.background, tonalElevation = 0.dp) { StudyMapNavigation(onHome, onInsights) } }) { padding ->
+    Scaffold(modifier = modifier, snackbarHost = { SnackbarHost(snackbar) }, topBar = { StudyMapHeader(stringResource(R.string.no_study_project_selected)) }) { padding ->
         Box(Modifier.fillMaxSize().padding(padding).padding(24.dp), contentAlignment = Alignment.Center) {
             StudyMapEmptyContent(
                 title = stringResource(R.string.no_study_project_selected),

@@ -96,6 +96,8 @@ import com.hci.ren.ui.theme.RenTheme
 import com.hci.ren.ui.motion.RenMotionDurationMillis
 import com.hci.ren.ui.motion.RenMotionEasing
 import com.hci.ren.ui.motion.isReducedMotionEnabled
+import com.hci.ren.ui.motion.renEnterSpec
+import com.hci.ren.ui.motion.renExitSpec
 import com.hci.ren.ui.motion.renScreenTransform
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -549,8 +551,8 @@ private fun SelectionRow(
 
         AnimatedVisibility(
             visible = isSelected,
-            enter = fadeIn(tween(220)) + scaleIn(tween(220), initialScale = 0.9f),
-            exit = fadeOut(tween(180)) + scaleOut(tween(180), targetScale = 0.9f),
+            enter = fadeIn(renEnterSpec()) + scaleIn(renEnterSpec(), initialScale = 0.9f),
+            exit = fadeOut(renExitSpec()) + scaleOut(renExitSpec(), targetScale = 0.9f),
         ) {
             Box(
                 modifier = Modifier

@@ -13,8 +13,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Icon
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -24,12 +22,8 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.Insights
-import androidx.compose.material.icons.filled.Map
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Person
-import androidx.compose.material.icons.filled.Timer
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -61,9 +55,6 @@ fun HomeScreen(
                 state = state,
                 onAction = onAction,
             )
-        },
-        bottomBar = {
-            HomeNavigationBar(onAction = onAction)
         },
         floatingActionButton = {
             SmallFloatingActionButton(
@@ -182,47 +173,6 @@ private fun HomeBody(
         }
     }
 }
-
-@Composable
-private fun HomeNavigationBar(
-    onAction: (HomeAction) -> Unit,
-) {
-    NavigationBar(containerColor = MaterialTheme.colorScheme.background, tonalElevation = 0.dp) {
-        listOf(HomeDestination.Home, HomeDestination.StudyMap, HomeDestination.Insights).forEach { destination ->
-            NavigationBarItem(
-                selected = destination == HomeDestination.Home,
-                onClick = {
-                    onAction(HomeAction.NavigationItemClicked(destination))
-                },
-                icon = {
-                    Icon(
-                        imageVector = destination.icon,
-                        contentDescription = destination.label,
-                    )
-                },
-                label = {
-                    Text(destination.label)
-                },
-            )
-        }
-    }
-}
-
-private val HomeDestination.label: String
-    get() = when (this) {
-        HomeDestination.Home -> "Home"
-        HomeDestination.StudyMap -> "Study Map"
-        HomeDestination.Focus -> "Focus"
-        HomeDestination.Insights -> "Insights"
-    }
-
-private val HomeDestination.icon: ImageVector
-    get() = when (this) {
-        HomeDestination.Home -> Icons.Default.Home
-        HomeDestination.StudyMap -> Icons.Default.Map
-        HomeDestination.Focus -> Icons.Default.Timer
-        HomeDestination.Insights -> Icons.Default.Insights
-    }
 
 @Preview(name = "Empty home", showBackground = true, showSystemUi = true)
 @Composable

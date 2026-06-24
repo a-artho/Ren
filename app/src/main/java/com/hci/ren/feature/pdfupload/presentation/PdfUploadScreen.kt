@@ -65,6 +65,7 @@ import com.hci.ren.ui.theme.RenTheme
 import com.hci.ren.ui.motion.RenMotionDurationMillis
 import com.hci.ren.ui.motion.RenMotionEasing
 import com.hci.ren.ui.motion.isReducedMotionEnabled
+import com.hci.ren.ui.motion.renContentSpec
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -266,7 +267,7 @@ private fun PdfPreviewPane(
     ) {
         AnimatedContent(
             targetState = state.selectedPageIndex,
-            transitionSpec = { fadeIn(tween(220)) togetherWith fadeOut(tween(220)) },
+            transitionSpec = { fadeIn(renContentSpec()) togetherWith fadeOut(renContentSpec()) },
             label = "selected-page",
             modifier = Modifier.weight(1f).fillMaxHeight().testTag("selected-pdf-page"),
         ) { pageIndex ->
@@ -342,7 +343,7 @@ private fun PdfPageImage(
         when (state) {
             is PdfPageRenderState.Ready -> Crossfade(
                 targetState = state.bitmap,
-                animationSpec = tween(220),
+                animationSpec = renContentSpec(),
                 label = "rendered-page",
             ) { bitmap ->
                 Image(

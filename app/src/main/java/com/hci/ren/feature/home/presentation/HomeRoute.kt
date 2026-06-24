@@ -14,7 +14,6 @@ import kotlinx.coroutines.launch
 @Composable
 fun HomeRoute(
     onUploadPdf: () -> Unit,
-    onStudyMap: () -> Unit = {},
 ) {
     var state by remember { mutableStateOf(HomePreviewData.active) }
     val snackbarHostState = remember { SnackbarHostState() }
@@ -48,14 +47,7 @@ fun HomeRoute(
                     state
                 }
 
-                is HomeAction.NavigationItemClicked -> {
-                    if (action.destination == HomeDestination.StudyMap) {
-                        onStudyMap()
-                    } else if (action.destination != HomeDestination.Home) {
-                        scope.launch { snackbarHostState.showSnackbar(unavailableMessage) }
-                    }
-                    state
-                }
+                is HomeAction.NavigationItemClicked -> state
             }
         },
     )

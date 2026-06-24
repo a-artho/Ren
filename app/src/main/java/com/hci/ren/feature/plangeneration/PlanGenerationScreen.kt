@@ -1,5 +1,6 @@
 package com.hci.ren.feature.plangeneration
 
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.RepeatMode
@@ -9,7 +10,12 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.togetherWith
+import com.hci.ren.ui.motion.renContentSpec
+import com.hci.ren.ui.motion.RenEmphasizedEasing
+import com.hci.ren.ui.motion.RenMotionDurationMillis
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -333,16 +339,26 @@ private fun ProcessingStep(icon: ImageVector, label: String, subtitle: String?, 
         StepVisual.Upcoming -> .40f
         else -> 1f
     }
-    val iconTint = when (visual) {
+    val targetIconTint = when (visual) {
         StepVisual.Complete -> MaterialTheme.colorScheme.onPrimary
         StepVisual.Current -> MaterialTheme.colorScheme.onPrimary
         StepVisual.Upcoming -> MaterialTheme.colorScheme.onSurfaceVariant
     }
-    val circleBg = when (visual) {
+    val targetCircleBg = when (visual) {
         StepVisual.Complete -> MaterialTheme.colorScheme.primary
         StepVisual.Current -> MaterialTheme.colorScheme.primary
         StepVisual.Upcoming -> MaterialTheme.colorScheme.surfaceVariant
     }
+    val iconTint by androidx.compose.animation.animateColorAsState(
+        targetValue = targetIconTint,
+        animationSpec = tween(RenMotionDurationMillis, easing = RenEmphasizedEasing),
+        label = "step-icon-tint",
+    )
+    val circleBg by androidx.compose.animation.animateColorAsState(
+        targetValue = targetCircleBg,
+        animationSpec = tween(RenMotionDurationMillis, easing = RenEmphasizedEasing),
+        label = "step-circle-bg",
+    )
 
     // Pulse animation for the active step
     val infiniteTransition = rememberInfiniteTransition(label = "step-pulse")
@@ -549,12 +565,20 @@ private fun WhileYouWaitCard() {
                     )
                 }
                 Spacer(Modifier.height(8.dp))
-                Text(
-                    stringResource(tips[tipIndex]),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.85f),
-                    lineHeight = 20.sp,
-                )
+                AnimatedContent(
+                    targetState = tipIndex,
+                    transitionSpec = {
+                        fadeIn(renContentSpec()) togetherWith fadeOut(renContentSpec())
+                    },
+                    label = "tip-rotation",
+                ) { index ->
+                    Text(
+                        stringResource(tips[index]),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.85f),
+                        lineHeight = 20.sp,
+                    )
+                }
             }
             Spacer(Modifier.width(12.dp))
             Box(
