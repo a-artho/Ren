@@ -122,13 +122,14 @@ fun ContinueStudyingCard(
 
 @Composable
 private fun FocusTarget() {
+    val primary = MaterialTheme.colorScheme.primary
     val surface = MaterialTheme.colorScheme.surface
     Box(
         modifier = Modifier.size(48.dp),
         contentAlignment = Alignment.Center,
     ) {
         Canvas(modifier = Modifier.matchParentSize()) {
-            drawCircle(color = androidx.compose.ui.graphics.Color(0xFF55AA79))
+            drawCircle(color = primary)
             drawCircle(
                 color = surface,
                 radius = size.minDimension * 0.22f,

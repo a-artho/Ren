@@ -195,7 +195,7 @@ fun StudyMapScreen(
                         },
                         modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp).height(52.dp),
                         enabled = allComplete || ctaTask != null || data.schedule.unscheduledTasks.isNotEmpty(),
-                        colors = ButtonDefaults.buttonColors(contentColor = Color.White),
+                        colors = ButtonDefaults.buttonColors(contentColor = MaterialTheme.colorScheme.onPrimary),
                     ) {
                         Icon(if (allComplete) Icons.Default.Insights else Icons.Default.PlayArrow, contentDescription = null)
                         Spacer(Modifier.width(8.dp))
@@ -446,7 +446,7 @@ private fun NextTaskCard(task: GeneratedStudyBlock, onClick: () -> Unit, onStart
             Text("${formatMinutes(task.durationMinutes)} • ${taskTypeLabel(task.taskType)}", style = MaterialTheme.typography.bodyMedium)
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(stringResource(R.string.start_here), modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
-                Button(onClick = onStart, colors = ButtonDefaults.buttonColors(contentColor = Color.White)) { Icon(Icons.Default.PlayArrow, null); Spacer(Modifier.width(4.dp)); Text(stringResource(R.string.start)) }
+                Button(onClick = onStart, colors = ButtonDefaults.buttonColors(contentColor = MaterialTheme.colorScheme.onPrimary)) { Icon(Icons.Default.PlayArrow, null); Spacer(Modifier.width(4.dp)); Text(stringResource(R.string.start)) }
             }
         }
     }

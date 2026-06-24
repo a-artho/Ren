@@ -333,8 +333,8 @@ private fun ProcessingStep(icon: ImageVector, label: String, subtitle: String?, 
         else -> 1f
     }
     val iconTint = when (visual) {
-        StepVisual.Complete -> Color.White
-        StepVisual.Current -> Color.White
+        StepVisual.Complete -> MaterialTheme.colorScheme.onPrimary
+        StepVisual.Current -> MaterialTheme.colorScheme.onPrimary
         StepVisual.Upcoming -> MaterialTheme.colorScheme.onSurfaceVariant
     }
     val circleBg = when (visual) {
@@ -414,7 +414,7 @@ private fun ProcessingStep(icon: ImageVector, label: String, subtitle: String?, 
 @Composable
 private fun CompletedCheckmark() {
     val green = MaterialTheme.colorScheme.primary
-    val checkColor = Color.White
+    val checkColor = MaterialTheme.colorScheme.onPrimary
     Canvas(modifier = Modifier.size(28.dp)) {
         val r = size.minDimension / 2f
         drawCircle(color = green, radius = r)

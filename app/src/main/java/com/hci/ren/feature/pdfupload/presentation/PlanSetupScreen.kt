@@ -733,7 +733,7 @@ private fun PlanSetupPrimaryButton(
             } else {
                 MaterialTheme.colorScheme.primary
             },
-            contentColor = Color.White,
+            contentColor = MaterialTheme.colorScheme.onPrimary,
             disabledContainerColor = MaterialTheme.colorScheme.surfaceVariant,
             disabledContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
         ),
