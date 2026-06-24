@@ -11,6 +11,7 @@ import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.IntOffset
 
 // region — MD3 Easing Tokens
 
@@ -64,15 +65,21 @@ fun isReducedMotionEnabled(): Boolean {
 fun renScreenTransform(forward: Boolean, reducedMotion: Boolean): ContentTransform {
     val enterDuration = 400
     val exitDuration = 200
-    val fadeIn = fadeIn(tween(enterDuration, easing = RenEmphasizedDecelerateEasing))
-    val fadeOut = fadeOut(tween(exitDuration, easing = RenEmphasizedAccelerateEasing))
-    if (reducedMotion) return fadeIn togetherWith fadeOut
+    val enterDelay = 100
+    val fadeInSpec = tween<Float>(enterDuration, delayMillis = enterDelay, easing = RenEmphasizedDecelerateEasing)
+    val slideInSpec = tween<IntOffset>(enterDuration, delayMillis = enterDelay, easing = RenEmphasizedDecelerateEasing)
+    val fadeOutSpec = tween<Float>(exitDuration, easing = RenEmphasizedAccelerateEasing)
+    val slideOutSpec = tween<IntOffset>(exitDuration, easing = RenEmphasizedAccelerateEasing)
+    val reducedFadeInSpec = tween<Float>(enterDuration, easing = RenEmphasizedDecelerateEasing)
+    if (reducedMotion) {
+        return fadeIn(reducedFadeInSpec) togetherWith fadeOut(fadeOutSpec)
+    }
     val direction = if (forward) 1 else -1
-    return (fadeIn + slideInHorizontally(
-        animationSpec = tween(enterDuration, easing = RenEmphasizedDecelerateEasing),
+    return (fadeIn(fadeInSpec) + slideInHorizontally(
+        animationSpec = slideInSpec,
         initialOffsetX = { direction * minOf(it / 24, 48) },
-    )) togetherWith (fadeOut + slideOutHorizontally(
-        animationSpec = tween(exitDuration, easing = RenEmphasizedAccelerateEasing),
+    )) togetherWith (fadeOut(fadeOutSpec) + slideOutHorizontally(
+        animationSpec = slideOutSpec,
         targetOffsetX = { -direction * minOf(it / 24, 48) },
     ))
 }
