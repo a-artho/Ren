@@ -21,8 +21,8 @@ Ren turns a PDF plus study preferences into an AI-generated study plan.
 - Android app: Kotlin, Jetpack Compose, Material 3, single `:app` module
 - Package: `com.hci.ren`; min SDK 24; target SDK 36; compile SDK 36.1
 - State: `StateFlow` in ViewModels; `rememberSaveable` for app routing
-- Persistence: `SavedStateHandle` for upload/setup; `SharedPreferences` for
-  generation recovery and durable Study Map adjustments
+- Persistence: `SavedStateHandle` for upload/setup, `SharedPreferences` for
+  transient generation recovery, and Room for durable Study Map projects/tasks
 - Backend: FastAPI, Pydantic, SQLite, `google-genai`, Uvicorn
 - Build: Gradle Kotlin DSL, version catalog, Java 11 source/target, Java 21 daemon
 - Theme: custom Ren palette and Inter type; dynamic color is off by default
@@ -39,13 +39,15 @@ Home
   -> poll /plans/{id}/status
   -> GET /plans/{id}
   -> deterministic schedule + realism calculations
-  -> Study Map (Schedule or Topics)
+  -> persist generated project in Room
+  -> Study Map detail (Schedule or Topics)
 ```
 
-`MainActivity.kt` owns the five-screen state machine:
+`MainActivity.kt` owns the six-screen state machine:
 
 ```text
-home -> pdf_upload -> pdf_setup -> plan_processing -> study_map
+home -> pdf_upload -> pdf_setup -> plan_processing -> study_map_detail
+  \-> study_map_library -> study_map_detail
 ```
 
 Navigation uses `rememberSaveable`, `AnimatedContent`, and `RenMotion`. It does
@@ -84,7 +86,8 @@ local recovery state and attempts backend cancellation.
 | Setup questions/validation/persistence | `PlanSetupUiState.kt`, `PlanSetupViewModel.kt`, `PlanSetupScreen.kt` | `PlanSetupUiStateTest`, `PlanSetupScreenTest` |
 | Upload/create/poll/cancel HTTP contract | Android `PlanApiRepository.kt`; backend `main.py`, `models.py` | `PlanGenerationModelsTest`; `test_api.py` |
 | Generation recovery/retry/progress | `PlanGenerationViewModel.kt`, `PlanGenerationModels.kt` | `PlanGenerationModelsTest`, `PlanGenerationScreenTest` |
-| Study Map schedule/topics/task actions | `studymap/StudyMapScreen.kt`, `StudyMapModels.kt`; generation ViewModel/models | `StudyMapModelsTest`, `StudyMapScreenTest` |
+| Study Map library/persistence | `studymap/StudyProjectRepository.kt`, `StudyMapLibrary*` | `StudyProjectPersistenceTest`, `StudyProjectDatabaseTest`, `StudyMapLibraryScreenTest` |
+| Study Map schedule/topics/task actions | `studymap/StudyMapScreen.kt`, `StudyMapDetailViewModel.kt`, `StudyMapModels.kt` | `StudyMapModelsTest`, `StudyMapScreenTest` |
 | Realism and in-place plan adjustments | `studymap/StudyMapModels.kt`, generation ViewModel | `StudyMapModelsTest`; compile Compose tests |
 | Legacy feasibility/adaptation helpers | `StudyPlanFeasibilityChecker.kt`, `RealityCheckScreen.kt`, generation ViewModel/models | `StudyPlanFeasibilityCheckerTest`; compile Compose tests |
 | Generated-plan validation | backend `models.py`, `provider.py`; Android generation models | `test_models.py`, `test_provider.py` |
@@ -107,9 +110,9 @@ Some home actions intentionally show “not available” feedback; do not silent
 make placeholder actions appear functional.
 
 The shared product navigation currently presents Home, Study Map, and Insights.
-The Study Map item opens the generated active plan; it is not a separate Tasks
-destination. Insights remains an unavailable placeholder until its feature is
-implemented.
+The Study Map item opens the persisted project library. Selecting a project opens
+its existing Schedule/Topics detail destination. Insights remains an unavailable
+placeholder until its feature is implemented.
 
 ### PDF upload and preview
 
@@ -147,12 +150,11 @@ Wire status mapping is in `PlanGenerationModels.kt`. Android presents backend
 `CANCELED` as a failed/terminal visible state; cancellation normally follows a
 user exit and local reset.
 
-After a completed plan is fetched, `MainActivity` routes directly to Study Map.
-The generated plan is active immediately; there is no draft/confirm-plan state.
-`PlanGenerationViewModel` remains the plan owner and persists a local overlay for
-task duration/status, optional/excluded disposition, daily-time override, project
-name, and acceptance of a tight plan. The backend plan remains the recoverable
-base; saved overlays are reapplied by matching task IDs after process restart.
+After a completed plan is fetched, `PlanGenerationViewModel` saves the complete
+project aggregate to Room before `MainActivity` routes directly to Study Map
+detail. There is no draft/confirm-plan state. Generation submission/request/plan
+IDs remain transient recovery data and are cleared after the Room write succeeds.
+Retry after a Room write failure retries persistence without regenerating the plan.
 
 Legacy `StudyPlanFeasibilityChecker`, `StudyPlanAdapter`,
 `StudyPlanScopeAdjuster`, and `RealityCheckScreen` remain in the source tree for
@@ -160,6 +162,18 @@ compatibility with their existing tests, but normal navigation no longer routes
 through the standalone Reality Check or plan-details screens.
 
 ### Study Map
+
+`StudyProjectRepository` is the device-local source of truth. One Room row owns
+the complete generated plan, tasks, normalized setup/deadline, title, timestamps,
+daily-time override, and tight-plan acceptance. It deliberately stores neither
+the PDF nor its content URI. Deleting a row atomically removes its embedded tasks;
+the backend generation record is not part of library CRUD.
+
+`StudyMapLibraryViewModel` observes all projects and applies forgiving title
+search, All/Active/Behind/Completed/Plan Issue filters, and the five supported
+sort orders. `StudyMapDetailViewModel` loads a selected project and serializes
+task/deadline/scope updates back to Room. Home opens the library; successful
+generation still opens detail directly; detail back returns to the library.
 
 `feature/studymap/StudyMapModels.kt` contains pure source-of-truth calculations:
 
@@ -187,9 +201,10 @@ the safe Custom presentation.
   anyway adjustments
 - sticky context-sensitive CTA above Home/Study Map/Insights navigation
 
-Normal plan adjustments stay inside Study Map and recalculate immediately. Start
-currently changes task status to in-progress; there is no timer/focus destination
-to launch yet. Multiple-project switching and Insights are also not implemented.
+Normal plan adjustments stay inside Study Map, recalculate immediately, and update
+the durable project's `updatedAt`. Start currently changes task status to
+in-progress; there is no timer/focus destination to launch yet. Insights remains
+unimplemented.
 
 ## Backend contract
 

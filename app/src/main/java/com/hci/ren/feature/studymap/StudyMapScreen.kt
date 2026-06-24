@@ -123,6 +123,7 @@ fun StudyMapScreen(
     recommendedDaysBalanced: Int = 0,
     recommendedDaysIntensive: Int = 0,
     onHome: () -> Unit,
+    onBack: () -> Unit = onHome,
     onCreateProject: () -> Unit,
     onInsights: () -> Unit,
     onConsumeMessage: () -> Unit,
@@ -144,7 +145,7 @@ fun StudyMapScreen(
     var adjustment by remember { mutableStateOf<AdjustmentSheet?>(null) }
     val unavailable = stringResource(R.string.feature_not_available)
 
-    BackHandler(onBack = onHome)
+    BackHandler(onBack = onBack)
 
     LaunchedEffect(changeMessage) {
         if (changeMessage != null) {
@@ -758,12 +759,12 @@ private fun StudyMapNavigation(onHome: () -> Unit, onInsights: () -> Unit) {
 private fun EmptyStudyMap(onHome: () -> Unit, onCreateProject: () -> Unit, onInsights: () -> Unit, snackbar: SnackbarHostState, modifier: Modifier) {
     Scaffold(modifier = modifier, snackbarHost = { SnackbarHost(snackbar) }, topBar = { StudyMapHeader(stringResource(R.string.no_study_project_selected)) }, bottomBar = { Surface(color = MaterialTheme.colorScheme.background, tonalElevation = 0.dp) { StudyMapNavigation(onHome, onInsights) } }) { padding ->
         Box(Modifier.fillMaxSize().padding(padding).padding(24.dp), contentAlignment = Alignment.Center) {
-            Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Surface(shape = CircleShape, color = MaterialTheme.colorScheme.primaryContainer, modifier = Modifier.size(72.dp)) { Box(contentAlignment = Alignment.Center) { Icon(Icons.Default.Map, null, modifier = Modifier.size(32.dp), tint = MaterialTheme.colorScheme.onPrimaryContainer) } }
-                Text(stringResource(R.string.no_study_project_selected), style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-                Text(stringResource(R.string.no_study_project_message), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Button(onClick = onCreateProject) { Text(stringResource(R.string.create_project)) }
-            }
+            StudyMapEmptyContent(
+                title = stringResource(R.string.no_study_project_selected),
+                message = stringResource(R.string.no_study_project_message),
+                actionLabel = stringResource(R.string.create_project),
+                onAction = onCreateProject,
+            )
         }
     }
 }

@@ -13,6 +13,7 @@ import com.hci.ren.feature.pdfupload.presentation.PlanSetupSubmission
 import com.hci.ren.feature.pdfupload.presentation.StudyDeadline
 import com.hci.ren.feature.studymap.PlanAdjustmentService
 import com.hci.ren.feature.studymap.ScopeReduction
+import com.hci.ren.feature.studymap.StudyProjectRepository
 import com.hci.ren.feature.studymap.dayOnly
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.CancellationException
@@ -35,6 +36,7 @@ import kotlin.time.Duration.Companion.seconds
 
 class PlanGenerationViewModel(application: Application) : AndroidViewModel(application) {
     private val repository = PlanApiRepository(application.contentResolver)
+    private val studyProjectRepository = StudyProjectRepository.create(application)
     private val preferences = application.getSharedPreferences(PREFERENCES, 0)
     private val _uiState = MutableStateFlow(PlanGenerationUiState())
     val uiState = _uiState.asStateFlow()
@@ -82,7 +84,12 @@ class PlanGenerationViewModel(application: Application) : AndroidViewModel(appli
         visualProgressJob?.cancel()
         visualProgressJob = null
         polling = false
-        preferences.edit { clear() }
+        preferences.edit {
+            remove(KEY_PLAN_ID)
+            remove(KEY_SUBMISSION)
+            remove(KEY_REQUEST_ID)
+            remove(KEY_STUDY_MAP_STATE)
+        }
         backendStatus.value = PlanStatus.Uploading
         fetchedPlan = null
         sourcePlan = null
@@ -174,6 +181,39 @@ class PlanGenerationViewModel(application: Application) : AndroidViewModel(appli
     }
 
     fun retry() {
+        val completedPlan = fetchedPlan?.withScheduledTotal()
+        val completedSubmission = submission
+        if (completedPlan != null && completedSubmission != null && _uiState.value.status == PlanStatus.Failed) {
+            viewModelScope.launch {
+                _uiState.value = _uiState.value.copy(status = PlanStatus.Finalizing, errorMessage = null)
+                try {
+                    withContext(Dispatchers.IO) {
+                        studyProjectRepository.saveGeneratedPlan(completedPlan, completedSubmission)
+                    }
+                    preferences.edit {
+                        remove(KEY_PLAN_ID)
+                        remove(KEY_SUBMISSION)
+                        remove(KEY_REQUEST_ID)
+                        remove(KEY_STUDY_MAP_STATE)
+                    }
+                    requestId = null
+                    _uiState.value = _uiState.value.copy(
+                        status = PlanStatus.Completed,
+                        plan = completedPlan,
+                        feasibility = feasibilityChecker.check(completedPlan.blocks, completedSubmission),
+                    )
+                } catch (error: CancellationException) {
+                    throw error
+                } catch (error: Exception) {
+                    Log.e("PlanGeneration", "Failed retrying completed project save", error)
+                    _uiState.value = _uiState.value.copy(
+                        status = PlanStatus.Failed,
+                        errorMessage = "Your plan was created, but we couldn’t save it. Try again.",
+                    )
+                }
+            }
+            return
+        }
         val value = submission ?: run { fail(); return }
         val retryRequestId = requestId?.let { existing ->
             requestIdForRetry(existing, failurePhase) { UUID.randomUUID().toString() }
@@ -217,15 +257,37 @@ class PlanGenerationViewModel(application: Application) : AndroidViewModel(appli
                 
                 if (step == PlanStatus.Completed) {
                     delay(1500.milliseconds) // Completion animation time
-                    val plan = fetchedPlan
+                    val plan = fetchedPlan?.withScheduledTotal()
                     val currentSubmission = submission
-                    sourcePlan = plan
-                    _uiState.value = _uiState.value.copy(
-                        plan = plan?.withScheduledTotal(),
-                        feasibility = if (plan != null && currentSubmission != null) {
-                            feasibilityChecker.check(plan.blocks, currentSubmission)
-                        } else null,
-                    )
+                    if (plan == null || currentSubmission == null) {
+                        fail()
+                        return@launch
+                    }
+                    try {
+                        withContext(Dispatchers.IO) {
+                            studyProjectRepository.saveGeneratedPlan(plan, currentSubmission)
+                        }
+                        sourcePlan = plan
+                        preferences.edit {
+                            remove(KEY_PLAN_ID)
+                            remove(KEY_SUBMISSION)
+                            remove(KEY_REQUEST_ID)
+                            remove(KEY_STUDY_MAP_STATE)
+                        }
+                        requestId = null
+                        _uiState.value = _uiState.value.copy(
+                            plan = plan,
+                            feasibility = feasibilityChecker.check(plan.blocks, currentSubmission),
+                        )
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        Log.e("PlanGeneration", "Failed saving completed study project", e)
+                        _uiState.value = _uiState.value.copy(
+                            status = PlanStatus.Failed,
+                            errorMessage = "Your plan was created, but we couldn’t save it. Try again.",
+                        )
+                    }
                 } else {
                     delay(2000.milliseconds) // At least 2.0 seconds per step
                 }
