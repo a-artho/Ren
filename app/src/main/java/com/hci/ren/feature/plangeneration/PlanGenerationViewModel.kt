@@ -594,12 +594,20 @@ class PlanGenerationViewModel(application: Application) : AndroidViewModel(appli
 
     private fun resolveProjectName(): String {
         val fallback = getApplication<Application>().getString(R.string.study_plan_default)
-        val firstUri = submission?.documentUris?.firstOrNull()?.toUri() ?: return fallback
-        return runCatching {
-            getApplication<Application>().contentResolver.query(firstUri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
-                if (cursor.moveToFirst()) cursor.getString(0).substringBeforeLast('.').ifBlank { fallback } else fallback
-            } ?: fallback
-        }.getOrDefault(fallback)
+        val uris = submission?.documentUris ?: return fallback
+        val names = uris.mapNotNull { uri ->
+            runCatching {
+                getApplication<Application>().contentResolver.query(uri.toUri(), arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
+                    if (cursor.moveToFirst()) cursor.getString(0).substringBeforeLast('.').ifBlank { null } else cursor.getString(0).substringBeforeLast('.')
+                } ?: null
+            }.getOrNull()
+        }.filter { it.isNotBlank() }
+        return when {
+            names.isEmpty() -> fallback
+            names.size == 1 -> names[0]
+            names.size == 2 -> "${names[0]} + ${names[1]}"
+            else -> "${names[0]}, ${names[1]} + ${names.size - 2} more"
+        }
     }
 
     private fun persistStudyMapState() {
