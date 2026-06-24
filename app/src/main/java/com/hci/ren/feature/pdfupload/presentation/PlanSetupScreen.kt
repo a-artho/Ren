@@ -279,6 +279,7 @@ private fun PlanSetupTopRow(
                 .clip(RoundedCornerShape(999.dp)),
             color = MaterialTheme.colorScheme.primary,
             trackColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f),
+            drawStopIndicator = {},
         )
 
         Spacer(Modifier.width(16.dp))

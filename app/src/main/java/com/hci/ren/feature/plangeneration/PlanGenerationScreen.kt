@@ -251,6 +251,7 @@ private fun ProcessingContent(state: PlanGenerationUiState) {
                 },
             color = MaterialTheme.colorScheme.primary,
             trackColor = MaterialTheme.colorScheme.primaryContainer,
+            drawStopIndicator = {},
         )
         Spacer(Modifier.width(8.dp))
         CircularProgressIndicator(

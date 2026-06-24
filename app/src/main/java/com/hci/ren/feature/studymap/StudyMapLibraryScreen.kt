@@ -247,6 +247,7 @@ private fun StudyProjectCard(project: StudyProjectSummary, onOpen: () -> Unit, o
                 modifier = Modifier.fillMaxWidth().semantics {
                     contentDescription = progressLabel
                 },
+                drawStopIndicator = {},
             )
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 Text(
