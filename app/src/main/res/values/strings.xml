@@ -102,7 +102,7 @@
         <item quantity="one">%1$d / %2$d task done</item>
         <item quantity="other">%1$d / %2$d tasks done</item>
     </plurals>
-    <string name="percent_complete_format">%1$d%% complete</string>
+    
     <string name="due_date_format">Due %1$s</string>
     <string name="updated_date_format">Updated %1$s</string>
     <string name="study_map_unavailable">This study map is unavailable.</string>
