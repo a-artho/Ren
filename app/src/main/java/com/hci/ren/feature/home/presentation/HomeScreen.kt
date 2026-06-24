@@ -187,7 +187,7 @@ private fun HomeBody(
 private fun HomeNavigationBar(
     onAction: (HomeAction) -> Unit,
 ) {
-    NavigationBar {
+    NavigationBar(containerColor = MaterialTheme.colorScheme.background, tonalElevation = 0.dp) {
         listOf(HomeDestination.Home, HomeDestination.StudyMap, HomeDestination.Insights).forEach { destination ->
             NavigationBarItem(
                 selected = destination == HomeDestination.Home,
