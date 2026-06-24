@@ -52,6 +52,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.zIndex
 import com.hci.ren.R
 import kotlinx.coroutines.delay
 import kotlin.time.Duration.Companion.milliseconds
@@ -358,7 +359,8 @@ private fun ProcessingStep(icon: ImageVector, label: String, subtitle: String?, 
     Row(
         Modifier
             .fillMaxWidth()
-            .alpha(contentAlpha),
+            .alpha(contentAlpha)
+            .zIndex(1f),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         // Step circle icon
