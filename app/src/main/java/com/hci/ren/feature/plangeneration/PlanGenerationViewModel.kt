@@ -106,12 +106,12 @@ class PlanGenerationViewModel(application: Application) : AndroidViewModel(appli
             val (recoverySubmission, recoveryRequestId) = recoveryRequest
             viewModelScope.launch(Dispatchers.IO) {
                 runCatching {
-                    val documentId = repository.uploadDocument(
-                        recoverySubmission.documentUri.toUri(),
+                    val documentIds = repository.uploadDocuments(
+                        recoverySubmission.documentUris.map { it.toUri() },
                         recoveryRequestId,
                     )
                     val recoveredPlanId = repository.createPlan(
-                        documentId,
+                        documentIds,
                         recoverySubmission,
                         recoveryRequestId,
                     )
@@ -151,8 +151,8 @@ class PlanGenerationViewModel(application: Application) : AndroidViewModel(appli
                 _uiState.value = PlanGenerationUiState(status = PlanStatus.Uploading)
                 startVisualProgress()
                 val planId = withContext(Dispatchers.IO) {
-                    val documentId = repository.uploadDocument(value.documentUri.toUri(), persistedRequestId)
-                    repository.createPlan(documentId, value, persistedRequestId)
+                    val documentIds = repository.uploadDocuments(value.documentUris.map { it.toUri() }, persistedRequestId)
+                    repository.createPlan(documentIds, value, persistedRequestId)
                 }
                 preferences.edit { putString(KEY_PLAN_ID, planId) }
                 _uiState.value = _uiState.value.copy(planId = planId)
@@ -580,7 +580,7 @@ class PlanGenerationViewModel(application: Application) : AndroidViewModel(appli
 
     private fun persistRequest(value: PlanSetupSubmission, id: String) {
         val json = JSONObject()
-            .put("documentUri", value.documentUri)
+            .put("documentUris", JSONArray(value.documentUris))
             .put("goal", value.goal.name)
             .put("deadline", value.deadline.name)
             .put("deadlineDate", value.deadlineDate)
@@ -594,9 +594,9 @@ class PlanGenerationViewModel(application: Application) : AndroidViewModel(appli
 
     private fun resolveProjectName(): String {
         val fallback = getApplication<Application>().getString(R.string.study_plan_default)
-        val uri = submission?.documentUri?.toUri() ?: return fallback
+        val firstUri = submission?.documentUris?.firstOrNull()?.toUri() ?: return fallback
         return runCatching {
-            getApplication<Application>().contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
+            getApplication<Application>().contentResolver.query(firstUri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
                 if (cursor.moveToFirst()) cursor.getString(0).substringBeforeLast('.').ifBlank { fallback } else fallback
             } ?: fallback
         }.getOrDefault(fallback)
@@ -652,8 +652,18 @@ class PlanGenerationViewModel(application: Application) : AndroidViewModel(appli
 
     private fun restoreSubmission(): PlanSetupSubmission? = runCatching {
         val json = JSONObject(preferences.getString(KEY_SUBMISSION, null) ?: return null)
+        val documentUris = if (json.has("documentUris")) {
+            val arr = json.getJSONArray("documentUris")
+            buildList { repeat(arr.length()) { add(arr.getString(it)) } }
+        } else {
+            val single = json.optString("documentUri", null) ?: return null
+            json.put("documentUris", JSONArray(listOf(single)))
+            json.remove("documentUri")
+            preferences.edit { putString(KEY_SUBMISSION, json.toString()) }
+            listOf(single)
+        }
         PlanSetupSubmission(
-            documentUri = json.getString("documentUri"),
+            documentUris = documentUris,
             goal = com.hci.ren.feature.pdfupload.presentation.StudyGoal.valueOf(json.getString("goal")),
             deadline = com.hci.ren.feature.pdfupload.presentation.StudyDeadline.valueOf(json.getString("deadline")),
             deadlineDate = json.optString("deadlineDate").takeUnless { it.isBlank() || it == "null" },

@@ -16,7 +16,7 @@ def client(tmp_path, monkeypatch):
 
 
 def setup(document_id, request_id="request-1"):
-    return {"documentId": document_id, "requestId": request_id, "setup": {
+    return {"documentIds": [document_id], "requestId": request_id, "setup": {
         "goal": "LearnThoroughly", "deadline": "InOneWeek", "deadlineDate": None,
         "dailyStudyMinutes": 30, "studyDays": ["Monday", "Wednesday"]}}
 

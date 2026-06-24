@@ -30,10 +30,12 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.PictureAsPdf
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -46,6 +48,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
@@ -73,7 +76,10 @@ fun PdfUploadScreen(
     state: PdfUploadUiState,
     onBack: () -> Unit,
     onPickPdf: () -> Unit,
+    onAddMorePdf: () -> Unit,
     onContinue: () -> Unit,
+    onSelectPdf: (Int) -> Unit,
+    onRemovePdf: (Int) -> Unit,
     onPageSelected: (Int) -> Unit,
     onPageRequested: (PdfRenderKey, Int) -> Unit,
     modifier: Modifier = Modifier,
@@ -111,9 +117,12 @@ fun PdfUploadScreen(
                 onPickPdf = onPickPdf,
             )
 
-            if (state.document != null && state.loadStatus == PdfLoadStatus.Ready) {
+            if (state.documentGroup != null && state.loadStatus == PdfLoadStatus.Ready) {
                 PdfPreviewPane(
                     state = state,
+                    onSelectPdf = onSelectPdf,
+                    onRemovePdf = onRemovePdf,
+                    onAddMorePdf = onAddMorePdf,
                     onPageSelected = onPageSelected,
                     onPageRequested = onPageRequested,
                     modifier = Modifier
@@ -168,8 +177,8 @@ private fun PdfPickerHeader(
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
 
-        val document = state.document
-        if (document == null) {
+        val group = state.documentGroup
+        if (group == null || group.documents.isEmpty()) {
             OutlinedButton(
                 onClick = onPickPdf,
                 modifier = Modifier
@@ -186,14 +195,6 @@ private fun PdfPickerHeader(
                     fontWeight = FontWeight.SemiBold,
                 )
             }
-        } else {
-            val reducedMotion = isReducedMotionEnabled()
-            AnimatedVisibility(
-                visible = true,
-                enter = fadeIn(tween(RenMotionDurationMillis, easing = RenMotionEasing)) +
-                    if (reducedMotion) androidx.compose.animation.EnterTransition.None
-                    else slideInVertically(tween(RenMotionDurationMillis, easing = RenMotionEasing)) { it / 5 },
-            ) { PdfFileCard(document = document) }
         }
 
         if (state.loadStatus is PdfLoadStatus.Error) {
@@ -208,30 +209,36 @@ private fun PdfPickerHeader(
 }
 
 @Composable
-private fun PdfFileCard(
+internal fun PdfFileCard(
     document: PdfDocumentUiModel,
+    isSelected: Boolean,
+    onSelect: () -> Unit,
+    onRemove: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
+    val containerColor by animateColorAsState(
+        targetValue = if (isSelected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f)
+            else MaterialTheme.colorScheme.surface,
+        animationSpec = tween(RenMotionDurationMillis, easing = RenMotionEasing),
+        label = "file-card-bg",
+    )
     Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .testTag("pdf-file-card"),
+        onClick = onSelect,
+        modifier = modifier.fillMaxWidth().testTag("pdf-file-card"),
         shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surface,
-        ),
+        colors = CardDefaults.cardColors(containerColor = containerColor),
         elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
     ) {
         Row(
-            modifier = Modifier.padding(16.dp),
+            modifier = Modifier.padding(start = 16.dp, end = 4.dp, top = 8.dp, bottom = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             Icon(
                 imageVector = Icons.Default.PictureAsPdf,
                 contentDescription = null,
                 tint = MaterialTheme.colorScheme.primary,
             )
-            Column(modifier = Modifier.weight(1f)) {
+            Column(modifier = Modifier.weight(1f).padding(horizontal = 12.dp)) {
                 Text(
                     text = document.fileName,
                     style = MaterialTheme.typography.titleMedium,
@@ -245,11 +252,13 @@ private fun PdfFileCard(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-            Icon(
-                imageVector = Icons.Default.CheckCircle,
-                contentDescription = "PDF loaded successfully",
-                tint = MaterialTheme.colorScheme.primary,
-            )
+            IconButton(onClick = onRemove) {
+                Icon(
+                    imageVector = Icons.Default.Close,
+                    contentDescription = "Remove ${document.fileName}",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
         }
     }
 }
@@ -257,50 +266,86 @@ private fun PdfFileCard(
 @Composable
 private fun PdfPreviewPane(
     state: PdfUploadUiState,
+    onSelectPdf: (Int) -> Unit,
+    onRemovePdf: (Int) -> Unit,
+    onAddMorePdf: () -> Unit,
     onPageSelected: (Int) -> Unit,
     onPageRequested: (PdfRenderKey, Int) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    Row(
-        modifier = modifier,
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        AnimatedContent(
-            targetState = state.selectedPageIndex,
-            transitionSpec = { fadeIn(renContentSpec()) togetherWith fadeOut(renContentSpec()) },
-            label = "selected-page",
-            modifier = Modifier.weight(1f).fillMaxHeight().testTag("selected-pdf-page"),
-        ) { pageIndex ->
-            val key = PdfRenderKey(pageIndex, PdfRenderKind.Preview)
-            PdfPageImage(key, state.renderedPages[key], 1400, onPageRequested, Modifier.fillMaxSize())
+    val group = state.documentGroup ?: return
+    val currentDocIndex = group.selectedPdfIndex
+
+    Column(modifier = modifier) {
+        if (group.documents.isNotEmpty()) {
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(120.dp)
+                    .testTag("pdf-file-list"),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+                contentPadding = PaddingValues(bottom = 8.dp),
+            ) {
+                itemsIndexed(group.documents) { index, doc ->
+                    PdfFileCard(
+                        document = doc,
+                        isSelected = index == currentDocIndex,
+                        onSelect = { onSelectPdf(index) },
+                        onRemove = { onRemovePdf(index) },
+                    )
+                }
+                item {
+                    TextButton(
+                        onClick = onAddMorePdf,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Text("+ Add more")
+                    }
+                }
+            }
         }
 
-        LazyColumn(
-            modifier = Modifier
-                .width(92.dp)
-                .fillMaxHeight()
-                .testTag("pdf-thumbnails"),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
-            contentPadding = PaddingValues(bottom = 8.dp),
+        Row(
+            modifier = Modifier.weight(1f).fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            items(
-                items = state.thumbnailPageIndexes,
-                key = { it },
+            AnimatedContent(
+                targetState = state.selectedPageIndex,
+                transitionSpec = { fadeIn(renContentSpec()) togetherWith fadeOut(renContentSpec()) },
+                label = "selected-page",
+                modifier = Modifier.weight(1f).fillMaxHeight().testTag("selected-pdf-page"),
             ) { pageIndex ->
-                val key = PdfRenderKey(pageIndex, PdfRenderKind.Thumbnail)
-                PdfPageImage(
-                    key = key,
-                    state = state.renderedPages[key],
-                    targetWidthPx = 220,
-                    isSelected = pageIndex == state.selectedPageIndex,
-                    onPageRequested = onPageRequested,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .aspectRatio(0.72f)
-                        .clip(RoundedCornerShape(10.dp))
-                        .clickable { onPageSelected(pageIndex) }
-                        .testTag("pdf-thumbnail-$pageIndex"),
-                )
+                val key = PdfRenderKey(currentDocIndex, pageIndex, PdfRenderKind.Preview)
+                PdfPageImage(key, state.renderedPages[key], 1400, onPageRequested, Modifier.fillMaxSize())
+            }
+
+            LazyColumn(
+                modifier = Modifier
+                    .width(92.dp)
+                    .fillMaxHeight()
+                    .testTag("pdf-thumbnails"),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+                contentPadding = PaddingValues(bottom = 8.dp),
+            ) {
+                items(
+                    items = state.thumbnailPageIndexes,
+                    key = { it },
+                ) { pageIndex ->
+                    val key = PdfRenderKey(currentDocIndex, pageIndex, PdfRenderKind.Thumbnail)
+                    PdfPageImage(
+                        key = key,
+                        state = state.renderedPages[key],
+                        targetWidthPx = 220,
+                        isSelected = pageIndex == state.selectedPageIndex,
+                        onPageRequested = onPageRequested,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .aspectRatio(0.72f)
+                            .clip(RoundedCornerShape(10.dp))
+                            .clickable { onPageSelected(pageIndex) }
+                            .testTag("pdf-thumbnail-$pageIndex"),
+                    )
+                }
             }
         }
     }
@@ -399,17 +444,20 @@ private fun PdfUploadReadyPreview() {
     RenTheme(dynamicColor = false) {
         PdfUploadScreen(
             state = PdfUploadUiState(
-                document = PdfDocumentUiModel(
-                    uri = "content://ren/document",
-                    fileName = "Lecture notes.pdf",
-                    sizeBytes = 1_572_864,
-                    pageCount = 5,
+                documentGroup = DocumentGroup(
+                    documents = listOf(
+                        PdfDocumentUiModel(uri = "content://ren/doc1", fileName = "Lecture notes.pdf", sizeBytes = 1_572_864, pageCount = 5),
+                    ),
+                    selectedPdfIndex = 0,
                 ),
                 loadStatus = PdfLoadStatus.Ready,
             ),
             onBack = {},
             onPickPdf = {},
+            onAddMorePdf = {},
             onContinue = {},
+            onSelectPdf = {},
+            onRemovePdf = {},
             onPageSelected = {},
             onPageRequested = { _, _ -> },
         )

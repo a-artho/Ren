@@ -55,7 +55,7 @@ class MainActivity : ComponentActivity() {
         setContent {
             RenTheme(dynamicColor = false) {
                 var screen by rememberSaveable { mutableStateOf(ScreenHome) }
-                var setupDocumentUri by rememberSaveable { mutableStateOf("") }
+                var setupDocumentUris by rememberSaveable { mutableStateOf("") }
                 var openPickerOnStart by rememberSaveable { mutableStateOf(false) }
                 var setupStartedForUploadSession by rememberSaveable { mutableStateOf(false) }
                 var selectedStudyProjectId by rememberSaveable { mutableStateOf("") }
@@ -117,12 +117,12 @@ class MainActivity : ComponentActivity() {
                                     screen = ScreenHome
                                 }
                             },
-                            onContinue = { documentUri ->
+                            onContinue = { documentUris ->
                                 if (!transition.isRunning) {
                                     forward = true
-                                    setupDocumentUri = documentUri
+                                    setupDocumentUris = documentUris.joinToString("|")
                                     if (!setupStartedForUploadSession) {
-                                        planSetupViewModel.beginNewSession(documentUri)
+                                        planSetupViewModel.beginNewSession(documentUris)
                                         setupStartedForUploadSession = true
                                     }
                                     openPickerOnStart = false
@@ -132,7 +132,7 @@ class MainActivity : ComponentActivity() {
                         )
 
                         ScreenPdfSetup -> PlanSetupRoute(
-                            documentUri = setupDocumentUri,
+                            documentUris = setupDocumentUris.split("|").filter { it.isNotEmpty() },
                             viewModel = planSetupViewModel,
                             onExit = {
                                 if (!transition.isRunning) {

@@ -10,7 +10,7 @@ from app.store import Store
 
 class FakeProvider(AIProvider):
     def __init__(self, failures=0): self.failures, self.calls = failures, 0
-    async def create_plan(self, pdf: Path, setup: Setup) -> GeneratedPlan:
+    async def create_plan(self, pdfs: list[Path], setup: Setup) -> GeneratedPlan:
         self.calls += 1
         if self.calls <= self.failures: raise ValueError("invalid provider output")
         return GeneratedPlan.model_validate({
@@ -21,7 +21,7 @@ class FakeProvider(AIProvider):
 
 
 class SlowProvider(AIProvider):
-    async def create_plan(self, pdf: Path, setup: Setup) -> GeneratedPlan:
+    async def create_plan(self, pdfs: list[Path], setup: Setup) -> GeneratedPlan:
         await asyncio.sleep(60)
         raise AssertionError("Provider should have been cancelled")
 
@@ -30,7 +30,7 @@ def create_job(tmp_path, monkeypatch, provider):
     store = Store(tmp_path / "ren.db"); monkeypatch.setattr(main, "STORE", store); monkeypatch.setattr(main, "provider", provider)
     pdf = tmp_path / "document.pdf"; pdf.write_bytes(b"%PDF-test")
     document_id = store.add_document(pdf)
-    request = CreatePlanRequest(documentId=document_id, requestId="request", setup={
+    request = CreatePlanRequest(documentIds=[document_id], requestId="request", setup={
         "goal": "LearnThoroughly", "deadline": "InOneWeek", "dailyStudyMinutes": 20, "studyDays": ["Monday"]})
     plan_id, _ = store.create_plan(request)
     return store, pdf, plan_id
@@ -41,24 +41,26 @@ async def test_processing_retries_once_then_completes_and_deletes_pdf(tmp_path, 
     fake = FakeProvider(failures=1); store, pdf, plan_id = create_job(tmp_path, monkeypatch, fake)
     await main.process(plan_id)
     assert fake.calls == 2
-    assert store.get(plan_id)[2] == PlanStatus.COMPLETED
+    assert store.get(plan_id).status == PlanStatus.COMPLETED
     assert not pdf.exists()
 
 
 @pytest.mark.asyncio
 async def test_processing_fails_safely_after_second_error(tmp_path, monkeypatch):
+    import json
     fake = FakeProvider(failures=2); store, pdf, plan_id = create_job(tmp_path, monkeypatch, fake)
     await main.process(plan_id)
     row = store.get(plan_id)
     assert fake.calls == 2
-    assert row[2] == PlanStatus.FAILED
-    assert row[4] == "invalid provider output"
+    assert row.status == PlanStatus.FAILED
+    assert row.error == "invalid provider output"
     assert not pdf.exists()
-    assert store.document_path(row[0]) is None
+    assert store.document_path(json.loads(row.document_ids)[0]) is None
 
 
 @pytest.mark.asyncio
 async def test_infrastructure_cancellation_preserves_pending_job(tmp_path, monkeypatch):
+    import json
     store, pdf, plan_id = create_job(tmp_path, monkeypatch, SlowProvider())
     task = asyncio.create_task(main.process(plan_id))
     await asyncio.sleep(0)
@@ -67,7 +69,8 @@ async def test_infrastructure_cancellation_preserves_pending_job(tmp_path, monke
     with pytest.raises(asyncio.CancelledError):
         await task
 
-    assert store.get(plan_id)[2] != PlanStatus.CANCELED
-    assert store.document_path(store.get(plan_id)[0]) == pdf
+    row = store.get(plan_id)
+    assert row.status != PlanStatus.CANCELED
+    assert store.document_path(json.loads(row.document_ids)[0]) == pdf
     assert pdf.exists()
 

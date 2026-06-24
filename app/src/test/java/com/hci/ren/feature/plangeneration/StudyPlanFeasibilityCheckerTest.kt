@@ -141,5 +141,5 @@ class StudyPlanFeasibilityCheckerTest {
         deadline: StudyDeadline,
         dailyMinutes: Int,
         days: Set<StudyDay>,
-    ) = PlanSetupSubmission("content://pdf", goal, deadline, null, dailyMinutes, days)
+    ) = PlanSetupSubmission(listOf("content://pdf"), goal, deadline, null, dailyMinutes, days)
 }

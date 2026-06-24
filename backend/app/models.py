@@ -26,7 +26,7 @@ class Setup(BaseModel):
 
 class CreatePlanRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    documentId: str
+    documentIds: list[str] = Field(min_length=1, max_length=10)
     requestId: str
     setup: Setup
 

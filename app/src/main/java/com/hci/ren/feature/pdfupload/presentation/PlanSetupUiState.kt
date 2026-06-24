@@ -1,7 +1,7 @@
 package com.hci.ren.feature.pdfupload.presentation
 
 data class PlanSetupUiState(
-    val documentUri: String = "",
+    val documentUris: List<String> = emptyList(),
     val currentStep: PlanSetupStep = PlanSetupStep.Goal,
     val selectedGoal: StudyGoal? = null,
     val selectedDeadline: StudyDeadline? = null,
@@ -43,7 +43,7 @@ data class PlanSetupUiState(
         if (selectedDays.isEmpty()) return null
 
         return PlanSetupSubmission(
-            documentUri = documentUri,
+            documentUris = documentUris,
             goal = goal,
             deadline = deadline,
             deadlineDate = customDeadlineDate,
@@ -54,7 +54,7 @@ data class PlanSetupUiState(
 }
 
 data class PlanSetupSubmission(
-    val documentUri: String,
+    val documentUris: List<String>,
     val goal: StudyGoal,
     val deadline: StudyDeadline,
     val deadlineDate: String?,

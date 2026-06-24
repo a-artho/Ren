@@ -23,7 +23,10 @@ class PdfUploadScreenTest {
                     state = PdfUploadUiState(),
                     onBack = {},
                     onPickPdf = {},
+                    onAddMorePdf = {},
                     onContinue = {},
+                    onSelectPdf = {},
+                    onRemovePdf = {},
                     onPageSelected = {},
                     onPageRequested = { _, _ -> },
                 )
@@ -41,7 +44,10 @@ class PdfUploadScreenTest {
                     state = readyState(),
                     onBack = {},
                     onPickPdf = {},
+                    onAddMorePdf = {},
                     onContinue = {},
+                    onSelectPdf = {},
+                    onRemovePdf = {},
                     onPageSelected = {},
                     onPageRequested = { _, _ -> },
                 )
@@ -51,7 +57,6 @@ class PdfUploadScreenTest {
         composeRule.onNodeWithTag("pdf-file-card").assertIsDisplayed()
         composeRule.onNodeWithText("Lecture notes.pdf").assertIsDisplayed()
         composeRule.onNodeWithText("4 pages • 1.5 MB").assertIsDisplayed()
-        composeRule.onNodeWithContentDescription("PDF loaded successfully").assertIsDisplayed()
         composeRule.onNodeWithTag("pdf-continue").assertIsEnabled()
         composeRule.onNodeWithText("Next we'll customize how you want to study.").assertIsDisplayed()
     }
@@ -64,7 +69,10 @@ class PdfUploadScreenTest {
                     state = readyState(selectedPageIndex = 1),
                     onBack = {},
                     onPickPdf = {},
+                    onAddMorePdf = {},
                     onContinue = {},
+                    onSelectPdf = {},
+                    onRemovePdf = {},
                     onPageSelected = {},
                     onPageRequested = { _, _ -> },
                 )
@@ -77,11 +85,13 @@ class PdfUploadScreenTest {
     }
 
     private fun readyState(selectedPageIndex: Int = 0) = PdfUploadUiState(
-        document = PdfDocumentUiModel(
-            uri = "content://ren/document",
-            fileName = "Lecture notes.pdf",
-            sizeBytes = 1_572_864,
-            pageCount = 4,
+        documentGroup = DocumentGroup(
+            documents = listOf(PdfDocumentUiModel(
+                uri = "content://ren/document",
+                fileName = "Lecture notes.pdf",
+                sizeBytes = 1_572_864,
+                pageCount = 4,
+            )),
         ),
         selectedPageIndex = selectedPageIndex,
         loadStatus = PdfLoadStatus.Ready,

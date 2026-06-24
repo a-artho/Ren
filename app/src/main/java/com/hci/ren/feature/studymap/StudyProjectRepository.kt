@@ -155,10 +155,10 @@ internal fun newStudyProject(
 ): StudyProject {
     val absoluteDeadline = deadlineDate(preferences, Calendar.getInstance())?.timeInMillis
     val persistedPreferences = if (absoluteDeadline == null) {
-        preferences.copy(documentUri = "", deadline = StudyDeadline.NoFixedDeadline, deadlineDate = null)
+        preferences.copy(documentUris = emptyList(), deadline = StudyDeadline.NoFixedDeadline, deadlineDate = null)
     } else {
         preferences.copy(
-            documentUri = "",
+            documentUris = emptyList(),
             deadline = StudyDeadline.ChooseDate,
             deadlineDate = Calendar.getInstance().apply { timeInMillis = absoluteDeadline }.toStudyDate(),
         )
@@ -243,7 +243,7 @@ private fun PlanSetupSubmission.toPersistedJson() = JSONObject()
     .put("studyDays", JSONArray(studyDays.map { it.name }))
 
 private fun JSONObject.toSubmission() = PlanSetupSubmission(
-    documentUri = "",
+    documentUris = emptyList(),
     goal = getString("goal").enumOr(StudyGoal.OngoingStudy),
     deadline = getString("deadline").enumOr(StudyDeadline.NoFixedDeadline),
     deadlineDate = optString("deadlineDate").takeUnless { it.isBlank() || it == "null" },

@@ -34,6 +34,28 @@ class PdfDocumentRepository(
         )
     }
 
+    fun loadDocuments(uris: List<Uri>): Result<List<PdfDocumentUiModel>> = runCatching {
+        uris.mapNotNull { uri ->
+            runCatching {
+                try {
+                    contentResolver.takePersistableUriPermission(
+                        uri, Intent.FLAG_GRANT_READ_URI_PERMISSION,
+                    )
+                } catch (_: SecurityException) { }
+                val metadata = queryMetadata(uri)
+                val pageCount = readPageCount(uri)
+                PdfDocumentUiModel(
+                    uri = uri.toString(),
+                    fileName = metadata.fileName ?: "Selected PDF",
+                    sizeBytes = metadata.sizeBytes ?: 0L,
+                    pageCount = pageCount,
+                )
+            }.getOrNull()
+        }.also { loaded ->
+            if (loaded.isEmpty()) throw IOException("Could not open any of the selected PDFs.")
+        }
+    }
+
     fun renderPage(
         uri: Uri,
         pageIndex: Int,

@@ -35,80 +35,178 @@ class PdfUploadViewModel(
     val uiState: StateFlow<PdfUploadUiState> = _uiState.asStateFlow()
 
     fun restoreDocumentIfNeeded() {
-        if (_uiState.value.document != null || _uiState.value.loadStatus != PdfLoadStatus.Idle) return
-        savedStateHandle.get<String>(KEY_DOCUMENT_URI)?.let { savedUri ->
-            selectDocument(
-                uri = savedUri.toUri(),
-                requestedPageIndex = savedStateHandle[KEY_SELECTED_PAGE] ?: 0,
-            )
+        if (_uiState.value.documentGroup != null || _uiState.value.loadStatus != PdfLoadStatus.Idle) return
+        val uriList = restoreUriList() ?: return
+        val savedPdfIndex = savedStateHandle.get<Int>(KEY_SELECTED_PDF_INDEX) ?: 0
+        if (savedPdfIndex > 0 && savedPdfIndex < uriList.size) {
+            val loadGeneration = ++documentLoadGeneration
+            saveUriList(uriList)
+            savedStateHandle[KEY_SELECTED_PDF_INDEX] = savedPdfIndex
+            pageCache.clear()
+            loadingPages.clear()
+            viewModelScope.launch {
+                val result = withContext(Dispatchers.IO) { repository.loadDocuments(uriList) }
+                if (loadGeneration != documentLoadGeneration) return@launch
+                result.onSuccess { documents ->
+                    val group = DocumentGroup(documents = documents, selectedPdfIndex = savedPdfIndex)
+                    _uiState.value = PdfUploadUiState(sessionId = sessionId, documentGroup = group, loadStatus = PdfLoadStatus.Ready)
+                    requestPage(PdfRenderKey(savedPdfIndex, 0, PdfRenderKind.Preview), previewWidthPx)
+                }
+            }
+        } else {
+            selectDocuments(uriList)
         }
     }
 
-    fun selectDocument(uri: Uri, requestedPageIndex: Int = 0) {
+    fun selectDocuments(uris: List<Uri>) {
+        if (uris.size > MAX_DOCUMENTS) {
+            _uiState.value = PdfUploadUiState(
+                sessionId = sessionId,
+                loadStatus = PdfLoadStatus.Error(
+                    getApplication<Application>().getString(R.string.too_many_pdfs, MAX_DOCUMENTS)
+                ),
+            )
+            return
+        }
         val loadGeneration = ++documentLoadGeneration
-        savedStateHandle[KEY_DOCUMENT_URI] = uri.toString()
-        savedStateHandle[KEY_SELECTED_PAGE] = requestedPageIndex
         pageCache.clear()
         loadingPages.clear()
         _uiState.value = PdfUploadUiState(sessionId = sessionId, loadStatus = PdfLoadStatus.Loading)
 
         viewModelScope.launch {
-            val result = withContext(Dispatchers.IO) {
-                repository.loadDocument(uri)
-            }
-
+            val result = withContext(Dispatchers.IO) { repository.loadDocuments(uris) }
             if (loadGeneration != documentLoadGeneration) return@launch
-
             result
-                .onSuccess { document ->
-                    val selectedPage = restoredPageIndex(requestedPageIndex, document.pageCount)
-                    if (!isUploadSizeAllowed(document.sizeBytes)) {
+                .onSuccess { documents ->
+                    saveUriList(uris)
+                    savedStateHandle[KEY_SELECTED_PDF_INDEX] = 0
+                    val oversized = documents.filter { !isUploadSizeAllowed(it.sizeBytes) }
+                    if (oversized.isNotEmpty()) {
+                        val name = oversized.first().fileName
                         _uiState.value = PdfUploadUiState(
                             sessionId = sessionId,
                             loadStatus = PdfLoadStatus.Error(
-                                getApplication<Application>().getString(R.string.pdf_too_large),
+                                getApplication<Application>().getString(R.string.pdf_too_large_with_name, name)
                             ),
                         )
                         return@onSuccess
                     }
+                    val group = DocumentGroup(documents = documents, selectedPdfIndex = 0)
                     _uiState.value = PdfUploadUiState(
                         sessionId = sessionId,
-                        document = document,
-                        selectedPageIndex = selectedPage,
+                        documentGroup = group,
+                        selectedPageIndex = 0,
                         loadStatus = PdfLoadStatus.Ready,
                     )
-                    savedStateHandle[KEY_SELECTED_PAGE] = selectedPage
-                    requestPage(PdfRenderKey(selectedPage, PdfRenderKind.Preview), previewWidthPx)
+                    requestPage(PdfRenderKey(0, 0, PdfRenderKind.Preview), previewWidthPx)
                 }
                 .onFailure {
                     _uiState.value = PdfUploadUiState(
                         sessionId = sessionId,
                         loadStatus = PdfLoadStatus.Error(
-                            "This PDF could not be opened. It may be protected, corrupted, or no longer accessible.",
+                            getApplication<Application>().getString(R.string.pdf_corrupt_with_name, "")
                         ),
                     )
                 }
         }
     }
 
+    fun appendDocuments(uris: List<Uri>) {
+        val currentCount = _uiState.value.documentGroup?.documents?.size ?: 0
+        if (currentCount + uris.size > MAX_DOCUMENTS) {
+            _uiState.update { state ->
+                state.copy(loadStatus = PdfLoadStatus.Error(
+                    getApplication<Application>().getString(R.string.too_many_pdfs, MAX_DOCUMENTS)
+                ))
+            }
+            return
+        }
+        val loadGeneration = ++documentLoadGeneration
+        viewModelScope.launch {
+            val result = withContext(Dispatchers.IO) { repository.loadDocuments(uris) }
+            if (loadGeneration != documentLoadGeneration) return@launch
+            result
+                .onSuccess { newDocs ->
+                    val oversized = newDocs.filter { !isUploadSizeAllowed(it.sizeBytes) }
+                    if (oversized.isNotEmpty()) {
+                        val name = oversized.first().fileName
+                        _uiState.update { state ->
+                            state.copy(loadStatus = PdfLoadStatus.Error(
+                                getApplication<Application>().getString(R.string.pdf_too_large_with_name, name)
+                            ))
+                        }
+                        return@onSuccess
+                    }
+                    _uiState.update { state ->
+                        val group = state.documentGroup ?: return@update state
+                        val updated = group.copy(documents = group.documents + newDocs)
+                        state.copy(documentGroup = updated, loadStatus = PdfLoadStatus.Ready)
+                    }
+                    updateSavedUriList()
+                }
+                .onFailure {
+                    _uiState.update { state ->
+                        state.copy(loadStatus = PdfLoadStatus.Error(
+                            getApplication<Application>().getString(R.string.pdf_corrupt_with_name, "")
+                        ))
+                    }
+                }
+        }
+    }
+
+    fun removeDocument(index: Int) {
+        val group = _uiState.value.documentGroup ?: return
+        if (index !in group.documents.indices) return
+        documentLoadGeneration++
+        pageCache.removeIf { it.documentIndex == index }
+        val newDocs = group.documents.toMutableList().apply { removeAt(index) }
+        val newSelected = when {
+            group.selectedPdfIndex == index -> if (newDocs.isEmpty()) 0 else index.coerceAtMost(newDocs.lastIndex)
+            group.selectedPdfIndex > index -> group.selectedPdfIndex - 1
+            else -> group.selectedPdfIndex
+        }
+        _uiState.update { state ->
+            state.copy(
+                documentGroup = DocumentGroup(documents = newDocs, selectedPdfIndex = newSelected),
+                renderedPages = state.renderedPages.filterKeys { it.documentIndex != index },
+                selectedPageIndex = 0,
+                loadStatus = if (newDocs.isNotEmpty()) PdfLoadStatus.Ready else PdfLoadStatus.Idle,
+            )
+        }
+        updateSavedUriList()
+        savedStateHandle[KEY_SELECTED_PDF_INDEX] = newSelected
+    }
+
+    fun selectPdf(documentIndex: Int) {
+        val group = _uiState.value.documentGroup ?: return
+        if (documentIndex !in group.documents.indices) return
+        _uiState.update { state ->
+            state.copy(documentGroup = group.copy(selectedPdfIndex = documentIndex), selectedPageIndex = 0)
+        }
+        savedStateHandle[KEY_SELECTED_PDF_INDEX] = documentIndex
+        requestPage(PdfRenderKey(documentIndex, 0, PdfRenderKind.Preview), previewWidthPx)
+    }
+
     fun selectPage(pageIndex: Int) {
-        val document = _uiState.value.document ?: return
-        if (pageIndex !in 0 until document.pageCount) return
+        val group = _uiState.value.documentGroup ?: return
+        val doc = group.documents.getOrNull(group.selectedPdfIndex) ?: return
+        if (pageIndex !in 0 until doc.pageCount) return
 
         _uiState.update { state ->
             state.copy(selectedPageIndex = pageIndex)
         }
         savedStateHandle[KEY_SELECTED_PAGE] = pageIndex
-        requestPage(PdfRenderKey(pageIndex, PdfRenderKind.Preview), previewWidthPx)
+        requestPage(PdfRenderKey(group.selectedPdfIndex, pageIndex, PdfRenderKind.Preview), previewWidthPx)
     }
 
     fun requestPage(
         key: PdfRenderKey,
         targetWidthPx: Int,
     ) {
-        val document = _uiState.value.document ?: return
+        val group = _uiState.value.documentGroup ?: return
+        val doc = group.documents.getOrNull(key.documentIndex) ?: return
         val loadGeneration = documentLoadGeneration
-        if (key.pageIndex !in 0 until document.pageCount) return
+        if (key.pageIndex !in 0 until doc.pageCount) return
 
         pageCache.get(key)?.let { bitmap ->
             _uiState.update { state ->
@@ -128,16 +226,14 @@ class PdfUploadViewModel(
             val result = renderSemaphore.withPermit {
                 withContext(Dispatchers.IO) {
                     repository.renderPage(
-                        uri = document.uri.toUri(),
+                        uri = doc.uri.toUri(),
                         pageIndex = key.pageIndex,
                         targetWidthPx = targetWidthPx,
                     )
                 }
             }
 
-            if (loadGeneration != documentLoadGeneration || _uiState.value.document?.uri != document.uri) {
-                return@launch
-            }
+            if (loadGeneration != documentLoadGeneration) return@launch
 
             loadingPages.remove(key)
             result
@@ -155,31 +251,55 @@ class PdfUploadViewModel(
                         state.copy(
                             renderedPages = state.renderedPages + (
                                 key to PdfPageRenderState.Error("Page could not be previewed.")
-                                ),
+                            ),
                         )
                     }
                 }
         }
     }
 
-    fun documentReference(): String? = _uiState.value.document?.uri
+    fun documentReferences(): List<String> =
+        _uiState.value.documentGroup?.documents?.map { it.uri } ?: emptyList()
 
     fun beginNewSession() {
         documentLoadGeneration += 1
         sessionId += 1
         savedStateHandle[KEY_SESSION_ID] = sessionId
+        savedStateHandle.remove<String>(KEY_DOCUMENT_URI_LIST)
         savedStateHandle.remove<String>(KEY_DOCUMENT_URI)
+        savedStateHandle.remove<Int>(KEY_SELECTED_PDF_INDEX)
         savedStateHandle.remove<Int>(KEY_SELECTED_PAGE)
         pageCache.clear()
         loadingPages.clear()
         _uiState.value = PdfUploadUiState(sessionId = sessionId)
     }
 
+    private fun saveUriList(uris: List<Uri>) {
+        savedStateHandle[KEY_DOCUMENT_URI_LIST] = uris.joinToString("|") { it.toString() }
+        savedStateHandle.remove<String>(KEY_DOCUMENT_URI)
+    }
+
+    private fun updateSavedUriList() {
+        val uris = _uiState.value.documentGroup?.documents?.map { it.uri.toUri() } ?: return
+        savedStateHandle[KEY_DOCUMENT_URI_LIST] = uris.joinToString("|") { it.toString() }
+    }
+
+    private fun restoreUriList(): List<Uri>? {
+        savedStateHandle.get<String>(KEY_DOCUMENT_URI_LIST)?.let { urisStr ->
+            val uris = urisStr.split("|").map { it.toUri() }
+            if (uris.isNotEmpty()) return uris
+        }
+        return savedStateHandle.get<String>(KEY_DOCUMENT_URI)?.let { listOf(it.toUri()) }
+    }
+
     private companion object {
+        const val MAX_DOCUMENTS = 10
         const val previewWidthPx = 1400
         const val MaxBitmapCacheBytes = 32L * 1024 * 1024
         const val KEY_SESSION_ID = "pdf_session_id"
         const val KEY_DOCUMENT_URI = "pdf_document_uri"
+        const val KEY_DOCUMENT_URI_LIST = "pdf_document_uri_list"
+        const val KEY_SELECTED_PDF_INDEX = "pdf_selected_pdf_index"
         const val KEY_SELECTED_PAGE = "pdf_selected_page"
     }
 }

@@ -29,11 +29,13 @@ class PdfUploadUiStateTest {
 
         assertTrue(
             PdfUploadUiState(
-                document = PdfDocumentUiModel(
-                    uri = "content://ren/document",
-                    fileName = "Lecture.pdf",
-                    sizeBytes = 1_536,
-                    pageCount = 12,
+                documentGroup = DocumentGroup(
+                    documents = listOf(PdfDocumentUiModel(
+                        uri = "content://ren/document",
+                        fileName = "Lecture.pdf",
+                        sizeBytes = 1_536,
+                        pageCount = 12,
+                    )),
                 ),
                 loadStatus = PdfLoadStatus.Ready,
             ).canContinue,
@@ -41,11 +43,13 @@ class PdfUploadUiStateTest {
 
         assertFalse(
             PdfUploadUiState(
-                document = PdfDocumentUiModel(
-                    uri = "content://ren/document",
-                    fileName = "Lecture.pdf",
-                    sizeBytes = 1_536,
-                    pageCount = 12,
+                documentGroup = DocumentGroup(
+                    documents = listOf(PdfDocumentUiModel(
+                        uri = "content://ren/document",
+                        fileName = "Lecture.pdf",
+                        sizeBytes = 1_536,
+                        pageCount = 12,
+                    )),
                 ),
                 loadStatus = PdfLoadStatus.Error("Could not open this PDF."),
             ).canContinue,

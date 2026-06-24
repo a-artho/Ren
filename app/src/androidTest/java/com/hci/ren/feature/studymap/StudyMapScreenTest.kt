@@ -91,7 +91,7 @@ class StudyMapScreenTest {
     )
 
     private fun submission(deadline: StudyDeadline, dailyMinutes: Int) = PlanSetupSubmission(
-        documentUri = "content://test",
+        documentUris = listOf("content://test"),
         goal = StudyGoal.PrepareForExam,
         deadline = deadline,
         deadlineDate = null,
@@ -99,3 +99,4 @@ class StudyMapScreenTest {
         studyDays = StudyDay.entries.toSet(),
     )
 }
+

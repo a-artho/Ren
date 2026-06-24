@@ -61,7 +61,7 @@ class StudyProjectDatabaseTest {
             projectName = title,
         ),
         preferences = PlanSetupSubmission(
-            documentUri = "",
+            documentUris = emptyList(),
             goal = StudyGoal.OngoingStudy,
             deadline = StudyDeadline.NoFixedDeadline,
             deadlineDate = null,
@@ -70,3 +70,4 @@ class StudyProjectDatabaseTest {
         ),
     )
 }
+

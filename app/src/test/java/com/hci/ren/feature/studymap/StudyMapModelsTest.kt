@@ -172,7 +172,7 @@ class StudyMapModelsTest {
     )
 
     private fun submission(minutes: Int, deadline: StudyDeadline) = PlanSetupSubmission(
-        documentUri = "content://test",
+        documentUris = listOf("content://test"),
         goal = StudyGoal.PrepareForExam,
         deadline = deadline,
         deadlineDate = null,

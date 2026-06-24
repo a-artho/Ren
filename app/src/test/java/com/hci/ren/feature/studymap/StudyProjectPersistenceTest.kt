@@ -26,7 +26,7 @@ class StudyProjectPersistenceTest {
         assertEquals("Untitled Study Map", generated.title)
         assertEquals(StudyDeadline.ChooseDate, generated.preferences.deadline)
         assertEquals("2026-06-30", generated.preferences.deadlineDate)
-        assertEquals("", generated.preferences.documentUri)
+        assertEquals(emptyList<String>(), generated.preferences.documentUris)
     }
 
     @Test fun searchIsForgivingAndSortsMissingDeadlinesLast() {
@@ -86,7 +86,7 @@ class StudyProjectPersistenceTest {
     )
 
     private fun preferences() = PlanSetupSubmission(
-        documentUri = "content://raw.pdf",
+        documentUris = listOf("content://raw.pdf"),
         goal = StudyGoal.PrepareForExam,
         deadline = StudyDeadline.ChooseDate,
         deadlineDate = "2099-06-30",

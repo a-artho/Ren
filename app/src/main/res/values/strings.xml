@@ -37,6 +37,9 @@
     <string name="error_icon_description">Error indicator</string>
     <string name="home_feature_unavailable">This feature isn’t available yet.</string>
     <string name="pdf_too_large">This PDF is larger than the 25 MB upload limit.</string>
+    <string name="too_many_pdfs">You can select up to %d PDFs at once.</string>
+    <string name="pdf_too_large_with_name">%1$s is too large (max 25 MB per file).</string>
+    <string name="pdf_corrupt_with_name">%1$s could not be opened. It may be protected or corrupted.</string>
     <string name="reality_check">Reality Check</string>
     <string name="available_time">Available study time</string>
     <string name="extend_deadline">Extend deadline</string>
