@@ -81,7 +81,11 @@ class PlanApiRepository(
                 isExcluded = it.optBoolean("isExcluded", false),
             )
         }.sortedBy { it.order }
-        return GeneratedStudyPlan(planId, topics, blocks, json.getInt("totalEstimatedMinutes"))
+        val title = if (json.has("title") && !json.isNull("title")) {
+            json.optString("title", "").takeIf { it.isNotBlank() }
+        } else null
+        return GeneratedStudyPlan(planId, topics, blocks, json.getInt("totalEstimatedMinutes"),
+            projectName = title ?: DEFAULT_PROJECT_NAME)
     }
 
     fun cancelPlan(planId: String) {

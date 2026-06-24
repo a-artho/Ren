@@ -64,6 +64,7 @@ class StudyBlock(BaseModel):
 
 class GeneratedPlan(BaseModel):
     model_config = ConfigDict(extra="ignore")
+    title: str = Field(default="Study plan", max_length=80, min_length=1)
     topics: list[Topic] = Field(min_length=1)
     blocks: list[StudyBlock] = Field(min_length=1)
 

@@ -161,5 +161,7 @@ def get_plan(plan_id: str):
     if not row: raise HTTPException(404, "Plan not found")
     if row[2] != PlanStatus.COMPLETED: raise HTTPException(409, "Plan is not ready")
     result = GeneratedPlan.model_validate_json(row[3])
-    return {"planId": plan_id, "documentId": row[0], "topics": result.model_dump()["topics"],
-            "blocks": result.model_dump()["blocks"], "totalEstimatedMinutes": sum(b.durationMinutes for b in result.blocks)}
+    return {"planId": plan_id, "documentId": row[0], "title": result.title,
+            "topics": result.model_dump()["topics"],
+            "blocks": result.model_dump()["blocks"],
+            "totalEstimatedMinutes": sum(b.durationMinutes for b in result.blocks)}

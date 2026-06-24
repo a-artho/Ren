@@ -126,3 +126,34 @@ def test_cancel_marks_plan_terminal_and_removes_document(tmp_path, monkeypatch):
         assert main.STORE.document_path(document_id) is None
         assert api.post(f"/plans/{plan_id}/cancel").status_code == 200
 
+
+def test_completed_plan_returns_title(tmp_path, monkeypatch):
+    with client(tmp_path, monkeypatch) as api:
+        from app.main import STORE
+        from app.models import GeneratedPlan, PlanStatus
+        uploaded = api.post("/documents", files={"file": ("lesson.pdf", b"%PDF-test", "application/pdf")})
+        document_id = uploaded.json()["documentId"]
+        created = api.post("/plans", json=setup(document_id))
+        plan_id = created.json()["planId"]
+
+        plan = GeneratedPlan(
+            title="Test Subject Matter",
+            topics=[{"id": "t1", "title": "Topic 1", "order": 1}],
+            blocks=[{
+                "id": "b1", "title": "Block 1", "order": 1, "durationMinutes": 30,
+                "instructions": "Read", "topicIds": ["t1"],
+                "minimumUsefulMinutes": 10, "priority": "MEDIUM", "taskType": "REVIEW",
+                "priorityReason": "Foundation", "isSkippable": True,
+            }],
+        )
+        STORE.set_status(plan_id, PlanStatus.COMPLETED, result=plan)
+
+        response = api.get(f"/plans/{plan_id}")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["title"] == "Test Subject Matter"
+        assert data["planId"] == plan_id
+        assert "topics" in data
+        assert "blocks" in data
+        assert "totalEstimatedMinutes" in data
+

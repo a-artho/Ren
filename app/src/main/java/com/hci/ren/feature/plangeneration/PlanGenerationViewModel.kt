@@ -308,8 +308,13 @@ class PlanGenerationViewModel(application: Application) : AndroidViewModel(appli
                     when (status) {
                         PlanStatus.Completed -> {
                             fetchedPlan = withContext(Dispatchers.IO) {
-                                val fetched = repository.plan(planId).copy(projectName = resolveProjectName())
-                                restoreStudyMapPlan(fetched) ?: fetched
+                                val plan = repository.plan(planId)
+                                val named = if (plan.projectName == DEFAULT_PROJECT_NAME) {
+                                    plan.copy(projectName = resolveProjectName())
+                                } else {
+                                    plan
+                                }
+                                restoreStudyMapPlan(named) ?: named
                             }
                             backendStatus.value = PlanStatus.Completed
                             return

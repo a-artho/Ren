@@ -12,6 +12,7 @@ logger = logging.getLogger("ren")
 GEMINI_PLAN_SCHEMA = {
     "type": "object",
     "properties": {
+        "title": {"type": "string", "maxLength": 80},
         "topics": {
             "type": "array",
             "items": {
@@ -48,7 +49,7 @@ GEMINI_PLAN_SCHEMA = {
             },
         },
     },
-    "required": ["topics", "blocks"],
+    "required": ["title", "topics", "blocks"],
 }
 
 
@@ -66,6 +67,9 @@ class GeminiProvider(AIProvider):
     async def create_plan(self, pdf: Path, setup: Setup) -> GeneratedPlan:
         from google.genai import types
         prompt = (
+            "First, assign a concise, meaningful title to this study plan based on the "
+            "document's subject matter (e.g., 'Calculus I — Derivatives', 'Organic Chemistry "
+            "Chapter 5'). Keep the title under 80 characters. "
             "Create a faithful study plan from this PDF. Use only material in the document. "
             "Return JSON matching the supplied schema. Topics and blocks must use contiguous "
             "1-based order. Each block must reference valid topic IDs. Keep instructions short "

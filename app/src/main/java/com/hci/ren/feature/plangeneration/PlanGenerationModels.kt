@@ -23,6 +23,8 @@ enum class GenerationFailurePhase {
     BackendTerminal,
 }
 
+const val DEFAULT_PROJECT_NAME = "Study plan"
+
 internal fun requestIdForRetry(
     previousRequestId: String,
     phase: GenerationFailurePhase,
@@ -89,7 +91,7 @@ data class GeneratedStudyPlan(
     val topics: List<StudyTopic>,
     val blocks: List<GeneratedStudyBlock>,
     val totalEstimatedMinutes: Int,
-    val projectName: String = "Study plan",
+    val projectName: String = DEFAULT_PROJECT_NAME,
 )
 
 data class PlanGenerationUiState(
