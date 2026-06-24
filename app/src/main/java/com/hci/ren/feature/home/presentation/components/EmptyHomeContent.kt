@@ -1,6 +1,8 @@
 package com.hci.ren.feature.home.presentation.components
 
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -18,6 +20,10 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -26,6 +32,9 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.draw.scale
+import com.hci.ren.ui.motion.RenMotionEasing
+import com.hci.ren.ui.motion.isReducedMotionEnabled
 
 @Composable
 fun EmptyHomeContent(
@@ -50,8 +59,16 @@ private fun UploadCard(
     onUploadPdf: () -> Unit,
     onUseSampleMaterial: () -> Unit,
 ) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val isPressed by interactionSource.collectIsPressedAsState()
+    val reducedMotion = isReducedMotionEnabled()
+    val scale by animateFloatAsState(
+        targetValue = if (isPressed && !reducedMotion) 0.98f else 1f,
+        animationSpec = tween(120, easing = RenMotionEasing),
+        label = "upload-card-press",
+    )
     Card(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier.fillMaxWidth().scale(scale),
         shape = RoundedCornerShape(24.dp),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surface,
@@ -80,11 +97,18 @@ private fun UploadCard(
             Button(
                 onClick = onUploadPdf,
                 modifier = Modifier.fillMaxWidth(),
+                interactionSource = interactionSource,
             ) {
-                Text("Upload PDF")
+                Text(
+                    text = "Upload PDF",
+                    fontWeight = FontWeight.SemiBold,
+                )
             }
             TextButton(onClick = onUseSampleMaterial) {
-                Text("Try sample material")
+                Text(
+                    text = "Try sample material",
+                    fontWeight = FontWeight.SemiBold,
+                )
             }
         }
     }

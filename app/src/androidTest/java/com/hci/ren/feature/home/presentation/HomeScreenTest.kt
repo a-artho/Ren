@@ -121,4 +121,17 @@ class HomeScreenTest {
 
         assertEquals(HomeAction.UploadPdfClicked, receivedAction)
     }
+
+    @Test
+    fun unavailableHomeActionShowsFeedbackInsteadOfFailingSilently() {
+        composeRule.setContent {
+            RenTheme {
+                HomeRoute(onUploadPdf = {})
+            }
+        }
+
+        composeRule.onNodeWithTag("start-focus").performClick()
+
+        composeRule.onNodeWithText("This feature isn’t available yet.").assertIsDisplayed()
+    }
 }

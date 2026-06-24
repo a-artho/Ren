@@ -2,57 +2,69 @@ package com.hci.ren.ui.theme
 
 import androidx.compose.material3.Typography
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
+import com.hci.ren.R
+
+private val InterFontFamily = FontFamily(
+    Font(R.font.inter_regular, weight = FontWeight.Normal),
+    Font(R.font.inter_medium, weight = FontWeight.Medium),
+    Font(R.font.inter_semibold, weight = FontWeight.SemiBold),
+    Font(R.font.inter_bold, weight = FontWeight.Bold)
+)
+
+private fun renTextStyle(
+    fontWeight: FontWeight,
+    fontSize: Int,
+    lineHeight: Int
+) = TextStyle(
+    fontFamily = InterFontFamily,
+    fontWeight = fontWeight,
+    fontSize = fontSize.sp,
+    lineHeight = lineHeight.sp
+)
 
 val Typography = Typography(
-    displaySmall = TextStyle(
-        fontFamily = FontFamily.Default,
+    displaySmall = renTextStyle(
         fontWeight = FontWeight.Bold,
-        fontSize = 32.sp,
-        lineHeight = 38.sp
+        fontSize = 32,
+        lineHeight = 38
     ),
-    headlineSmall = TextStyle(
-        fontFamily = FontFamily.Default,
+    headlineSmall = renTextStyle(
         fontWeight = FontWeight.SemiBold,
-        fontSize = 24.sp,
-        lineHeight = 30.sp
+        fontSize = 24,
+        lineHeight = 30
     ),
-    titleLarge = TextStyle(
-        fontFamily = FontFamily.Default,
+    titleLarge = renTextStyle(
         fontWeight = FontWeight.SemiBold,
-        fontSize = 20.sp,
-        lineHeight = 26.sp
+        fontSize = 20,
+        lineHeight = 26
     ),
-    titleMedium = TextStyle(
-        fontFamily = FontFamily.Default,
+    titleMedium = renTextStyle(
         fontWeight = FontWeight.Medium,
-        fontSize = 16.sp,
-        lineHeight = 22.sp
+        fontSize = 16,
+        lineHeight = 22
     ),
-    bodyLarge = TextStyle(
-        fontFamily = FontFamily.Default,
+    bodyLarge = renTextStyle(
         fontWeight = FontWeight.Normal,
-        fontSize = 16.sp,
-        lineHeight = 24.sp
+        fontSize = 16,
+        lineHeight = 24
     ),
-    bodyMedium = TextStyle(
-        fontFamily = FontFamily.Default,
+    bodyMedium = renTextStyle(
         fontWeight = FontWeight.Normal,
-        fontSize = 14.sp,
-        lineHeight = 20.sp
+        fontSize = 14,
+        lineHeight = 20
     ),
-    labelLarge = TextStyle(
-        fontFamily = FontFamily.Default,
-        fontWeight = FontWeight.SemiBold,
-        fontSize = 14.sp,
-        lineHeight = 20.sp
-    ),
-    labelMedium = TextStyle(
-        fontFamily = FontFamily.Default,
+    labelLarge = renTextStyle(
         fontWeight = FontWeight.Medium,
-        fontSize = 12.sp,
-        lineHeight = 16.sp
+        fontSize = 14,
+        lineHeight = 20
+    ),
+    labelMedium = renTextStyle(
+        fontWeight = FontWeight.Medium,
+        fontSize = 12,
+        lineHeight = 16
     )
 )

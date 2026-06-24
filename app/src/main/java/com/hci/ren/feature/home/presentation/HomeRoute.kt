@@ -4,27 +4,62 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.ui.res.stringResource
+import com.hci.ren.R
+import kotlinx.coroutines.launch
 
 @Composable
-fun HomeRoute() {
+fun HomeRoute(
+    onUploadPdf: () -> Unit,
+    onStudyMap: () -> Unit = {},
+) {
     var state by remember { mutableStateOf(HomePreviewData.active) }
+    val snackbarHostState = remember { SnackbarHostState() }
+    val scope = rememberCoroutineScope()
+    val unavailableMessage = stringResource(R.string.home_feature_unavailable)
 
     HomeScreen(
         state = state,
+        snackbarHostState = snackbarHostState,
         onAction = { action ->
             state = when (action) {
                 HomeAction.AddMaterialClicked -> state.copy(
                     isAddMaterialSheetVisible = true,
                 )
 
-                HomeAction.AddMaterialDismissed,
-                HomeAction.UploadPdfClicked,
-                HomeAction.UseSampleMaterialClicked,
-                -> state.copy(isAddMaterialSheetVisible = false)
+                HomeAction.AddMaterialDismissed -> state.copy(isAddMaterialSheetVisible = false)
 
-                else -> state
+                HomeAction.UseSampleMaterialClicked -> homeStateAfterSampleSelection()
+
+                HomeAction.UploadPdfClicked -> {
+                    onUploadPdf()
+                    state.copy(isAddMaterialSheetVisible = false)
+                }
+
+                HomeAction.StartFocusClicked,
+                is HomeAction.MaterialClicked,
+                HomeAction.ProfileClicked,
+                HomeAction.NotificationsClicked,
+                -> {
+                    scope.launch { snackbarHostState.showSnackbar(unavailableMessage) }
+                    state
+                }
+
+                is HomeAction.NavigationItemClicked -> {
+                    if (action.destination == HomeDestination.StudyMap) {
+                        onStudyMap()
+                    } else if (action.destination != HomeDestination.Home) {
+                        scope.launch { snackbarHostState.showSnackbar(unavailableMessage) }
+                    }
+                    state
+                }
             }
         },
     )
 }
+
+internal fun homeStateAfterSampleSelection(): HomeUiState =
+    HomePreviewData.active.copy(isAddMaterialSheetVisible = false)

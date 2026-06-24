@@ -90,6 +90,7 @@ fun ContinueStudyingCard(
                                 text = "Next session",
                                 style = MaterialTheme.typography.labelMedium,
                                 color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                fontWeight = FontWeight.SemiBold,
                                 modifier = Modifier
                                     .padding(top = 4.dp)
                                     .background(
@@ -108,7 +109,10 @@ fun ContinueStudyingCard(
                             .fillMaxWidth()
                             .testTag("start-focus"),
                     ) {
-                        Text("Start Focus")
+                        Text(
+                            text = "Start Focus",
+                            fontWeight = FontWeight.SemiBold,
+                        )
                     }
                 }
             }

@@ -16,6 +16,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -50,19 +51,28 @@ fun AddMaterialSheet(
                     .fillMaxWidth()
                     .testTag("sheet-upload-pdf"),
             ) {
-                Text("Upload PDF")
+                Text(
+                    text = "Upload PDF",
+                    fontWeight = FontWeight.SemiBold,
+                )
             }
             TextButton(
                 onClick = onUseSampleMaterial,
                 modifier = Modifier.fillMaxWidth(),
             ) {
-                Text("Use sample material")
+                Text(
+                    text = "Use sample material",
+                    fontWeight = FontWeight.SemiBold,
+                )
             }
             TextButton(
                 onClick = onDismiss,
                 modifier = Modifier.fillMaxWidth(),
             ) {
-                Text("Cancel")
+                Text(
+                    text = "Cancel",
+                    fontWeight = FontWeight.SemiBold,
+                )
             }
         }
     }
