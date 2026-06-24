@@ -287,65 +287,61 @@ private fun PdfPreviewPane(
 
     Column(modifier = modifier) {
         if (group.documents.isNotEmpty()) {
-            Column(
+            Box(
                 modifier = Modifier
-                    .weight(0.45f)
                     .fillMaxWidth()
                     .heightIn(max = 260.dp)
             ) {
-                Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
-                    LazyColumn(
-                        state = listState,
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .testTag("pdf-file-list"),
-                        verticalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        itemsIndexed(group.documents) { index, doc ->
-                            PdfFileCard(
-                                document = doc,
-                                isSelected = index == currentDocIndex,
-                                onSelect = { onSelectPdf(index) },
-                                onRemove = { onRemovePdf(index) },
-                            )
-                        }
-                    }
-
-                    val indicatorState = listState.scrollIndicatorState
-                    if (indicatorState != null && indicatorState.contentSize > indicatorState.viewportSize) {
-                        val thumbFraction = indicatorState.viewportSize.toFloat() / indicatorState.contentSize.toFloat()
-                        val scrollRange = (indicatorState.contentSize - indicatorState.viewportSize).coerceAtLeast(1)
-                        Canvas(
-                            modifier = Modifier
-                                .fillMaxHeight()
-                                .width(4.dp)
-                                .align(Alignment.CenterEnd)
-                        ) {
-                            val thumbHeight = size.height * thumbFraction
-                            val thumbOffset = (size.height - thumbHeight) * indicatorState.scrollOffset.toFloat() / scrollRange
-                            drawRoundRect(
-                                color = Color.Gray.copy(alpha = 0.35f),
-                                topLeft = Offset(0f, thumbOffset),
-                                size = Size(size.width, thumbHeight),
-                                cornerRadius = CornerRadius(size.width / 2f, size.width / 2f),
-                            )
-                        }
-                    }
-                }
-                TextButton(
-                    onClick = onAddMorePdf,
-                    modifier = Modifier.fillMaxWidth(),
+                LazyColumn(
+                    state = listState,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("pdf-file-list"),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    Text("+ Add more")
+                    itemsIndexed(group.documents) { index, doc ->
+                        PdfFileCard(
+                            document = doc,
+                            isSelected = index == currentDocIndex,
+                            onSelect = { onSelectPdf(index) },
+                            onRemove = { onRemovePdf(index) },
+                        )
+                    }
                 }
+
+                val indicatorState = listState.scrollIndicatorState
+                if (indicatorState != null && indicatorState.contentSize > indicatorState.viewportSize) {
+                    val thumbFraction = indicatorState.viewportSize.toFloat() / indicatorState.contentSize.toFloat()
+                    val scrollRange = (indicatorState.contentSize - indicatorState.viewportSize).coerceAtLeast(1)
+                    Canvas(
+                        modifier = Modifier
+                            .fillMaxHeight()
+                            .width(4.dp)
+                            .align(Alignment.CenterEnd)
+                    ) {
+                        val thumbHeight = size.height * thumbFraction
+                        val thumbOffset = (size.height - thumbHeight) * indicatorState.scrollOffset.toFloat() / scrollRange
+                        drawRoundRect(
+                            color = Color.Gray.copy(alpha = 0.35f),
+                            topLeft = Offset(0f, thumbOffset),
+                            size = Size(size.width, thumbHeight),
+                            cornerRadius = CornerRadius(size.width / 2f, size.width / 2f),
+                        )
+                    }
+                }
+            }
+            TextButton(
+                onClick = onAddMorePdf,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text("+ Add more")
             }
         }
 
         Row(
             modifier = Modifier
-                .weight(0.55f)
-                .fillMaxWidth()
-                .heightIn(max = 340.dp),
+                .weight(1f)
+                .fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             AnimatedContent(
