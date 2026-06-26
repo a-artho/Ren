@@ -61,6 +61,18 @@ class StudyPlanFeasibilityCheckerTest {
         assertEquals(FeasibilityStatus.Unrealistic, result.status)
     }
 
+    @Test fun negativeDailyOverrideProducesZeroAvailability() {
+        val result = StudyPlanFeasibilityChecker().check(
+            listOf(block(minutes = 30)),
+            submission(StudyGoal.PrepareForExam, StudyDeadline.InThreeDays, 60, setOf(StudyDay.Monday)),
+            monday,
+            dailyMinutesOverride = -10,
+        )
+
+        assertEquals(0, result.availableMinutes)
+        assertEquals(FeasibilityStatus.Unrealistic, result.status)
+    }
+
     @Test fun deadlineRecommendationsUseDailyAvailabilityNotBlockDuration() {
         val result = StudyPlanFeasibilityChecker().check(
             listOf(block(minutes = 675)),

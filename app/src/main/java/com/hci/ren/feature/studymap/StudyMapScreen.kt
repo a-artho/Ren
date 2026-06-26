@@ -1186,68 +1186,6 @@ private fun TaskRowTextContent(
     }
 }
 
-/*
-@Composable
-private fun LegacyMaterialTaskRowContent(
-    task: GeneratedStudyBlock,
-    source: String?,
-) {
-    ListItem(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 2.dp),
-        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
-        leadingContent = {
-            TaskBullet(status = task.status)
-        },
-        headlineContent = {
-            Text(
-                text = task.title,
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-            )
-        },
-        supportingContent = {
-            Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                Text(
-                    text = "${formatMinutes(task.durationMinutes)} • ${taskTypeLabel(task.taskType)}",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                if (source != null) {
-                    Text(
-                        text = source,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.82f),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
-            }
-        },
-        trailingContent = if (task.status != StudyTaskStatus.NotStarted) {
-            {
-                StatusPill(statusLabel(task.status), statusContainer(task.status), statusContent(task.status))
-            }
-        } else {
-            null
-        },
-    )
-}
-
-@Composable
-private fun daySummaryLine(day: StudyScheduleDay): String {
-    val load = dayLoadLabel(day)
-    return buildList {
-        add(stringResource(R.string.planned_time_label, formatMinutes(day.totalScheduledMinutes)))
-        if (load != null) add(load)
-    }.joinToString(" • ")
-}
-
-*/
-
 @Composable
 private fun TaskBullet(status: StudyTaskStatus, modifier: Modifier = Modifier) {
     val complete = status == StudyTaskStatus.Completed

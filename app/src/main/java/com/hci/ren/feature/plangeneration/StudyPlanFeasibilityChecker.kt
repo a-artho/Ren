@@ -29,7 +29,7 @@ class StudyPlanFeasibilityChecker {
     ): FeasibilityResult {
         val required = requiredStudyMinutes(tasks)
         val availableStudyDays = availableStudyDates(preferences, today).size
-        val dailyMinutes = dailyMinutesOverride ?: preferences.dailyStudyMinutes
+        val dailyMinutes = (dailyMinutesOverride ?: preferences.dailyStudyMinutes).coerceAtLeast(0)
         val available = availableStudyDays * dailyMinutes
         val availableMinutesPerStudyDay = if (availableStudyDays > 0) {
             available / availableStudyDays

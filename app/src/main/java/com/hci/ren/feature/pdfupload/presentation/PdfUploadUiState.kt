@@ -157,18 +157,6 @@ class BoundedPageCache<K, V>(
     }
 
     @Synchronized
-    fun removeIf(predicate: (K) -> Boolean) {
-        val it = entries.iterator()
-        while (it.hasNext()) {
-            val entry = it.next()
-            if (predicate(entry.key)) {
-                storedWeight -= weightOf(entry.value)
-                it.remove()
-            }
-        }
-    }
-
-    @Synchronized
     fun clear() {
         entries.clear()
         storedWeight = 0

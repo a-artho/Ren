@@ -38,23 +38,43 @@ class PdfUploadViewModel(
         if (_uiState.value.documentGroup != null || _uiState.value.loadStatus != PdfLoadStatus.Idle) return
         val uriList = restoreUriList() ?: return
         val savedPdfIndex = savedStateHandle.get<Int>(KEY_SELECTED_PDF_INDEX) ?: 0
-        if (savedPdfIndex > 0 && savedPdfIndex < uriList.size) {
-            val loadGeneration = ++documentLoadGeneration
-            saveUriList(uriList)
-            savedStateHandle[KEY_SELECTED_PDF_INDEX] = savedPdfIndex
-            pageCache.clear()
-            loadingPages.clear()
-            viewModelScope.launch {
-                val result = withContext(Dispatchers.IO) { repository.loadDocuments(uriList) }
-                if (loadGeneration != documentLoadGeneration) return@launch
-                result.onSuccess { documents ->
-                    val group = DocumentGroup(documents = documents, selectedPdfIndex = savedPdfIndex)
-                    _uiState.value = PdfUploadUiState(sessionId = sessionId, documentGroup = group, loadStatus = PdfLoadStatus.Ready)
-                    requestPage(PdfRenderKey(savedPdfIndex, 0, PdfRenderKind.Preview), previewWidthPx)
+        val savedPageIndex = savedStateHandle.get<Int>(KEY_SELECTED_PAGE) ?: 0
+        val loadGeneration = ++documentLoadGeneration
+        saveUriList(uriList)
+        pageCache.clear()
+        loadingPages.clear()
+        _uiState.value = PdfUploadUiState(sessionId = sessionId, loadStatus = PdfLoadStatus.Loading)
+        viewModelScope.launch {
+            val result = withContext(Dispatchers.IO) { repository.loadDocuments(uriList) }
+            if (loadGeneration != documentLoadGeneration) return@launch
+            result.onSuccess { documents ->
+                if (documents.isEmpty()) {
+                    _uiState.value = PdfUploadUiState(sessionId = sessionId)
+                    return@onSuccess
                 }
+                val selectedPdfIndex = savedPdfIndex.coerceIn(0, documents.lastIndex)
+                val selectedPageIndex = restoredPageIndex(
+                    savedPageIndex,
+                    documents[selectedPdfIndex].pageCount,
+                )
+                val group = DocumentGroup(documents = documents, selectedPdfIndex = selectedPdfIndex)
+                _uiState.value = PdfUploadUiState(
+                    sessionId = sessionId,
+                    documentGroup = group,
+                    selectedPageIndex = selectedPageIndex,
+                    loadStatus = PdfLoadStatus.Ready,
+                )
+                savedStateHandle[KEY_SELECTED_PDF_INDEX] = selectedPdfIndex
+                savedStateHandle[KEY_SELECTED_PAGE] = selectedPageIndex
+                requestPage(PdfRenderKey(selectedPdfIndex, selectedPageIndex, PdfRenderKind.Preview), previewWidthPx)
+            }.onFailure {
+                _uiState.value = PdfUploadUiState(
+                    sessionId = sessionId,
+                    loadStatus = PdfLoadStatus.Error(
+                        getApplication<Application>().getString(R.string.pdf_corrupt_generic)
+                    ),
+                )
             }
-        } else {
-            selectDocuments(uriList)
         }
     }
 
@@ -192,7 +212,8 @@ class PdfUploadViewModel(
         val group = _uiState.value.documentGroup ?: return
         if (index !in group.documents.indices) return
         documentLoadGeneration++
-        pageCache.removeIf { it.documentIndex == index }
+        pageCache.clear()
+        loadingPages.clear()
         val newDocs = group.documents.toMutableList().apply { removeAt(index) }
         val newSelected = when {
             group.selectedPdfIndex == index -> if (newDocs.isEmpty()) 0 else index.coerceAtMost(newDocs.lastIndex)
@@ -202,7 +223,7 @@ class PdfUploadViewModel(
         _uiState.update { state ->
             state.copy(
                 documentGroup = DocumentGroup(documents = newDocs, selectedPdfIndex = newSelected),
-                renderedPages = state.renderedPages.filterKeys { it.documentIndex != index },
+                renderedPages = emptyMap(),
                 selectedPageIndex = 0,
                 loadStatus = if (newDocs.isNotEmpty()) PdfLoadStatus.Ready else PdfLoadStatus.Idle,
                 noticeMessage = null,
@@ -210,6 +231,9 @@ class PdfUploadViewModel(
         }
         updateSavedUriList()
         savedStateHandle[KEY_SELECTED_PDF_INDEX] = newSelected
+        if (newDocs.isNotEmpty()) {
+            requestPage(PdfRenderKey(newSelected, 0, PdfRenderKind.Preview), previewWidthPx)
+        }
     }
 
     fun selectPdf(documentIndex: Int) {

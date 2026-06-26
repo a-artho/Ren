@@ -191,8 +191,10 @@ async def cancel_plan(plan_id: str):
     task = TASKS.get(plan_id)
     if task and not task.done():
         task.cancel()
-        try: await task
-        except asyncio.CancelledError: pass
+        try:
+            await task
+        except asyncio.CancelledError:
+            logger.debug("Plan %s generation task cancelled", plan_id)
     for did in document_ids:
         cleanup_document(did)
     return {"planId": plan_id, "status": PlanStatus.CANCELED}
