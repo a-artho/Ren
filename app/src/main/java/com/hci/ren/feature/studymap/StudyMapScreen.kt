@@ -31,6 +31,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Assignment
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.filled.MenuBook
 import androidx.compose.material.icons.filled.AddTask
 import androidx.compose.material.icons.filled.CheckCircle
@@ -39,7 +40,6 @@ import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
-import androidx.compose.material.icons.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.School
@@ -506,18 +506,14 @@ private fun ProjectSummaryCard(data: StudyMapData) {
                 value = formatMinutes(data.totalEstimatedMinutes),
                 modifier = Modifier.weight(1f),
             )
-            if (data.realism.status != null) {
-                Box(
-                    modifier = Modifier.weight(1f),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    OutlinedStatusPill(
-                        label = realismLabel(data.realism.status),
-                        color = realismColor(data.realism.status),
-                    )
-                }
-            } else {
-                Spacer(Modifier.weight(1f))
+            Box(
+                modifier = Modifier.weight(1f),
+                contentAlignment = Alignment.Center,
+            ) {
+                OutlinedStatusPill(
+                    label = realismLabel(data.realism.status),
+                    color = realismColor(data.realism.status),
+                )
             }
             SummaryMetric(
                 label = stringResource(R.string.available_metric_label),
@@ -1064,7 +1060,7 @@ private fun StudyDayTitle(
 @Composable
 private fun StudyDayActionIcon(isToday: Boolean, expanded: Boolean) {
     Icon(
-        if (isToday) Icons.Default.KeyboardArrowRight else if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+        if (isToday) Icons.AutoMirrored.Filled.KeyboardArrowRight else if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
         contentDescription = null,
         tint = if (isToday) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
     )
