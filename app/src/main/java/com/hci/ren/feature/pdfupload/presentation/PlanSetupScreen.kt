@@ -1,14 +1,9 @@
 package com.hci.ren.feature.pdfupload.presentation
 
-import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.Crossfade
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.scaleIn
-import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -95,10 +90,6 @@ import androidx.compose.ui.unit.dp
 import com.hci.ren.ui.theme.RenTheme
 import com.hci.ren.ui.motion.RenMotionDurationMillis
 import com.hci.ren.ui.motion.RenMotionEasing
-import com.hci.ren.ui.motion.isReducedMotionEnabled
-import com.hci.ren.ui.motion.renEnterSpec
-import com.hci.ren.ui.motion.renExitSpec
-import com.hci.ren.ui.motion.renScreenTransform
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -161,19 +152,11 @@ fun PlanSetupScreen(
 
             Spacer(Modifier.height(10.dp))
 
-            val reducedMotion = isReducedMotionEnabled()
-            AnimatedContent(
+            Crossfade(
                 targetState = state.currentStep,
-                transitionSpec = {
-                    renScreenTransform(
-                        forward = targetState.ordinal > initialState.ordinal,
-                        reducedMotion = reducedMotion,
-                    )
-                },
-                contentKey = { it },
+                animationSpec = tween(RenMotionDurationMillis, easing = RenMotionEasing),
                 label = "plan-step",
-                modifier = Modifier
-                    .weight(1f),
+                modifier = Modifier.weight(1f),
             ) { step ->
                 val stepScrollState = rememberScrollState()
 
@@ -296,6 +279,7 @@ private fun PlanSetupTopRow(
                 .clip(RoundedCornerShape(999.dp)),
             color = MaterialTheme.colorScheme.primary,
             trackColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f),
+            drawStopIndicator = {},
         )
 
         Spacer(Modifier.width(16.dp))
@@ -549,33 +533,34 @@ private fun SelectionRow(
             }
         }
 
-        AnimatedVisibility(
-            visible = isSelected,
-            enter = fadeIn(renEnterSpec()) + scaleIn(renEnterSpec(), initialScale = 0.9f),
-            exit = fadeOut(renExitSpec()) + scaleOut(renExitSpec(), targetScale = 0.9f),
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(30.dp)
-                    .clip(CircleShape)
-                    .background(MaterialTheme.colorScheme.primary),
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Check,
-                    contentDescription = "Selected",
-                    tint = MaterialTheme.colorScheme.onPrimary,
-                    modifier = Modifier.size(20.dp),
+        Crossfade(
+            targetState = isSelected,
+            animationSpec = tween(RenMotionDurationMillis, easing = RenMotionEasing),
+            label = "selection-indicator",
+        ) { selected ->
+            if (selected) {
+                Box(
+                    modifier = Modifier
+                        .size(30.dp)
+                        .clip(CircleShape)
+                        .background(MaterialTheme.colorScheme.primary),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Check,
+                        contentDescription = "Selected",
+                        tint = MaterialTheme.colorScheme.onPrimary,
+                        modifier = Modifier.size(20.dp),
+                    )
+                }
+            } else if (icon != null) {
+                Box(
+                    modifier = Modifier
+                        .size(30.dp)
+                        .clip(CircleShape)
+                        .border(2.dp, MaterialTheme.colorScheme.outlineVariant, CircleShape),
                 )
             }
-        }
-        if (!isSelected && icon != null) {
-            Box(
-                modifier = Modifier
-                    .size(28.dp)
-                    .clip(CircleShape)
-                    .border(2.dp, MaterialTheme.colorScheme.outlineVariant, CircleShape),
-            )
         }
     }
 }

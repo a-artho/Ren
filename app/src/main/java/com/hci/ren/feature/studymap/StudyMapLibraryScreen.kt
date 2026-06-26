@@ -42,7 +42,6 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -63,7 +62,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.res.pluralStringResource
-import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
@@ -239,15 +237,6 @@ private fun StudyProjectCard(project: StudyProjectSummary, onOpen: () -> Unit, o
                     }
                 }
             }
-            val percent = (project.progress * 100).toInt().coerceIn(0, 100)
-            val progressLabel = stringResource(R.string.percent_complete_format, percent)
-            Text(progressLabel, fontWeight = FontWeight.SemiBold)
-            LinearProgressIndicator(
-                progress = { project.progress },
-                modifier = Modifier.fillMaxWidth().semantics {
-                    contentDescription = progressLabel
-                },
-            )
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 Text(
                     pluralStringResource(R.plurals.tasks_done_format, project.totalTasks, project.completedTasks, project.totalTasks),
@@ -262,7 +251,7 @@ private fun StudyProjectCard(project: StudyProjectSummary, onOpen: () -> Unit, o
                     )
                 }
             }
-            MiniMap(project.progress, progressLabel)
+            MiniMap(project.progress, project.totalTasks)
             Text(
                 stringResource(R.string.updated_date_format, formatProjectDate(project.updatedAtMillis)),
                 style = MaterialTheme.typography.bodySmall,
@@ -276,29 +265,29 @@ private fun StudyProjectCard(project: StudyProjectSummary, onOpen: () -> Unit, o
 }
 
 @Composable
-private fun MiniMap(progress: Float, progressLabel: String) {
-    val filled = if (progress >= 1f) 5 else floor(progress.coerceIn(0f, 1f) * 5).toInt()
+private fun MiniMap(progress: Float, totalTasks: Int) {
+    val segments = totalTasks.coerceIn(1, 20)
+    val filledCircles = floor(progress.coerceIn(0f, 1f) * segments).toInt()
+    val filledDividerSegments = floor(progress.coerceIn(0f, 1f) * (segments - 1)).toInt()
     Row(
-        modifier = Modifier.fillMaxWidth().semantics {
-            contentDescription = progressLabel
-        },
+        modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        repeat(5) { index ->
+        repeat(segments) { index ->
             Box(
-                Modifier.size(10.dp).clip(CircleShape).then(
-                    if (index < filled) Modifier else Modifier
-                ),
-                contentAlignment = Alignment.Center,
+                Modifier.size(10.dp).clip(CircleShape),
             ) {
                 Surface(
                     modifier = Modifier.fillMaxSize(),
                     shape = CircleShape,
-                    color = if (index < filled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
+                    color = if (index < filledCircles) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
                     content = {},
                 )
             }
-            if (index < 4) HorizontalDivider(Modifier.weight(1f), color = MaterialTheme.colorScheme.outlineVariant)
+            if (index < segments - 1) HorizontalDivider(
+                Modifier.weight(1f),
+                color = if (index < filledDividerSegments) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant,
+            )
         }
     }
 }

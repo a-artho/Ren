@@ -328,7 +328,7 @@ private fun ProjectSummaryCard(data: StudyMapData) {
                 SummaryValue(stringResource(R.string.total_estimate), formatMinutes(data.totalEstimatedMinutes), Modifier.weight(1f))
                 SummaryValue(stringResource(R.string.available_time), data.realism.availableMinutes?.let(::formatMinutes) ?: stringResource(R.string.no_deadline), Modifier.weight(1f))
             }
-            LinearProgressIndicator(progress = { data.progress }, modifier = Modifier.fillMaxWidth())
+            LinearProgressIndicator(progress = { data.progress }, modifier = Modifier.fillMaxWidth(), drawStopIndicator = {})
             Text(pluralStringResource(R.plurals.tasks_completed_format, data.activeTasks.size, data.completedTasks, data.activeTasks.size), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
