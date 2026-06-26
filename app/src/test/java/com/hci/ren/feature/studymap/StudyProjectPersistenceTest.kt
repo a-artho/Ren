@@ -6,11 +6,9 @@ import com.hci.ren.feature.pdfupload.presentation.StudyDeadline
 import com.hci.ren.feature.pdfupload.presentation.StudyGoal
 import com.hci.ren.feature.plangeneration.GeneratedStudyBlock
 import com.hci.ren.feature.plangeneration.GeneratedStudyPlan
-import com.hci.ren.feature.plangeneration.StudyTaskStatus
 import com.hci.ren.feature.plangeneration.StudyTopic
 import java.util.Calendar
 import java.util.GregorianCalendar
-import java.util.Locale
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -23,49 +21,105 @@ class StudyProjectPersistenceTest {
             nowMillis = 100,
         )
 
-        assertEquals("Untitled Study Map", generated.title)
+        assertEquals("Untitled Plan", generated.title)
         assertEquals(StudyDeadline.ChooseDate, generated.preferences.deadline)
         assertEquals("2026-06-30", generated.preferences.deadlineDate)
         assertEquals(emptyList<String>(), generated.preferences.documentUris)
     }
 
-    @Test fun searchIsForgivingAndSortsMissingDeadlinesLast() {
-        val first = summary("a", "Computer   Architecture", deadline = null, updated = 1)
-        val second = summary("b", "Physics Exam", deadline = 200, updated = 2)
+    @Test fun generatedProjectUsesUserProvidedTitleBeforeAiTitle() {
+        val generated = newStudyProject(
+            plan(emptyList()).copy(projectName = "AI title"),
+            preferences().copy(planTitle = "HCI final"),
+            nowMillis = 100,
+        )
 
-        assertEquals(
-            listOf("a"),
-            filterAndSortStudyProjects(listOf(first, second), "  computer architecture ", StudyMapFilter.All, StudyMapSort.Alphabetical, Locale.US).map { it.id },
-        )
-        assertEquals(
-            listOf("b", "a"),
-            filterAndSortStudyProjects(listOf(first, second), "", StudyMapFilter.All, StudyMapSort.DeadlineSoon, Locale.US).map { it.id },
-        )
+        assertEquals("HCI Final", generated.title)
+        assertEquals("HCI Final", generated.plan.projectName)
     }
 
-    @Test fun statusPrecedenceUsesRealTaskAndDeadlineData() {
-        val today = GregorianCalendar(2026, Calendar.JUNE, 24)
-        val completed = project("Done", listOf(block("one", StudyTaskStatus.Completed))).toSummary(today)
-        val behind = project("Late", listOf(block("one", StudyTaskStatus.NotStarted))).copy(deadlineAtMillis = GregorianCalendar(2026, Calendar.JUNE, 23).timeInMillis).toSummary(today)
-        val issue = project("Broken", emptyList()).toSummary(today)
-        val active = project("Active", listOf(block("one", StudyTaskStatus.NotStarted))).copy(deadlineAtMillis = null, preferences = preferences().copy(deadline = StudyDeadline.NoFixedDeadline, deadlineDate = null)).toSummary(today)
+    @Test fun generatedProjectPersistsRelativeDeadlineFromCreationTime() {
+        val now = GregorianCalendar(2026, Calendar.JUNE, 25).timeInMillis
+        val generated = newStudyProject(
+            plan(emptyList()),
+            preferences().copy(deadline = StudyDeadline.InOneWeek, deadlineDate = null),
+            nowMillis = now,
+        )
 
-        assertEquals(StudyProjectStatus.Completed, completed.status)
-        assertEquals(StudyProjectStatus.Behind, behind.status)
-        assertEquals(StudyProjectStatus.PlanIssue, issue.status)
-        assertEquals(StudyProjectStatus.Active, active.status)
-        assertTrue(completed.progress in 0f..1f)
+        assertEquals(StudyDeadline.ChooseDate, generated.preferences.deadline)
+        assertEquals("2026-07-02", generated.preferences.deadlineDate)
     }
 
-    private fun project(title: String, blocks: List<GeneratedStudyBlock>) = StudyProject(
-        id = title,
-        title = title,
-        createdAtMillis = 1,
-        updatedAtMillis = 2,
-        deadlineAtMillis = GregorianCalendar(2099, Calendar.JUNE, 30).timeInMillis,
-        plan = plan(blocks).copy(id = title, projectName = title),
-        preferences = preferences(),
-    )
+    @Test fun planJsonPreservesRawStudyMetadataWithoutPersistedSchedule() {
+        val project = newStudyProject(
+            plan(
+                listOf(
+                    GeneratedStudyBlock(
+                        id = "b1",
+                        title = "Dense bit",
+                        order = 1,
+                        durationMinutes = 40,
+                        effortMinMinutes = 30,
+                        effortLikelyMinutes = 40,
+                        effortMaxMinutes = 70,
+                        instructions = "Study",
+                        topicIds = listOf("topic"),
+                        difficultyScore = 5,
+                        densityScore = 4,
+                        productionDemandScore = 3,
+                        completionCriteria = listOf("Explain it without notes"),
+                        continuityGroup = "chapter-1",
+                    ),
+                ),
+            ),
+            preferences(),
+            nowMillis = 100,
+        )
+
+        val decoded = StudyProjectJsonCodec.decode(StudyProjectJsonCodec.encode(project))
+        val block = decoded.plan.blocks.single()
+
+        assertEquals(listOf("Explain it without notes"), block.completionCriteria)
+        assertEquals("chapter-1", block.continuityGroup)
+    }
+
+    @Test fun generatedProjectKeepsCanonicalBlocksBeforePersistence() {
+        val generated = newStudyProject(
+            plan(
+                listOf(
+                    GeneratedStudyBlock(
+                        id = "b1",
+                        title = "Dense chapter",
+                        order = 1,
+                        durationMinutes = 100,
+                        effortMinMinutes = 70,
+                        effortLikelyMinutes = 100,
+                        effortMaxMinutes = 140,
+                        instructions = "Study",
+                        topicIds = listOf("topic"),
+                        minimumUsefulMinutes = 20,
+                        splitAllowed = true,
+                    ),
+                    GeneratedStudyBlock(
+                        id = "b2",
+                        title = "After",
+                        order = 2,
+                        durationMinutes = 30,
+                        instructions = "Study",
+                        topicIds = listOf("topic"),
+                        dependencies = listOf("b1"),
+                    ),
+                ),
+            ),
+            preferences().copy(dailyStudyMinutes = 60),
+            nowMillis = 100,
+        )
+
+        assertEquals(listOf("b1", "b2"), generated.plan.blocks.map { it.id })
+        assertEquals(listOf(100, 30), generated.plan.blocks.map { it.durationMinutes })
+        assertTrue(generated.plan.blocks.first().splitAllowed)
+        assertEquals(listOf("b1"), generated.plan.blocks[1].dependencies)
+    }
 
     private fun plan(blocks: List<GeneratedStudyBlock>) = GeneratedStudyPlan(
         id = "plan",
@@ -75,16 +129,6 @@ class StudyProjectPersistenceTest {
         projectName = "Plan",
     )
 
-    private fun block(id: String, status: StudyTaskStatus) = GeneratedStudyBlock(
-        id = id,
-        title = id,
-        order = 1,
-        durationMinutes = 30,
-        instructions = "Study",
-        topicIds = listOf("topic"),
-        status = status,
-    )
-
     private fun preferences() = PlanSetupSubmission(
         documentUris = listOf("content://raw.pdf"),
         goal = StudyGoal.PrepareForExam,
@@ -92,9 +136,5 @@ class StudyProjectPersistenceTest {
         deadlineDate = "2099-06-30",
         dailyStudyMinutes = 60,
         studyDays = StudyDay.entries.toSet(),
-    )
-
-    private fun summary(id: String, title: String, deadline: Long?, updated: Long) = StudyProjectSummary(
-        id, title, 0, updated, deadline, 0, 1, 0f, StudyProjectStatus.Active,
     )
 }

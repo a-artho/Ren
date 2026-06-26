@@ -1,67 +1,50 @@
 package com.hci.ren.feature.plangeneration
 
-import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.slideInVertically
-import androidx.compose.animation.togetherWith
-import com.hci.ren.ui.motion.renContentSpec
-import com.hci.ren.ui.motion.RenEmphasizedEasing
-import com.hci.ren.ui.motion.RenMotionDurationMillis
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.horizontalScroll
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.automirrored.filled.ManageSearch
-import androidx.compose.material.icons.automirrored.filled.MenuBook
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.activity.compose.BackHandler
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.unit.IntOffset
-import androidx.compose.ui.zIndex
 import com.hci.ren.R
-import kotlinx.coroutines.delay
-import kotlin.time.Duration.Companion.milliseconds
+import com.hci.ren.ui.components.PlanFlowScaffold
+import com.hci.ren.ui.motion.RenEmphasizedDecelerateEasing
+import com.hci.ren.ui.motion.RenEmphasizedEasing
+import com.hci.ren.ui.motion.isReducedMotionEnabled
+import kotlin.math.abs
 
 @Composable
 fun PlanGenerationScreen(state: PlanGenerationUiState, onBack: () -> Unit, onRetry: () -> Unit) {
@@ -101,65 +84,30 @@ fun PlanGenerationScreen(state: PlanGenerationUiState, onBack: () -> Unit, onRet
         )
     }
 
-    Surface(
-        modifier = Modifier.fillMaxSize(),
-        color = MaterialTheme.colorScheme.background,
-        contentColor = MaterialTheme.colorScheme.onBackground,
+    PlanFlowScaffold(
+        onBack = {
+            if (state.status == PlanStatus.Failed) {
+                onBack()
+            } else {
+                showCancelDialog = true
+            }
+        },
     ) {
         Column(
-            Modifier
-                .fillMaxSize()
-                .statusBarsPadding()
-                .navigationBarsPadding()
+            modifier = Modifier
+                .fillMaxSize(),
+            horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            Row(
-                Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 24.dp, vertical = 16.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                IconButton(
-                    onClick = {
-                        if (state.status == PlanStatus.Failed) {
-                            onBack()
-                        } else {
-                            showCancelDialog = true
-                        }
-                    }
-                ) {
-                    Icon(
-                        Icons.AutoMirrored.Filled.ArrowBack,
-                        stringResource(R.string.back),
-                        tint = MaterialTheme.colorScheme.onBackground,
-                    )
-                }
-                Text(
-                    stringResource(R.string.ai_processing),
-                    modifier = Modifier.weight(1f),
-                    style = MaterialTheme.typography.headlineSmall,
-                    color = MaterialTheme.colorScheme.onBackground,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .verticalScroll(rememberScrollState())
-                    .padding(start = 24.dp, end = 24.dp, bottom = 24.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-            ) {
-                if (state.status == PlanStatus.Failed) {
-                    FailedContent(errorMessage = state.errorMessage, onRetry = onRetry)
-                } else {
-                    ProcessingContent(state = state)
-                }
+            if (state.status == PlanStatus.Failed) {
+                FailedContent(errorMessage = state.errorMessage, onRetry = onRetry)
+            } else {
+                ProcessingContent(state = state)
             }
         }
     }
 }
 
-// region — Failed state
+// region â€” Failed state
 
 @Composable
 private fun FailedContent(errorMessage: String?, onRetry: () -> Unit) {
@@ -196,248 +144,460 @@ private fun FailedContent(errorMessage: String?, onRetry: () -> Unit) {
 }
 
 // endregion
-
-// region — Processing state
+// region â€” Processing state
 
 @Composable
 private fun ProcessingContent(state: PlanGenerationUiState) {
+    val reducedMotion = isReducedMotionEnabled()
     val currentIndex = if (state.status == PlanStatus.Completed) {
         processingSteps.size
     } else {
         processingSteps.indexOfFirst { it.status == state.status }.coerceAtLeast(0)
     }
-    
+    val activeStepIndex = currentIndex.coerceAtMost(processingSteps.lastIndex)
     val targetProgress = if (state.status == PlanStatus.Completed) 1f else (currentIndex + 1f) / processingSteps.size
-    val animatedProgress = animateFloatAsState(
+    val animatedProgress by animateFloatAsState(
         targetValue = targetProgress,
-        animationSpec = tween(durationMillis = 700, easing = FastOutSlowInEasing),
+        animationSpec = tween(
+            durationMillis = if (reducedMotion) 0 else 900,
+            easing = RenEmphasizedDecelerateEasing,
+        ),
         label = "plan generation progress",
     )
 
-    // Title with sparkle
-    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        Text(
-            text = stringResource(R.string.building_study_plan),
-            modifier = Modifier.weight(1f),
-            style = MaterialTheme.typography.headlineMedium,
-            fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.onBackground,
-            lineHeight = 36.sp,
-        )
-    }
-    Spacer(Modifier.height(6.dp))
-    Text(
-        text = stringResource(R.string.processing_description),
-        modifier = Modifier.fillMaxWidth(),
-        style = MaterialTheme.typography.bodyLarge,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-    )
+    BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+        val compact = maxHeight < 680.dp
+        val cardHeight = if (compact) 354.dp else 382.dp
+        val rowHeight = if (compact) 64.dp else 70.dp
+        val titleGap = if (compact) 8.dp else 10.dp
+        val progressGap = if (compact) 18.dp else 20.dp
+        val timelineGap = if (compact) 28.dp else 32.dp
 
-    Spacer(Modifier.height(20.dp))
-
-    // Animated progress bar with sparkle
-    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        LinearProgressIndicator(
-            progress = { animatedProgress.value },
+        Column(
             modifier = Modifier
-                .weight(1f)
-                .height(6.dp)
-                .semantics {
-                    stateDescription = if (state.status == PlanStatus.Completed) {
-                        "Processing completed"
-                    } else {
-                        "Processing step ${currentIndex + 1} of ${processingSteps.size}"
-                    }
-                },
-            color = MaterialTheme.colorScheme.primary,
-            trackColor = MaterialTheme.colorScheme.primaryContainer,
-        )
-        Spacer(Modifier.width(8.dp))
-        CircularProgressIndicator(
-            modifier = Modifier.size(20.dp),
-            strokeWidth = 2.dp,
-            color = MaterialTheme.colorScheme.primary,
-        )
-    }
+                .fillMaxSize(),
+        ) {
+            Spacer(Modifier.height(if (compact) 2.dp else 8.dp))
 
-    Spacer(Modifier.height(24.dp))
+            Text(
+                text = stringResource(R.string.ai_processing),
+                modifier = Modifier.fillMaxWidth(),
+                style = MaterialTheme.typography.headlineSmall,
+                color = MaterialTheme.colorScheme.onBackground,
+                fontWeight = FontWeight.Bold,
+            )
+            Spacer(Modifier.height(titleGap))
+            Text(
+                text = stringResource(R.string.processing_description),
+                modifier = Modifier.fillMaxWidth(),
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                lineHeight = 24.sp,
+            )
+            Spacer(Modifier.height(progressGap))
 
-    // Steps card
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surface,
-        ),
-        shape = RoundedCornerShape(24.dp),
-        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
-    ) {
-        Column(Modifier.padding(horizontal = 20.dp, vertical = 18.dp)) {
-            processingSteps.forEachIndexed { index, step ->
-                val visual = when {
-                    state.status == PlanStatus.Completed || index < currentIndex -> StepVisual.Complete
-                    index == currentIndex -> StepVisual.Current
-                    else -> StepVisual.Upcoming
-                }
-                ProcessingStep(
-                    icon = step.icon,
-                    label = stringResource(step.labelRes),
-                    subtitle = if (visual == StepVisual.Current) stringResource(step.subtitleRes) else null,
-                    visual = visual,
+            LinearProgressIndicator(
+                progress = { animatedProgress },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(7.dp)
+                    .clip(RoundedCornerShape(999.dp))
+                    .semantics {
+                        stateDescription = if (state.status == PlanStatus.Completed) {
+                            "Processing completed"
+                        } else {
+                            "Processing step ${activeStepIndex + 1} of ${processingSteps.size}"
+                        }
+                    },
+                color = MaterialTheme.colorScheme.primary,
+                trackColor = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.8f),
+            )
+
+            Spacer(Modifier.height(if (compact) 12.dp else 20.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = "Step ${activeStepIndex + 1} of ${processingSteps.size}",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.primary,
+                    fontWeight = FontWeight.SemiBold,
                 )
-                // Connector line between steps (not after the last)
-                if (index < processingSteps.lastIndex) {
-                    val lineColor = if (state.status == PlanStatus.Completed || index < currentIndex) {
-                        MaterialTheme.colorScheme.primary
-                    } else {
-                        MaterialTheme.colorScheme.outlineVariant
-                    }
-                    ConnectorLine(color = lineColor)
-                }
             }
+
+            Spacer(Modifier.height(timelineGap))
+
+            ProcessingTimelineCard(
+                state = state,
+                currentIndex = currentIndex,
+                isCompleted = state.status == PlanStatus.Completed,
+                cardHeight = cardHeight,
+                rowHeight = rowHeight,
+                compact = compact,
+                reducedMotion = reducedMotion,
+            )
+
+            Spacer(Modifier.weight(1f))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Lock,
+                    contentDescription = null,
+                    modifier = Modifier.size(16.dp),
+                    tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.78f),
+                )
+                Spacer(Modifier.width(10.dp))
+                Text(
+                    text = stringResource(R.string.wait_tip_1),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.72f),
+                )
+            }
+            Spacer(Modifier.height(if (compact) 4.dp else 12.dp))
         }
-    }
-
-    Spacer(Modifier.height(24.dp))
-
-    // "While you wait" card
-    AnimatedVisibility(
-        visible = state.status == PlanStatus.Completed || currentIndex >= 1,
-        enter = fadeIn(tween(500)) + slideInVertically(tween(500)) { it / 3 },
-    ) {
-        WhileYouWaitCard()
     }
 }
 
 // endregion
+@Composable
+private fun ProcessingTimelineCard(
+    state: PlanGenerationUiState,
+    currentIndex: Int,
+    isCompleted: Boolean,
+    cardHeight: androidx.compose.ui.unit.Dp,
+    rowHeight: androidx.compose.ui.unit.Dp,
+    compact: Boolean,
+    reducedMotion: Boolean,
+) {
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(cardHeight),
+        shape = RoundedCornerShape(if (compact) 24.dp else 28.dp),
+        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.86f),
+        border = androidx.compose.foundation.BorderStroke(
+            1.dp,
+            MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.7f),
+        ),
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(
+                    start = 16.dp,
+                    top = if (compact) 16.dp else 20.dp,
+                    end = 16.dp,
+                    bottom = if (compact) 16.dp else 20.dp,
+                ),
+        ) {
+            processingSteps.forEachIndexed { index, step ->
+                val visual = when {
+                    isCompleted || index < currentIndex -> StepVisual.Complete
+                    index == currentIndex -> StepVisual.Current
+                    else -> StepVisual.Upcoming
+                }
+                ProcessingTimelineRow(
+                    label = stringResource(step.labelRes),
+                    subtitle = stepSubtitle(step, index, currentIndex, state),
+                    visual = visual,
+                    isFirst = index == 0,
+                    isLast = index == processingSteps.lastIndex,
+                    rowHeight = rowHeight,
+                    compact = compact,
+                    reducedMotion = reducedMotion,
+                )
+            }
+        }
+    }
+}
 
-// region — Step data
+@Composable
+private fun ProcessingTimelineRow(
+    label: String,
+    subtitle: String?,
+    visual: StepVisual,
+    isFirst: Boolean,
+    isLast: Boolean,
+    rowHeight: androidx.compose.ui.unit.Dp,
+    compact: Boolean,
+    reducedMotion: Boolean,
+) {
+    val rowAlpha by animateFloatAsState(
+        targetValue = if (visual == StepVisual.Upcoming) 0.66f else 1f,
+        animationSpec = tween(
+            durationMillis = if (reducedMotion) 0 else 420,
+            easing = RenEmphasizedDecelerateEasing,
+        ),
+        label = "processing-row-alpha",
+    )
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(rowHeight),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        TimelineIndicator(
+            visual = visual,
+            isFirst = isFirst,
+            isLast = isLast,
+            compact = compact,
+            reducedMotion = reducedMotion,
+            modifier = Modifier
+                .width(if (compact) 38.dp else 42.dp)
+                .fillMaxHeight(),
+        )
+
+        Spacer(Modifier.width(12.dp))
+
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxHeight(),
+            verticalArrangement = Arrangement.Center,
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = label,
+                    modifier = Modifier.weight(1f),
+                    style = MaterialTheme.typography.titleMedium,
+                    color = if (visual == StepVisual.Upcoming) {
+                        MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = rowAlpha)
+                    } else {
+                        MaterialTheme.colorScheme.onSurface
+                    },
+                    fontWeight = FontWeight.SemiBold,
+                )
+                if (visual == StepVisual.Current) {
+                    ActiveStepSignal(reducedMotion = reducedMotion)
+                }
+            }
+            if (subtitle != null) {
+                Text(
+                    text = subtitle,
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.padding(bottom = 6.dp),
+                )
+            }
+            if (!isLast) {
+                HorizontalDivider(
+                    thickness = 1.dp,
+                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f),
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun TimelineIndicator(
+    visual: StepVisual,
+    isFirst: Boolean,
+    isLast: Boolean,
+    compact: Boolean,
+    reducedMotion: Boolean,
+    modifier: Modifier = Modifier,
+) {
+    val green = MaterialTheme.colorScheme.primary
+    val muted = MaterialTheme.colorScheme.outline.copy(alpha = 0.58f)
+    val indicatorSize = if (compact) 24.dp else 26.dp
+    val upcomingSize = if (compact) 24.dp else 26.dp
+    val circleRadiusDp = indicatorSize / 2f
+    val upperLineColor by animateColorAsState(
+        targetValue = when (visual) {
+            StepVisual.Complete, StepVisual.Current -> green
+            StepVisual.Upcoming -> muted
+        },
+        animationSpec = tween(durationMillis = 560, easing = FastOutSlowInEasing),
+        label = "timeline-upper-line",
+    )
+    val lowerLineColor by animateColorAsState(
+        targetValue = when (visual) {
+            StepVisual.Complete -> green
+            StepVisual.Current, StepVisual.Upcoming -> muted
+        },
+        animationSpec = tween(durationMillis = 560, easing = FastOutSlowInEasing),
+        label = "timeline-lower-line",
+    )
+    val upperLineProgress by animateFloatAsState(
+        targetValue = if (visual == StepVisual.Upcoming) 0f else 1f,
+        animationSpec = tween(
+            durationMillis = if (reducedMotion) 0 else 820,
+            easing = RenEmphasizedDecelerateEasing,
+        ),
+        label = "timeline-upper-progress",
+    )
+    val lowerLineProgress by animateFloatAsState(
+        targetValue = if (visual == StepVisual.Complete) 1f else 0f,
+        animationSpec = tween(
+            durationMillis = if (reducedMotion) 0 else 820,
+            easing = RenEmphasizedDecelerateEasing,
+        ),
+        label = "timeline-lower-progress",
+    )
+    Box(
+        modifier = modifier,
+        contentAlignment = Alignment.Center,
+    ) {
+        Canvas(Modifier.fillMaxSize()) {
+            val centerX = size.width / 2f
+            val centerY = size.height / 2f
+            val circleRadius = circleRadiusDp.toPx()
+            if (!isFirst) {
+                val lineEndY = centerY - circleRadius
+                val trackEnd = Offset(centerX, lineEndY)
+                val activeEnd = Offset(centerX, lineEndY * upperLineProgress)
+                drawLine(
+                    color = muted.copy(alpha = 0.32f),
+                    start = Offset(centerX, 0f),
+                    end = trackEnd,
+                    strokeWidth = 2.dp.toPx(),
+                    cap = StrokeCap.Round,
+                )
+                drawLine(
+                    color = upperLineColor,
+                    start = Offset(centerX, 0f),
+                    end = activeEnd,
+                    strokeWidth = 2.dp.toPx(),
+                    cap = StrokeCap.Round,
+                )
+            }
+            if (!isLast) {
+                val lineStartY = centerY + circleRadius
+                val trackEndY = size.height
+                val activeEndY = lineStartY + (size.height - lineStartY) * lowerLineProgress
+                val start = Offset(centerX, lineStartY)
+                val trackEnd = Offset(centerX, trackEndY)
+                val activeEnd = Offset(centerX, activeEndY)
+                drawLine(
+                    color = muted.copy(alpha = 0.32f),
+                    start = start,
+                    end = trackEnd,
+                    strokeWidth = 2.dp.toPx(),
+                    cap = StrokeCap.Round,
+                )
+                drawLine(
+                    color = lowerLineColor,
+                    start = start,
+                    end = activeEnd,
+                    strokeWidth = 2.dp.toPx(),
+                    cap = StrokeCap.Round,
+                )
+            }
+        }
+
+        when (visual) {
+            StepVisual.Complete -> CompletedCheckmark(
+                reducedMotion = reducedMotion,
+                modifier = Modifier.size(indicatorSize),
+            )
+            StepVisual.Current -> ActiveCurrentIndicator(
+                reducedMotion = reducedMotion,
+                modifier = Modifier.size(indicatorSize),
+            )
+            StepVisual.Upcoming -> Surface(
+                modifier = Modifier.size(upcomingSize),
+                shape = CircleShape,
+                color = Color.Transparent,
+                border = androidx.compose.foundation.BorderStroke(1.5.dp, muted),
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    // Intentionally empty: upcoming steps use shape/status only, not numbers.
+                }
+            }
+        }
+    }
+}
+
+// region â€” Step data
 
 private enum class StepVisual { Complete, Current, Upcoming }
 
 private data class Step(
     val status: PlanStatus,
-    val icon: ImageVector,
     val labelRes: Int,
     val subtitleRes: Int,
 )
 
 private val processingSteps = listOf(
-    Step(PlanStatus.Uploading, Icons.Default.UploadFile, R.string.uploading_document, R.string.step_subtitle_uploading),
-    Step(PlanStatus.Analyzing, Icons.AutoMirrored.Filled.MenuBook, R.string.reading_material, R.string.step_subtitle_analyzing),
-    Step(PlanStatus.IdentifyingTopics, Icons.AutoMirrored.Filled.ManageSearch, R.string.identifying_topics, R.string.step_subtitle_identifying),
-    Step(PlanStatus.CreatingBlocks, Icons.Default.CalendarViewDay, R.string.creating_blocks, R.string.step_subtitle_creating),
-    Step(PlanStatus.Finalizing, Icons.Default.Flag, R.string.finalizing_plan, R.string.step_subtitle_finalizing),
+    Step(PlanStatus.Uploading, R.string.uploading_document, R.string.step_subtitle_uploading),
+    Step(PlanStatus.Analyzing, R.string.reading_material, R.string.step_subtitle_analyzing),
+    Step(PlanStatus.IdentifyingTopics, R.string.identifying_topics, R.string.step_subtitle_identifying),
+    Step(PlanStatus.CreatingBlocks, R.string.creating_blocks, R.string.step_subtitle_creating),
+    Step(PlanStatus.Finalizing, R.string.finalizing_plan, R.string.step_subtitle_finalizing),
 )
 
-// endregion
-
-// region — ProcessingStep composable
-
 @Composable
-private fun ProcessingStep(icon: ImageVector, label: String, subtitle: String?, visual: StepVisual) {
-    val contentAlpha = when (visual) {
-        StepVisual.Upcoming -> .40f
-        else -> 1f
-    }
-    val targetIconTint = when (visual) {
-        StepVisual.Complete -> MaterialTheme.colorScheme.onPrimary
-        StepVisual.Current -> MaterialTheme.colorScheme.onPrimary
-        StepVisual.Upcoming -> MaterialTheme.colorScheme.onSurfaceVariant
-    }
-    val targetCircleBg = when (visual) {
-        StepVisual.Complete -> MaterialTheme.colorScheme.primary
-        StepVisual.Current -> MaterialTheme.colorScheme.primary
-        StepVisual.Upcoming -> MaterialTheme.colorScheme.surfaceVariant
-    }
-    val iconTint by androidx.compose.animation.animateColorAsState(
-        targetValue = targetIconTint,
-        animationSpec = tween(RenMotionDurationMillis, easing = RenEmphasizedEasing),
-        label = "step-icon-tint",
-    )
-    val circleBg by androidx.compose.animation.animateColorAsState(
-        targetValue = targetCircleBg,
-        animationSpec = tween(RenMotionDurationMillis, easing = RenEmphasizedEasing),
-        label = "step-circle-bg",
-    )
+private fun stepSubtitle(
+    step: Step,
+    stepIndex: Int,
+    currentIndex: Int,
+    state: PlanGenerationUiState,
+): String? {
+    if (stepIndex != currentIndex) return null
 
-    // Pulse animation for the active step
-    val infiniteTransition = rememberInfiniteTransition(label = "step-pulse")
-    val pulse by infiniteTransition.animateFloat(
-        initialValue = 1f,
-        targetValue = 1.06f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(1200, easing = FastOutSlowInEasing),
-            repeatMode = RepeatMode.Reverse,
-        ),
-        label = "step-circle-pulse",
-    )
-
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .alpha(contentAlpha)
-            .zIndex(1f),
-        verticalAlignment = Alignment.CenterVertically,
+    return if (
+        step.status == PlanStatus.Uploading &&
+        state.uploadingDocumentIndex > 0 &&
+        state.uploadingDocumentTotal > 1
     ) {
-        // Step circle icon
-        Surface(
-            shape = CircleShape,
-            color = circleBg,
-            modifier = Modifier
-                .size(48.dp)
-                .scale(if (visual == StepVisual.Current) pulse else 1f),
-        ) {
-            Box(contentAlignment = Alignment.Center) {
-                Icon(icon, contentDescription = null, modifier = Modifier.size(22.dp), tint = iconTint)
-            }
-        }
-
-        Spacer(Modifier.width(14.dp))
-
-        // Label and subtitle
-        Column(Modifier.weight(1f)) {
-            Text(
-                label,
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = if (visual == StepVisual.Current) FontWeight.SemiBold else FontWeight.Normal,
-                color = when (visual) {
-                    StepVisual.Current -> MaterialTheme.colorScheme.onSurface
-                    StepVisual.Complete -> MaterialTheme.colorScheme.onSurface
-                    StepVisual.Upcoming -> MaterialTheme.colorScheme.onSurfaceVariant
-                },
-            )
-            if (subtitle != null) {
-                Text(
-                    subtitle,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.primary,
-                )
-            }
-        }
-
-        // Status indicator (right side)
-        when (visual) {
-            StepVisual.Complete -> CompletedCheckmark()
-            StepVisual.Current -> BouncingDots()
-            StepVisual.Upcoming -> UpcomingCircle()
-        }
+        stringResource(
+            R.string.uploading_pdf_progress,
+            state.uploadingDocumentIndex,
+            state.uploadingDocumentTotal,
+        )
+    } else {
+        stringResource(step.subtitleRes)
     }
 }
 
 // endregion
 
-// region — Status indicator composables (Canvas-drawn, no emojis)
+// region â€” ProcessingStep composable
 
-/** Green filled circle with a white checkmark drawn via Canvas. */
+// region â€” Status indicator composables (Canvas-drawn, no emojis)
+
 @Composable
-private fun CompletedCheckmark() {
+private fun CompletedCheckmark(
+    reducedMotion: Boolean,
+    modifier: Modifier = Modifier,
+) {
     val green = MaterialTheme.colorScheme.primary
     val checkColor = MaterialTheme.colorScheme.onPrimary
-    Canvas(modifier = Modifier.size(28.dp)) {
+    var visible by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) { visible = true }
+    val scale by animateFloatAsState(
+        targetValue = if (visible || reducedMotion) 1f else 0.74f,
+        animationSpec = tween(
+            durationMillis = if (reducedMotion) 0 else 420,
+            easing = RenEmphasizedDecelerateEasing,
+        ),
+        label = "completed-check-scale",
+    )
+    val alpha by animateFloatAsState(
+        targetValue = if (visible || reducedMotion) 1f else 0f,
+        animationSpec = tween(
+            durationMillis = if (reducedMotion) 0 else 260,
+            easing = RenEmphasizedEasing,
+        ),
+        label = "completed-check-alpha",
+    )
+
+    Canvas(modifier = modifier.scale(scale).alpha(alpha)) {
         val r = size.minDimension / 2f
         drawCircle(color = green, radius = r)
-        // White checkmark
-        val stroke = Stroke(width = 2.4.dp.toPx(), cap = StrokeCap.Round)
+        val stroke = Stroke(width = 2.dp.toPx(), cap = StrokeCap.Round)
         val cx = center.x
         val cy = center.y
         val path = androidx.compose.ui.graphics.Path().apply {
@@ -449,451 +609,89 @@ private fun CompletedCheckmark() {
     }
 }
 
-/** Three dots that bounce with staggered timing. */
 @Composable
-private fun BouncingDots() {
-    val dotColor = MaterialTheme.colorScheme.primary
-    val transition = rememberInfiniteTransition(label = "bouncing-dots")
-    Row(
-        horizontalArrangement = Arrangement.spacedBy(4.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        repeat(3) { index ->
-            val offset by transition.animateFloat(
-                initialValue = 0f,
-                targetValue = -6f,
-                animationSpec = infiniteRepeatable(
-                    animation = tween(
-                        durationMillis = 500,
-                        delayMillis = index * 150,
-                        easing = FastOutSlowInEasing,
-                    ),
-                    repeatMode = RepeatMode.Reverse,
-                ),
-                label = "dot-$index",
-            )
-            Canvas(
-                modifier = Modifier
-                    .size(8.dp)
-                    .offset { IntOffset(x = 0, y = offset.dp.roundToPx()) },
-            ) {
-                drawCircle(color = dotColor)
-            }
-        }
+private fun ActiveCurrentIndicator(
+    reducedMotion: Boolean,
+    modifier: Modifier = Modifier,
+) {
+    val green = MaterialTheme.colorScheme.primary
+    val pulse = if (reducedMotion) {
+        1f
+    } else {
+        val transition = rememberInfiniteTransition(label = "current-step-breathe")
+        val animatedPulse by transition.animateFloat(
+            initialValue = 0f,
+            targetValue = 1f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(durationMillis = 1650, easing = RenEmphasizedEasing),
+                repeatMode = RepeatMode.Reverse,
+            ),
+            label = "current-step-pulse",
+        )
+        animatedPulse
     }
-}
-
-/** Empty outlined circle for upcoming steps. */
-@Composable
-private fun UpcomingCircle() {
-    val outlineColor = MaterialTheme.colorScheme.primaryContainer
-    Canvas(modifier = Modifier.size(28.dp)) {
+    Canvas(modifier) {
+        val baseRadius = size.minDimension / 2f - 3.dp.toPx()
+        val pulseRadius = baseRadius + (if (reducedMotion) 0f else pulse * 3.dp.toPx())
         drawCircle(
-            color = outlineColor,
-            radius = size.minDimension / 2f - 1.5.dp.toPx(),
-            style = Stroke(width = 1.8.dp.toPx()),
+            color = green.copy(alpha = if (reducedMotion) 0.18f else 0.08f + pulse * 0.12f),
+            radius = pulseRadius,
+        )
+        drawCircle(
+            color = green,
+            radius = baseRadius,
+            style = Stroke(width = 2.dp.toPx()),
+        )
+        drawCircle(
+            color = green,
+            radius = 5.5.dp.toPx(),
         )
     }
 }
 
-// endregion
-
-// region — Connector line between steps
-
 @Composable
-private fun ConnectorLine(color: Color) {
-    Box(
-        modifier = Modifier
-            .padding(start = 23.dp) // align with the center of the 48dp circle
-            .width(2.dp)
-            .height(20.dp),
+private fun ActiveStepSignal(reducedMotion: Boolean) {
+    val color = MaterialTheme.colorScheme.primary
+    val phase = if (reducedMotion) {
+        0f
+    } else {
+        val transition = rememberInfiniteTransition(label = "active-step-signal")
+        val animatedPhase by transition.animateFloat(
+            initialValue = 0f,
+            targetValue = 1f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(durationMillis = 1200, easing = LinearEasing),
+                repeatMode = RepeatMode.Restart,
+            ),
+            label = "active-step-signal-phase",
+        )
+        animatedPhase
+    }
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(5.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        Canvas(Modifier.fillMaxSize()) {
-            drawLine(
+        repeat(3) { index ->
+            val shiftedPhase = (phase + index * 0.22f) % 1f
+            val wave = 1f - abs(shiftedPhase * 2f - 1f)
+            val dotSize = if (reducedMotion) 5.dp else (4.5f + wave * 1.7f).dp
+            Surface(
+                modifier = Modifier
+                    .size(dotSize)
+                    .alpha(if (reducedMotion) 0.78f else 0.28f + wave * 0.58f),
+                shape = CircleShape,
                 color = color,
-                start = Offset(size.width / 2, 0f),
-                end = Offset(size.width / 2, size.height),
-                strokeWidth = 2.dp.toPx(),
-                pathEffect = PathEffect.cornerPathEffect(4.dp.toPx()),
-                cap = StrokeCap.Round,
-            )
+            ) {}
         }
     }
 }
 
 // endregion
 
-// region — While you wait card
-
-@Composable
-private fun WhileYouWaitCard() {
-    val tips = listOf(R.string.wait_tip_1, R.string.wait_tip_2, R.string.wait_tip_3)
-    var tipIndex by remember { mutableIntStateOf(0) }
-    LaunchedEffect(Unit) {
-        while (true) {
-            delay(6000.milliseconds)
-            tipIndex = (tipIndex + 1) % tips.size
-        }
-    }
-
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer),
-        shape = RoundedCornerShape(20.dp),
-        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
-    ) {
-        Row(
-            Modifier
-                .padding(20.dp)
-                .height(IntrinsicSize.Min),
-            verticalAlignment = Alignment.Top,
-        ) {
-            Column(Modifier.weight(1f)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        Icons.Default.AutoAwesome,
-                        contentDescription = null,
-                        modifier = Modifier.size(18.dp),
-                        tint = MaterialTheme.colorScheme.primary,
-                    )
-                    Spacer(Modifier.width(6.dp))
-                    Text(
-                        stringResource(R.string.while_you_wait),
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSecondaryContainer,
-                    )
-                }
-                Spacer(Modifier.height(8.dp))
-                AnimatedContent(
-                    targetState = tipIndex,
-                    transitionSpec = {
-                        fadeIn(renContentSpec()) togetherWith fadeOut(renContentSpec())
-                    },
-                    label = "tip-rotation",
-                ) { index ->
-                    Text(
-                        stringResource(tips[index]),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.85f),
-                        lineHeight = 20.sp,
-                    )
-                }
-            }
-            Spacer(Modifier.width(12.dp))
-            Box(
-                Modifier
-                    .fillMaxHeight()
-                    .aspectRatio(1f),
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(
-                    Icons.Default.Lightbulb,
-                    contentDescription = null,
-                    modifier = Modifier.size(32.dp),
-                    tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.7f),
-                )
-            }
-        }
-    }
-}
+// region â€” Connector line between steps
 
 // endregion
 
-// region — Plan details screen (unchanged)
-
-@Composable
-fun PlanDetailsScreen(
-    plan: GeneratedStudyPlan,
-    feasibility: FeasibilityResult? = null,
-    originalGoalDoesNotFit: Boolean = false,
-    onBack: () -> Unit,
-) {
-    BackHandler(onBack = onBack)
-    Surface(
-        modifier = Modifier.fillMaxSize(),
-        color = MaterialTheme.colorScheme.background,
-        contentColor = MaterialTheme.colorScheme.onBackground
-    ) {
-        Column(
-            Modifier
-                .fillMaxSize()
-                .statusBarsPadding()
-                .navigationBarsPadding()
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = 24.dp, vertical = 16.dp),
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                IconButton(onClick = onBack) {
-                    Icon(
-                        imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                        contentDescription = stringResource(R.string.back),
-                        tint = MaterialTheme.colorScheme.onBackground
-                    )
-                }
-                Spacer(Modifier.width(8.dp))
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = stringResource(R.string.your_study_plan),
-                        style = MaterialTheme.typography.headlineSmall,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onBackground
-                    )
-                    Text(
-                        text = pluralStringResource(
-                            R.plurals.scheduled_minutes,
-                            plan.totalEstimatedMinutes,
-                            plan.totalEstimatedMinutes,
-                        ),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
-            Spacer(Modifier.height(24.dp))
-
-            if (originalGoalDoesNotFit && feasibility != null) {
-                FeasibilityBanner(
-                    title = stringResource(R.string.reality_check),
-                    message = stringResource(R.string.limited_coverage_message, feasibility.estimatedCoveragePercent),
-                )
-                Spacer(Modifier.height(16.dp))
-            } else if (feasibility?.status == FeasibilityStatus.Intensive) {
-                FeasibilityBanner(
-                    title = stringResource(R.string.intensive_plan),
-                    message = stringResource(
-                        R.string.intensive_plan_context,
-                        formatStudyMinutes(feasibility.totalRequiredMinutes),
-                        formatStudyMinutes(feasibility.availableMinutes),
-                    ),
-                )
-                Spacer(Modifier.height(16.dp))
-            } else if (feasibility != null && !feasibility.hasDeadline) {
-                FeasibilityBanner(
-                    title = stringResource(R.string.your_study_plan),
-                    message = pluralStringResource(
-                        R.plurals.estimated_plan_length,
-                        feasibility.recommendedDaysBalanced,
-                        feasibility.recommendedDaysBalanced,
-                    ),
-                )
-                Spacer(Modifier.height(16.dp))
-            }
-            
-            Text(
-                text = stringResource(R.string.detected_topics),
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onBackground
-            )
-            Spacer(Modifier.height(10.dp))
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(16.dp),
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surface,
-                ),
-                border = CardDefaults.outlinedCardBorder(),
-                elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
-            ) {
-                Column(
-                    modifier = Modifier.padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    plan.topics.forEach { topic ->
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(10.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.AutoMirrored.Filled.MenuBook,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(18.dp)
-                            )
-                            Text(
-                                text = "${topic.order}. ${topic.title}",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurface,
-                                fontWeight = FontWeight.Medium
-                            )
-                        }
-                    }
-                }
-            }
-            
-            Spacer(Modifier.height(28.dp))
-            val sections = listOf(
-                Triple(R.string.scheduled_now, plan.blocks.filter { it.disposition == TaskDisposition.MustComplete }, true),
-                Triple(R.string.if_time_remains, plan.blocks.filter { it.disposition == TaskDisposition.IfTimeRemains }, false),
-                Triple(R.string.postponed, plan.blocks.filter { it.disposition == TaskDisposition.Postponed }, false),
-            )
-            sections.forEach { (title, blocks, numbered) ->
-                if (blocks.isNotEmpty()) {
-                    Text(
-                        text = stringResource(title),
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onBackground,
-                    )
-                    Spacer(Modifier.height(10.dp))
-                }
-                blocks.forEachIndexed { index, block ->
-                    Card(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 6.dp),
-                    shape = RoundedCornerShape(16.dp),
-                    colors = CardDefaults.cardColors(
-                        containerColor = if (block.disposition == TaskDisposition.Postponed) {
-                            MaterialTheme.colorScheme.surfaceVariant
-                        } else {
-                            MaterialTheme.colorScheme.surface
-                        },
-                    ),
-                    border = CardDefaults.outlinedCardBorder(),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
-                    ) {
-                        Column(
-                        modifier = Modifier.padding(18.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                text = block.title,
-                                modifier = Modifier.weight(1f),
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onSurface
-                            )
-                            if (numbered) {
-                                Spacer(Modifier.width(8.dp))
-                                Text(
-                                    text = "Block ${index + 1}",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onPrimaryContainer,
-                                    fontWeight = FontWeight.Bold,
-                                    modifier = Modifier
-                                        .background(
-                                            color = MaterialTheme.colorScheme.primaryContainer,
-                                            shape = RoundedCornerShape(50)
-                                        )
-                                        .padding(horizontal = 8.dp, vertical = 4.dp)
-                                )
-                            }
-                        }
-
-                        if (block.disposition == TaskDisposition.MustComplete) {
-                            Text(
-                                text = stringResource(R.string.must_complete),
-                                style = MaterialTheme.typography.labelMedium,
-                                color = MaterialTheme.colorScheme.primary,
-                                fontWeight = FontWeight.SemiBold,
-                            )
-                        }
-                        
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(4.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Schedule,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(16.dp)
-                            )
-                            Text(
-                                text = pluralStringResource(
-                                    R.plurals.block_minutes,
-                                    block.durationMinutes,
-                                    block.durationMinutes,
-                                ),
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.primary,
-                                fontWeight = FontWeight.SemiBold
-                            )
-                        }
-                        
-                        Text(
-                            text = block.instructions,
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        
-                        val associatedTopics = plan.topics.filter { it.id in block.topicIds }
-                        if (associatedTopics.isNotEmpty()) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                associatedTopics.take(2).forEach { topic ->
-                                    Text(
-                                        text = topic.title,
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = MaterialTheme.colorScheme.onSecondaryContainer,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis,
-                                        modifier = Modifier
-                                            .widthIn(max = 120.dp)
-                                            .background(
-                                                color = MaterialTheme.colorScheme.secondaryContainer,
-                                                shape = RoundedCornerShape(6.dp)
-                                            )
-                                            .padding(horizontal = 8.dp, vertical = 4.dp)
-                                    )
-                                }
-                                if (associatedTopics.size > 2) {
-                                    Text(
-                                        text = pluralStringResource(
-                                            R.plurals.more_topics,
-                                            associatedTopics.size - 2,
-                                            associatedTopics.size - 2,
-                                        ),
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = MaterialTheme.colorScheme.onSecondaryContainer,
-                                    )
-                                }
-                            }
-                        }
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-fun PlanDetailsScreen(plan: GeneratedStudyPlan, onBack: () -> Unit) {
-    PlanDetailsScreen(plan = plan, feasibility = null, originalGoalDoesNotFit = false, onBack = onBack)
-}
-
-@Composable
-private fun FeasibilityBanner(title: String, message: String) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer),
-        shape = RoundedCornerShape(16.dp),
-    ) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-            Text(message, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSecondaryContainer)
-        }
-    }
-}
-
-private fun formatStudyMinutes(minutes: Int): String = when {
-    minutes < 60 -> "$minutes min"
-    minutes % 60 == 0 -> "${minutes / 60} hr"
-    else -> "${minutes / 60} hr ${minutes % 60} min"
-}
+// region â€” While you wait card
 
 // endregion

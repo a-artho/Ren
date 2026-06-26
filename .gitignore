@@ -14,3 +14,20 @@
 .cxx
 local.properties
 /.idea
+
+# Local-only project notes and throwaway UI dumps
+context.local.md
+current-window.xml
+chatgpt/
+chatgpt*.rar
+.codex-logs/
+.tmp-adb/
+.kotlin/
+tmp/
+.jdk/
+
+# Backend local secrets/state
+backend/.env
+backend/data/
+backend/*.log
+backend/*.zip

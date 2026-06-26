@@ -9,11 +9,9 @@ import com.hci.ren.feature.pdfupload.presentation.StudyGoal
 import com.hci.ren.feature.plangeneration.GeneratedStudyBlock
 import com.hci.ren.feature.plangeneration.GeneratedStudyPlan
 import java.io.IOException
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNull
 import org.junit.Before
 import org.junit.Test
 
@@ -31,20 +29,18 @@ class StudyProjectDatabaseTest {
 
     @After @Throws(IOException::class) fun closeDatabase() = database.close()
 
-    @Test fun projectsReloadUpdateAndDeleteAsIndependentAggregates() = runBlocking {
+    @Test fun activeProjectReplacesPreviousProject() = runBlocking {
         val first = project("first", "Calculus")
         val second = project("second", "Physics")
         repository.upsert(first)
+        assertEquals("first", repository.getActive()?.id)
+
         repository.upsert(second)
+        assertEquals("second", repository.getActive()?.id)
 
-        assertEquals(listOf("second", "first"), repository.observeAll().first().map { it.id })
-        repository.upsert(first.copy(title = "Updated", updatedAtMillis = 3))
-        assertEquals("Updated", repository.getById("first")?.title)
-        assertEquals(1, repository.getById("first")?.plan?.blocks?.size)
-
-        repository.delete("first")
-        assertNull(repository.getById("first"))
-        assertEquals("second", repository.getById("second")?.id)
+        repository.upsert(second.copy(title = "Updated", updatedAtMillis = 3))
+        assertEquals("Updated", repository.getActive()?.title)
+        assertEquals(1, repository.getActive()?.plan?.blocks?.size)
     }
 
     private fun project(id: String, title: String) = StudyProject(
@@ -56,14 +52,23 @@ class StudyProjectDatabaseTest {
         plan = GeneratedStudyPlan(
             id = id,
             topics = emptyList(),
-            blocks = listOf(GeneratedStudyBlock("task", "Task", 1, 30, "Study", emptyList())),
+            blocks = listOf(
+                GeneratedStudyBlock(
+                    id = "task",
+                    title = "Task",
+                    order = 1,
+                    durationMinutes = 30,
+                    instructions = "Study",
+                    topicIds = emptyList(),
+                ),
+            ),
             totalEstimatedMinutes = 30,
             projectName = title,
         ),
         preferences = PlanSetupSubmission(
             documentUris = emptyList(),
-            goal = StudyGoal.OngoingStudy,
-            deadline = StudyDeadline.NoFixedDeadline,
+            goal = StudyGoal.PrepareForExam,
+            deadline = StudyDeadline.InOneWeek,
             deadlineDate = null,
             dailyStudyMinutes = 30,
             studyDays = StudyDay.entries.toSet(),

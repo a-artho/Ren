@@ -2,6 +2,7 @@ package com.hci.ren.feature.plangeneration
 
 import android.content.ContentResolver
 import android.net.Uri
+import android.provider.OpenableColumns
 import com.hci.ren.feature.pdfupload.presentation.PlanSetupSubmission
 import org.json.JSONArray
 import org.json.JSONObject
@@ -25,6 +26,7 @@ class PlanApiRepository(
 ) {
     fun uploadDocument(uri: Uri, requestId: String): String {
         val boundary = "Ren-${UUID.randomUUID()}"
+        val filename = contentResolver.displayName(uri).multipartSafeFilename()
         val connection = open("/documents", "POST").apply {
             setRequestProperty("Content-Type", "multipart/form-data; boundary=$boundary")
             setChunkedStreamingMode(64 * 1024)
@@ -33,7 +35,7 @@ class PlanApiRepository(
         return try {
             connection.outputStream.buffered(64 * 1024).use { output ->
                 output.write("--$boundary\r\nContent-Disposition: form-data; name=\"requestId\"\r\n\r\n$requestId\r\n".toByteArray())
-                output.write("--$boundary\r\nContent-Disposition: form-data; name=\"file\"; filename=\"document.pdf\"\r\nContent-Type: application/pdf\r\n\r\n".toByteArray())
+                output.write("--$boundary\r\nContent-Disposition: form-data; name=\"file\"; filename=\"$filename\"\r\nContent-Type: application/pdf\r\n\r\n".toByteArray())
                 contentResolver.openInputStream(uri)?.use { it.copyTo(output, 64 * 1024) }
                     ?: error("The selected PDF is no longer accessible")
                 output.write("\r\n--$boundary--\r\n".toByteArray())
@@ -44,8 +46,14 @@ class PlanApiRepository(
         }
     }
 
-    fun uploadDocuments(uris: List<Uri>, requestId: String): List<String> {
+    fun uploadDocuments(
+        uris: List<Uri>,
+        requestId: String,
+        onProgress: (current: Int, total: Int) -> Unit = { _, _ -> },
+    ): List<String> {
+        val total = uris.size
         return uris.mapIndexed { index, uri ->
+            onProgress(index + 1, total)
             uploadDocument(uri, "${requestId}-${index}")
         }
     }
@@ -53,6 +61,7 @@ class PlanApiRepository(
     fun createPlan(documentIds: List<String>, submission: PlanSetupSubmission, requestId: String): String {
         val setup = JSONObject()
             .put("goal", submission.goal.name)
+            .put("planTitle", submission.planTitle)
             .put("deadline", submission.deadline.name)
             .put("deadlineDate", submission.deadlineDate)
             .put("dailyStudyMinutes", submission.dailyStudyMinutes)
@@ -70,31 +79,63 @@ class PlanApiRepository(
 
     fun plan(planId: String): GeneratedStudyPlan {
         val json = jsonRequest("/plans/$planId", "GET")
+        val sourceDocuments = json.optJSONArray("sourceDocuments")?.objects()?.map {
+            StudySourceDocument(
+                id = it.getString("id"),
+                filename = it.getString("filename"),
+                order = it.getInt("order"),
+                pageCount = it.optInt("pageCount").takeIf { value -> value > 0 },
+                uploadDocumentId = it.optString("uploadDocumentId").takeUnless { value -> value.isBlank() || value == "null" },
+            )
+        }.orEmpty().sortedBy { it.order }
         val topics = json.getJSONArray("topics").objects().map {
             StudyTopic(it.getString("id"), it.getString("title"), it.getInt("order"))
         }.sortedBy { it.order }
         val blocks = json.getJSONArray("blocks").objects().map {
+            val duration = when {
+                it.has("durationMinutes") && !it.isNull("durationMinutes") -> it.getInt("durationMinutes")
+                else -> it.optInt("estimatedMinutes", 1)
+            }.coerceAtLeast(1)
             GeneratedStudyBlock(
-                it.getString("id"), it.getString("title"), it.getInt("order"),
-                it.getInt("durationMinutes").coerceAtLeast(1), it.getString("instructions"),
-                it.getJSONArray("topicIds").strings(),
-                it.optInt("minimumUsefulMinutes", 10).coerceAtLeast(1),
-                it.optString("priority", "MEDIUM").toTaskPriority(),
-                it.optString("taskType", "REVIEW").toStudyTaskType(),
-                it.optString("priorityReason", "Supports the study goal"),
-                it.optBoolean("isSkippable", true),
+                id = it.getString("id"),
+                title = it.getString("title"),
+                order = it.getInt("order"),
+                durationMinutes = duration,
+                effortMinMinutes = it.optInt("effortMinMinutes", duration).coerceAtLeast(1),
+                effortLikelyMinutes = it.optInt("effortLikelyMinutes", duration).coerceAtLeast(1),
+                effortMaxMinutes = it.optInt("effortMaxMinutes", duration).coerceAtLeast(1),
+                instructions = it.getString("instructions"),
+                topicIds = it.getJSONArray("topicIds").strings(),
+                minimumUsefulMinutes = it.optInt("minimumUsefulMinutes", 10).coerceAtLeast(1),
+                taskType = it.optString("taskType", "REVIEW").toStudyTaskType(),
                 status = it.optString("status", "NOT_STARTED").toTaskStatus(),
                 scheduledDate = it.optString("scheduledDate").takeUnless { value -> value.isBlank() || value == "null" },
                 dependencies = it.optJSONArray("dependencies")?.strings().orEmpty(),
-                isOptional = it.optBoolean("isOptional", false),
-                isExcluded = it.optBoolean("isExcluded", false),
+                sourceRefs = it.optJSONArray("sourceRefs")?.objects()?.map(JSONObject::toStudySourceRef).orEmpty(),
+                difficulty = it.optString("difficulty", "STANDARD").toStudyBlockDifficulty(),
+                difficultyScore = it.optInt("difficultyScore").takeIf { value -> value > 0 },
+                densityScore = it.optInt("densityScore").takeIf { value -> value > 0 },
+                productionDemandScore = it.optInt("productionDemandScore").takeIf { value -> value > 0 },
+                estimateConfidence = it.optString("estimateConfidence", "MEDIUM").toEstimateConfidence(),
+                estimatedMinutes = it.optInt("estimatedMinutes", duration).coerceAtLeast(1),
+                completionCriteria = it.optJSONArray("completionCriteria")?.strings().orEmpty(),
+                splitAllowed = it.optBoolean("splitAllowed", true),
+                continuityGroup = it.optString("continuityGroup").takeUnless { value -> value.isBlank() || value == "null" },
             )
         }.sortedBy { it.order }
         val title = if (json.has("title") && !json.isNull("title")) {
             json.optString("title", "").takeIf { it.isNotBlank() }
         } else null
-        return GeneratedStudyPlan(planId, topics, blocks, json.getInt("totalEstimatedMinutes"),
-            projectName = title ?: DEFAULT_PROJECT_NAME)
+        return GeneratedStudyPlan(
+            id = planId,
+            topics = topics,
+            blocks = blocks,
+            totalEstimatedMinutes = json.getInt("totalEstimatedMinutes"),
+            projectName = title ?: DEFAULT_PROJECT_NAME,
+            planVersion = json.optInt("planVersion", 1),
+            sourceDocuments = sourceDocuments,
+            extractionWarnings = json.optJSONArray("extractionWarnings")?.objects()?.map(JSONObject::toExtractionWarning).orEmpty(),
+        )
     }
 
     fun cancelPlan(planId: String) {
@@ -144,12 +185,52 @@ internal class PlanApiException(
 
 private fun JSONArray.objects() = (0 until length()).map { getJSONObject(it) }
 private fun JSONArray.strings() = (0 until length()).map { getString(it) }
-private fun String.toTaskPriority() = runCatching { TaskPriority.valueOf(lowercase().replaceFirstChar(Char::uppercase)) }.getOrDefault(TaskPriority.Medium)
-private fun String.toStudyTaskType() = runCatching {
-    StudyTaskType.valueOf(lowercase().split('_').joinToString("") { it.replaceFirstChar(Char::uppercase) })
-}.getOrDefault(StudyTaskType.Custom)
+private fun ContentResolver.displayName(uri: Uri): String {
+    return query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
+        val columnIndex = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+        if (columnIndex >= 0 && cursor.moveToFirst()) cursor.getString(columnIndex) else null
+    }?.takeIf { it.isNotBlank() } ?: "document.pdf"
+}
+private fun String.multipartSafeFilename() = replace("\\", "_")
+    .replace("\"", "_")
+    .replace("\r", "_")
+    .replace("\n", "_")
+private fun JSONObject.toStudySourceRef() = StudySourceRef(
+    documentId = getString("documentId"),
+    startPage = optInt("startPage").takeIf { it > 0 },
+    endPage = optInt("endPage").takeIf { it > 0 },
+    sectionTitle = optString("sectionTitle").takeUnless { it.isBlank() || it == "null" },
+)
+
+private fun JSONObject.toExtractionWarning() = ExtractionWarning(
+    type = optString("type"),
+    message = optString("message"),
+    blockId = optString("blockId").takeUnless { it.isBlank() || it == "null" },
+    documentId = optString("documentId").takeUnless { it.isBlank() || it == "null" },
+    startPage = optInt("startPage").takeIf { it > 0 },
+    endPage = optInt("endPage").takeIf { it > 0 },
+)
+
+private fun String.toStudyTaskType(): StudyTaskType {
+    val normalized = wireEnumName()
+    if (normalized == "Skim") return StudyTaskType.Reading
+    return runCatching { StudyTaskType.valueOf(normalized) }.getOrDefault(StudyTaskType.Custom)
+}
 
 private fun String.toTaskStatus() = runCatching {
-    StudyTaskStatus.valueOf(lowercase().split('_').joinToString("") { it.replaceFirstChar(Char::uppercase) })
+    StudyTaskStatus.valueOf(wireEnumName())
 }.getOrDefault(StudyTaskStatus.NotStarted)
 
+private fun String.toStudyBlockDifficulty() = runCatching {
+    StudyBlockDifficulty.valueOf(wireEnumName())
+}.getOrDefault(StudyBlockDifficulty.Standard)
+
+private fun String.toEstimateConfidence() = runCatching {
+    EstimateConfidence.valueOf(wireEnumName())
+}.getOrDefault(EstimateConfidence.Medium)
+
+private fun String.wireEnumName() = trim()
+    .lowercase()
+    .split('_', '-', ' ')
+    .filter { it.isNotBlank() }
+    .joinToString("") { part -> part.replaceFirstChar(Char::uppercase) }

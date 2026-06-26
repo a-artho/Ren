@@ -8,7 +8,6 @@ import com.hci.ren.feature.pdfupload.presentation.StudyDeadline
 import com.hci.ren.feature.plangeneration.GeneratedStudyBlock
 import com.hci.ren.feature.plangeneration.StudyPlanFeasibilityChecker
 import com.hci.ren.feature.plangeneration.StudyTaskStatus
-import com.hci.ren.feature.plangeneration.TaskDisposition
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
@@ -23,6 +22,7 @@ import kotlinx.coroutines.sync.withLock
 
 data class StudyMapDetailUiState(
     val isLoading: Boolean = false,
+    val hasLoaded: Boolean = false,
     val project: StudyProject? = null,
     val errorMessage: String? = null,
     val userMessage: String? = null,
@@ -38,28 +38,29 @@ class StudyMapDetailViewModel(application: Application) : AndroidViewModel(appli
     private val writeMutex = Mutex()
     private val _uiState = MutableStateFlow(StudyMapDetailUiState())
     val uiState = _uiState.asStateFlow()
-    private var loadedProjectId: String? = null
 
-    fun loadProject(id: String) {
-        if (id.isBlank()) {
-            _uiState.value = StudyMapDetailUiState(errorMessage = getApplication<Application>().getString(R.string.study_map_unavailable))
-            return
-        }
-        if (loadedProjectId == id && _uiState.value.project != null) return
-        loadedProjectId = id
+    fun loadActiveProject(force: Boolean = false) {
         viewModelScope.launch {
-            _uiState.value = StudyMapDetailUiState(isLoading = true)
+            val current = _uiState.value
+            if (current.isLoading) return@launch
+            if (!force && current.hasLoaded) return@launch
+            if (!current.hasLoaded && current.project == null) {
+                _uiState.value = current.copy(isLoading = true)
+            }
             try {
-                val project = repository.getById(id)
+                val project = repository.getActive()
                 if (project == null) {
-                    _uiState.value = StudyMapDetailUiState(errorMessage = getApplication<Application>().getString(R.string.study_map_missing))
+                    _uiState.value = StudyMapDetailUiState(hasLoaded = true)
                 } else {
                     publish(project)
                 }
             } catch (error: CancellationException) {
                 throw error
             } catch (_: Exception) {
-                _uiState.value = StudyMapDetailUiState(errorMessage = getApplication<Application>().getString(R.string.study_map_open_error))
+                _uiState.value = StudyMapDetailUiState(
+                    hasLoaded = true,
+                    errorMessage = getApplication<Application>().getString(R.string.study_map_open_error),
+                )
             }
         }
     }
@@ -95,6 +96,34 @@ class StudyMapDetailViewModel(application: Application) : AndroidViewModel(appli
         it.copy(dailyMinutesOverride = minutes.coerceIn(1, 1_440))
     }
 
+    fun renamePlan(name: String) {
+        val title = name.safeStudyProjectTitle()
+        if (title.isBlank()) return
+        mutate("Plan name updated.") {
+            it.copy(
+                title = title,
+                plan = it.plan.copy(projectName = title),
+                preferences = it.preferences.copy(planTitle = title),
+            )
+        }
+    }
+
+    fun deletePlan() {
+        val before = _uiState.value.project ?: return
+        _uiState.value = StudyMapDetailUiState(hasLoaded = true)
+        viewModelScope.launch {
+            writeMutex.withLock {
+                try {
+                    repository.deleteActive()
+                } catch (error: CancellationException) {
+                    throw error
+                } catch (_: Exception) {
+                    publish(before, getApplication<Application>().getString(R.string.study_map_save_error))
+                }
+            }
+        }
+    }
+
     fun reduceScope(strategy: ScopeReduction, selectedTopicIds: Set<String>) = mutate("Study map updated.") { project ->
         val blocks = adjustmentService.applyScope(project.plan.blocks, strategy, selectedTopicIds)
         project.copy(plan = project.plan.copy(
@@ -113,24 +142,18 @@ class StudyMapDetailViewModel(application: Application) : AndroidViewModel(appli
     }
 
     fun updateTaskDuration(taskId: String, minutes: Int) = updateTask(taskId) { task, _ ->
-        task.copy(durationMinutes = minutes.coerceIn(1, 1_440))
+        task.withLocalDuration(minutes)
     }
 
     fun excludeTask(taskId: String) = updateTask(taskId) { task, _ ->
         task.copy(
-            isOptional = true,
-            isExcluded = false,
-            disposition = TaskDisposition.IfTimeRemains,
-            status = StudyTaskStatus.Optional,
+            status = StudyTaskStatus.ExcludedByUser,
             scheduledDate = null,
         )
     }
 
     fun restoreTask(taskId: String) = updateTask(taskId) { task, _ ->
         task.copy(
-            isOptional = false,
-            isExcluded = false,
-            disposition = TaskDisposition.MustComplete,
             status = StudyTaskStatus.NotStarted,
         )
     }
@@ -172,6 +195,7 @@ class StudyMapDetailViewModel(application: Application) : AndroidViewModel(appli
             dailyMinutesOverride = project.dailyMinutesOverride,
         )
         _uiState.value = StudyMapDetailUiState(
+            hasLoaded = true,
             project = project,
             userMessage = message,
             suggestedDeadline = adjustmentService.suggestedDeadline(
@@ -186,14 +210,22 @@ class StudyMapDetailViewModel(application: Application) : AndroidViewModel(appli
 }
 
 private fun isRequiredTask(task: GeneratedStudyBlock) =
-    !task.isExcluded && task.status != StudyTaskStatus.Excluded && !task.isOptional && task.disposition == TaskDisposition.MustComplete
+    task.status != StudyTaskStatus.ExcludedByUser
 
-private fun deadlineAfterSelectedStudyDays(days: Int, selectedDays: Set<com.hci.ren.feature.pdfupload.presentation.StudyDay>): String {
-    val cursor = dayOnly(Calendar.getInstance())
+internal fun deadlineAfterSelectedStudyDays(
+    days: Int,
+    selectedDays: Set<com.hci.ren.feature.pdfupload.presentation.StudyDay>,
+    today: Calendar = Calendar.getInstance(),
+): String {
+    val cursor = dayOnly(today)
     var counted = 0
-    while (counted < days.coerceAtLeast(1)) {
+    val targetDays = days.coerceAtLeast(1)
+    if (selectedDays.isEmpty()) {
+        return cursor.apply { add(Calendar.DAY_OF_MONTH, targetDays) }.toStudyDate()
+    }
+    while (counted < targetDays) {
         if (cursor.studyDay in selectedDays) counted++
-        if (counted < days.coerceAtLeast(1)) cursor.add(Calendar.DAY_OF_MONTH, 1)
+        cursor.add(Calendar.DAY_OF_MONTH, 1)
     }
     return cursor.toStudyDate()
 }

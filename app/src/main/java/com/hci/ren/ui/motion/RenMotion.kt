@@ -6,6 +6,7 @@ import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
@@ -31,6 +32,8 @@ val RenMotionEasing = RenEmphasizedEasing
 // region — MD3 Duration Tokens
 
 const val RenMotionDurationMillis = 250
+const val RenFadeThroughDurationMillis = 300
+const val RenScreenTransitionDurationMillis = 420
 
 // endregion
 
@@ -61,20 +64,73 @@ fun isReducedMotionEnabled(): Boolean {
 
 // region — Screen Transform
 
+fun renFadeThroughTransform(reducedMotion: Boolean): ContentTransform {
+    val fadeIn = fadeIn(
+        animationSpec = tween(
+            durationMillis = if (reducedMotion) 0 else 240,
+            easing = RenEmphasizedDecelerateEasing,
+        ),
+    )
+    val fadeOut = fadeOut(
+        animationSpec = tween(
+            durationMillis = 0,
+            easing = RenEmphasizedAccelerateEasing,
+        ),
+    )
+    val enter = if (reducedMotion) {
+        fadeIn
+    } else {
+        fadeIn + scaleIn(
+            animationSpec = tween(
+                durationMillis = RenFadeThroughDurationMillis,
+                easing = RenEmphasizedDecelerateEasing,
+            ),
+            initialScale = 0.96f,
+        )
+    }
+    return (enter togetherWith fadeOut).apply {
+        targetContentZIndex = 1f
+    }
+}
+
+fun renTabSwitchTransform(reducedMotion: Boolean): ContentTransform {
+    val fadeIn = fadeIn(
+        animationSpec = tween(
+            durationMillis = if (reducedMotion) 0 else 120,
+            easing = RenEmphasizedDecelerateEasing,
+        ),
+    )
+    val fadeOut = fadeOut(
+        animationSpec = tween(
+            durationMillis = 0,
+            easing = RenEmphasizedAccelerateEasing,
+        ),
+    )
+    return (fadeIn togetherWith fadeOut).apply {
+        targetContentZIndex = 1f
+    }
+}
+
 fun renScreenTransform(forward: Boolean, reducedMotion: Boolean): ContentTransform {
-    val enterDuration = 400
-    val exitDuration = 200
+    val enterDuration = RenScreenTransitionDurationMillis
+    val exitDuration = 280
     val fadeIn = fadeIn(tween(enterDuration, easing = RenEmphasizedDecelerateEasing))
     val fadeOut = fadeOut(tween(exitDuration, easing = RenEmphasizedAccelerateEasing))
-    if (reducedMotion) return fadeIn togetherWith fadeOut
+    if (reducedMotion) {
+        return (fadeIn togetherWith fadeOut).apply {
+            targetContentZIndex = 1f
+        }
+    }
     val direction = if (forward) 1 else -1
-    return (fadeIn + slideInHorizontally(
+    return ((fadeIn + slideInHorizontally(
         animationSpec = tween(enterDuration, easing = RenEmphasizedDecelerateEasing),
-        initialOffsetX = { direction * minOf(it / 24, 48) },
+        initialOffsetX = { direction * minOf(it / 18, 36) },
     )) togetherWith (fadeOut + slideOutHorizontally(
         animationSpec = tween(exitDuration, easing = RenEmphasizedAccelerateEasing),
-        targetOffsetX = { -direction * minOf(it / 24, 48) },
-    ))
+        targetOffsetX = { -direction * minOf(it / 26, 28) },
+    ))).apply {
+        targetContentZIndex = 1f
+    }
 }
 
 // endregion

@@ -1,304 +1,345 @@
 # Ren Working Context
 
-Read this first when implementing or improving a feature. It is a compact map for
-humans and AI tools; it intentionally does not repeat every rule in `AGENTS.md`.
+Read this first before changing the project. It is a compact map for humans and
+AI tools; live code is still authoritative.
 
-## How to use this file
+## Current product direction
 
-1. Read **Core invariants** and the row for your task in **Change map**.
-2. Open only the listed production files and their matching tests.
-3. Confirm current behavior in code before editing; this file is an index, not a
-   substitute for source.
-4. Run the narrowest relevant check from **Verification**.
+Ren is a time-management study planner for exam preparation.
 
-For detailed coding, accessibility, Git, and dependency rules, read `AGENTS.md`.
-When the two disagree, live code/configuration is authoritative, then `AGENTS.md`.
+The core idea:
 
-## Product and stack
+```text
+Upload study material -> extract a content-aware map -> plan it across available
+study days -> later support Today, focus sessions, and dynamic replanning.
+```
 
-Ren turns a PDF plus study preferences into an AI-generated study plan.
+Important framing:
+
+- The app helps manage time; it should not decide what is “skippable” or
+  “unimportant” for the student.
+- Backend/Gemini may ignore non-study pages such as covers, blank pages, table
+  of contents, copyright pages, bibliography-only pages, admin slides, duplicate
+  title slides, etc. Those are not study blocks.
+- Do not reintroduce priority/skippable/optional topic logic. User-owned states
+  are the intended direction: `NotStarted`, `InProgress`, `Completed`,
+  `DeferredByUser`, `ExcludedByUser`, `Unscheduled`, `OverCapacity`, etc.
+- Preserve lecture/document order and in-document ordering. Scheduling may
+  balance workload, but it must not reorder the study path.
+
+## Stack
 
 - Android app: Kotlin, Jetpack Compose, Material 3, single `:app` module
 - Package: `com.hci.ren`; min SDK 24; target SDK 36; compile SDK 36.1
-- State: `StateFlow` in ViewModels; `rememberSaveable` for app routing
-- Persistence: `SavedStateHandle` for upload/setup, `SharedPreferences` for
-  transient generation recovery, and Room for durable Study Map projects/tasks
+- State: `StateFlow` in ViewModels; `rememberSaveable` for top-level routing
+- Persistence: Room stores the active study project; `SharedPreferences` stores
+  transient generation recovery; setup/upload use `SavedStateHandle`
 - Backend: FastAPI, Pydantic, SQLite, `google-genai`, Uvicorn
-- Build: Gradle Kotlin DSL, version catalog, Java 11 source/target, Java 21 daemon
-- Theme: custom Ren palette and Inter type; dynamic color is off by default
+- Theme: dark Material/Compose UI with custom Ren palette and Inter type;
+  dynamic color is off by default
 
-## End-to-end flow
+## Architecture boundary
 
-```text
-Home
-  -> Android document picker
-  -> PDF metadata + local page rendering
-  -> 4-step setup (goal, deadline, daily time, study days)
-  -> POST PDF /documents
-  -> POST setup /plans
-  -> poll /plans/{id}/status
-  -> GET /plans/{id}
-  -> deterministic schedule + realism calculations
-  -> persist generated project in Room
-  -> Study Map detail (Schedule or Topics)
-```
-
-`MainActivity.kt` owns the six-screen state machine:
+The migration direction is:
 
 ```text
-home -> pdf_upload -> pdf_setup -> plan_processing -> study_map_detail
-  \-> study_map_library -> study_map_detail
+Backend = PDF upload + PDF metadata/page anchors + Gemini semantic extraction
+Android = workload scoring + scheduling + feasibility + future replanning
 ```
 
-Navigation uses `rememberSaveable`, `AnimatedContent`, and `RenMotion`. It does
-not use Android Navigation. Starting a new upload resets upload/setup sessions.
-Leaving active generation calls `PlanGenerationViewModel.reset()`, which clears
-local recovery state and attempts backend cancellation.
+Backend returns canonical study material:
 
-## Core invariants
+- source documents
+- topics
+- ordered blocks
+- source refs/page ranges
+- workload metadata: duration/effort range, difficulty/density/production scores,
+  task type, completion criteria, split allowance, continuity group
+- extraction warnings
 
-- Preserve the established `Route -> Screen -> ViewModel -> immutable UiState`
-  shape. Screen composables receive state/events; external I/O belongs in a
-  repository and runs off the main thread.
-- Preserve unrelated work: inspect `git status --short --branch` before edits.
-- Reuse `MaterialTheme`, `RenTheme`, and `RenMotion`; do not introduce a parallel
-  palette, type system, animation duration, or navigation mechanism.
-- User-facing strings belong in `app/src/main/res/values/strings.xml`.
-- Maintain accessible semantics, meaningful content descriptions, test tags,
-  adequate touch targets, dark theme, RTL, font scaling, and reduced motion.
-- A PDF must remain available through its persisted content URI until upload.
-- Android and backend upload limits must stay aligned at 25 MiB.
-- Generation retries rely on idempotent request IDs. Do not casually regenerate,
-  omit, or reinterpret `requestId` across upload/create retry paths.
-- Backend terminal states are `COMPLETED`, `FAILED`, and `CANCELED`; pending jobs
-  resume at backend startup. Terminal jobs clean up their uploaded PDF.
-- Never expose backend exception text, API keys, raw internal errors, or document
-  contents in the Android UI or committed documentation.
+Backend deliberately does not return calendar dates, day assignments, or a dated
+schedule.
 
-## Change map
+Android owns the schedule locally every time Study Plan data is built. This is
+important for future Today/focus/replanning work.
 
-| If changing... | Read first | Tests |
-|---|---|---|
-| App routing, session reset, system back | `MainActivity.kt`; each destination's Route/Screen | affected Compose screen tests |
-| Home dashboard/actions/material sheet | `feature/home/presentation/` and `components/` | `HomeUiStateTest`, `HomeScreenTest` |
-| PDF selection, metadata, page cache | `PdfUploadRoute.kt`, `PdfUploadViewModel.kt`, `PdfUploadUiState.kt` | `PdfUploadUiStateTest`, `PdfUploadScreenTest` |
-| PDF rendering or URI access | `PdfDocumentRepository.kt`, then upload ViewModel | `PdfUploadUiStateTest`; compile UI tests |
-| Setup questions/validation/persistence | `PlanSetupUiState.kt`, `PlanSetupViewModel.kt`, `PlanSetupScreen.kt` | `PlanSetupUiStateTest`, `PlanSetupScreenTest` |
-| Upload/create/poll/cancel HTTP contract | Android `PlanApiRepository.kt`; backend `main.py`, `models.py` | `PlanGenerationModelsTest`; `test_api.py` |
-| Generation recovery/retry/progress | `PlanGenerationViewModel.kt`, `PlanGenerationModels.kt` | `PlanGenerationModelsTest`, `PlanGenerationScreenTest` |
-| Study Map library/persistence | `studymap/StudyProjectRepository.kt`, `StudyMapLibrary*` | `StudyProjectPersistenceTest`, `StudyProjectDatabaseTest`, `StudyMapLibraryScreenTest` |
-| Study Map schedule/topics/task actions | `studymap/StudyMapScreen.kt`, `StudyMapDetailViewModel.kt`, `StudyMapModels.kt` | `StudyMapModelsTest`, `StudyMapScreenTest` |
-| Realism and in-place plan adjustments | `studymap/StudyMapModels.kt`, generation ViewModel | `StudyMapModelsTest`; compile Compose tests |
-| Legacy feasibility/adaptation helpers | `StudyPlanFeasibilityChecker.kt`, `RealityCheckScreen.kt`, generation ViewModel/models | `StudyPlanFeasibilityCheckerTest`; compile Compose tests |
-| Generated-plan validation | backend `models.py`, `provider.py`; Android generation models | `test_models.py`, `test_provider.py` |
-| Job lifecycle, cleanup, restart | backend `main.py`, `store.py` | `test_processing.py`, `test_store.py`, `test_api.py` |
-| Colors/type/dark theme | `ui/theme/Color.kt`, `Theme.kt`, `Type.kt` | affected screen tests; visual check |
-| Animation/transitions | `ui/motion/RenMotion.kt`, calling screen | affected screen tests; reduced-motion check |
-| Dependencies/build/lint | `app/build.gradle.kts`, `gradle/libs.versions.toml`, `gradle.properties` | unit tests, lint, assemble |
+## Current app flow
 
-Paths under `feature/` above are relative to
-`app/src/main/java/com/hci/ren/feature/`. Android tests mirror package paths in
-`app/src/test/` and `app/src/androidTest/`.
+Top-level routes are managed in `MainActivity.kt` without Android Navigation:
 
-## Feature boundaries
+```text
+Study plan tab
+  -> empty landing if no active plan
+  -> PDF upload
+  -> setup wizard
+  -> processing
+  -> active study plan
 
-### Home
+Today tab
+  -> placeholder for now; disabled/greyed until a plan exists
 
-`HomeRoute` owns screen state and dispatches `HomeAction`; `HomeScreen` selects
-empty or active content. Reusable dashboard UI lives under `components/`.
-Some home actions intentionally show “not available” feedback; do not silently
-make placeholder actions appear functional.
+Progress tab
+  -> placeholder for now; disabled/greyed until a plan exists
+```
 
-The shared product navigation currently presents Home, Study Map, and Insights.
-The Study Map item opens the persisted project library. Selecting a project opens
-its existing Schedule/Topics detail destination. Insights remains an unavailable
-placeholder until its feature is implemented.
+Current screen constants:
 
-### PDF upload and preview
+```text
+pdf_upload
+pdf_setup
+plan_processing
+study_map_detail
+today
+progress
+```
 
-`PdfUploadViewModel` restores the selected URI/page with `SavedStateHandle`,
-rejects files over 25 MiB, bounds stale async results by session/generation, and
-limits rendering concurrency to two jobs. `PdfDocumentRepository` takes a
-persistable read grant and uses Android `PdfRenderer`.
+Bottom navigation has three tabs:
 
-Rendering safety limits:
+- Study plan
+- Today
+- Progress
 
-- bitmap cache: weighted LRU, 32 MiB
-- maximum render dimension: 8,192 px
-- maximum rendered pixels: 4,000,000
-- preview target width: 1,400 px
-- evicted bitmaps must also leave `renderedPages`; otherwise memory is unbounded
+There is no old Home feature in the intended flow. The app is single active plan
+for now, not a multi-plan library.
 
-### Plan setup
+## Setup flow
 
-The wizard has four enum-backed steps: goal, deadline, daily time, study days.
-`PlanSetupUiState.canContinue` is the validation gate and `toSubmission()` is the
-single assembly point. `PlanSetupViewModel` persists answers in `SavedStateHandle`.
-Custom date handling deliberately separates UTC date-picker milliseconds from
-the user's local “today” validation; preserve the timezone tests.
+Setup is a five-step flow:
 
-### Plan generation
+1. Choose study materials
+2. Name the plan
+3. Deadline
+4. Available daily time
+5. Study days
 
-`PlanGenerationViewModel` persists submission, request ID, and plan ID so work
-can resume after process death. It distinguishes upload/create, polling, and
-backend-terminal failures because retry identity differs by phase. Transient
-HTTP failures include 408, 429, and 5xx. The repository uses `HttpURLConnection`
-with emulator base URL `10.0.2.2:8000` and physical-device loopback
-`127.0.0.1:8000`.
+`PlanSetupUiState.canContinue` gates progression. `toSubmission()` is the single
+assembly point.
 
-Wire status mapping is in `PlanGenerationModels.kt`. Android presents backend
-`CANCELED` as a failed/terminal visible state; cancellation normally follows a
-user exit and local reset.
+Deadline semantics:
 
-After a completed plan is fetched, `PlanGenerationViewModel` saves the complete
-project aggregate to Room before `MainActivity` routes directly to Study Map
-detail. There is no draft/confirm-plan state. Generation submission/request/plan
-IDs remain transient recovery data and are cleared after the Room write succeeds.
-Retry after a Room write failure retries persistence without regenerating the plan.
+- Deadline date is exclusive for scheduling.
+- If an exam is due on 27 June, the plan schedules up to 26 June, not on 27 June.
+- `Tomorrow`, `InThreeDays`, `InOneWeek`, and `ChooseDate` are supported.
 
-Legacy `StudyPlanFeasibilityChecker`, `StudyPlanAdapter`,
-`StudyPlanScopeAdjuster`, and `RealityCheckScreen` remain in the source tree for
-compatibility with their existing tests, but normal navigation no longer routes
-through the standalone Reality Check or plan-details screens.
+Daily time is used for initial schedule capacity. Later Today/focus features may
+separate available time from actual focus target.
 
-### Study Map
+## Plan generation and backend contract
 
-`StudyProjectRepository` is the device-local source of truth. One Room row owns
-the complete generated plan, tasks, normalized setup/deadline, title, timestamps,
-daily-time override, and tight-plan acceptance. It deliberately stores neither
-the PDF nor its content URI. Deleting a row atomically removes its embedded tasks;
-the backend generation record is not part of library CRUD.
-
-`StudyMapLibraryViewModel` observes all projects and applies forgiving title
-search, All/Active/Behind/Completed/Plan Issue filters, and the five supported
-sort orders. `StudyMapDetailViewModel` loads a selected project and serializes
-task/deadline/scope updates back to Room. Home opens the library; successful
-generation still opens detail directly; detail back returns to the library.
-
-`feature/studymap/StudyMapModels.kt` contains pure source-of-truth calculations:
-
-- `PlanRealismCalculator`: remaining required minutes versus capacity through
-  the deadline; statuses are on-track, tight, unrealistic, or no-deadline
-- `StudyScheduleCalculator`: schedules remaining required tasks only on selected
-  study days, preserves completed work, and exposes work that does not fit as
-  unscheduled or over-capacity
-- `PlanAdjustmentService`: calculates the earliest buffered deadline and applies
-  recoverable scope reductions or practice-duration reductions
-- `TaskProgressCalculator`: project/topic completion from non-excluded tasks
-
-Daily totals are derived from each day's visible tasks, never a cached total.
-Optional tasks do not count toward required time and remain recoverable. Locked
-tasks cannot start while dependencies are unresolved. Unknown task types map to
-the safe Custom presentation.
-
-`StudyMapScreen.kt` uses the existing Ren Material theme and provides:
-
-- project summary, progress, deadline, total estimate, available time, realism
-- in-page Schedule/Topics switcher
-- next task, expandable day/topic sections, unscheduled work, completion state
-- task detail sheet with start, complete, duration, skip, optional, and restore
-- in-place Reduce scope, Increase daily time, Extend deadline, and Continue
-  anyway adjustments
-- sticky context-sensitive CTA above Home/Study Map/Insights navigation
-
-Normal plan adjustments stay inside Study Map, recalculate immediately, and update
-the durable project's `updatedAt`. Start currently changes task status to
-in-progress; there is no timer/focus destination to launch yet. Insights remains
-unimplemented.
-
-## Backend contract
+Backend endpoints:
 
 | Method | Endpoint | Meaning |
 |---|---|---|
 | `POST` | `/documents` | multipart PDF plus optional `requestId`; returns `documentId` |
-| `POST` | `/plans` | `{documentId, requestId, setup}`; returns `planId` |
+| `POST` | `/plans` | `{documentIds, requestId, setup}`; returns `planId` |
 | `POST` | `/plans/{id}/cancel` | idempotently cancels an active plan |
 | `GET` | `/plans/{id}/status` | returns status and internal error field |
-| `GET` | `/plans/{id}` | returns completed topics, blocks, and total minutes |
+| `GET` | `/plans/{id}` | returns completed canonical plan data |
 
-The backend validates content type, `%PDF-` header, size, referenced IDs,
-contiguous topic/block ordering, and that estimated durations meet task-type
-minimums. Generated blocks include task type, priority, priority rationale,
-minimum useful minutes, and emergency skip eligibility. SQLite stores documents and plan jobs. Both
-document upload and plan creation are idempotent by request ID. Processing tries
-the AI provider twice, persists status changes, and removes the PDF after any
-terminal outcome. Startup removes old unclaimed uploads and resumes pending jobs.
+Important backend rules:
 
-Gemini structured output uses the simple dict `GEMINI_PLAN_SCHEMA`; returned JSON
-is then validated with Pydantic `GeneratedPlan`. Do not replace it with a full
-Pydantic-generated schema without testing against the installed Gemini SDK.
+- `documentIds` supports 1–10 PDFs.
+- Upload limit is 25 MiB; Android and backend limits must stay aligned.
+- Documents are sorted by natural filename order before Gemini processing
+  (`lecture 2` before `lecture 10`).
+- Backend validates PDF content type, `%PDF-` header, request IDs, referenced
+  document IDs, model output shape, topic/block ordering, source refs, and
+  workload fields.
+- Backend returns `extractionWarnings`; Android parses and persists them.
+- Terminal statuses are `COMPLETED`, `FAILED`, `CANCELED`.
+- Terminal jobs clean up uploaded PDFs.
+- Pending jobs resume at backend startup.
 
-Runtime configuration names may be documented, but values must not be committed:
-`GEMINI_API_KEY`, optional `GEMINI_MODEL`, and optional `REN_DATA_DIR`.
+Runtime config values must never be committed:
 
-## UI system
+```text
+GEMINI_API_KEY
+GEMINI_MODEL
+REN_DATA_DIR
+```
 
-- Theme entry: `RenTheme(dynamicColor = false)`
-- Semantic colors: prefer `MaterialTheme.colorScheme`; source palette is Ren
-  Green/Sage/Taupe in `Color.kt`
-- Typography: Inter roles in `Type.kt`
-- Motion: `RenMotionDurationMillis = 250`, `RenMotionEasing`, and
-  `renScreenTransform(forward, reducedMotion)`
-- Edge-to-edge is enabled; screens must account for system bars
-- Loading, empty, error, populated, dark-theme, constrained-size, and font-scale
-  states are part of UI correctness
+Local backend secrets/state are ignored by Git.
+
+## Android scheduling model
+
+Canonical generated blocks are stored unsplit.
+
+`StudyPlanNormalizer.prepareForLocalScheduling()` derives schedulable chunks from
+the canonical blocks using the current daily capacity. This must stay derived,
+not permanently persisted, so future changes to daily time can re-split cleanly.
+
+Core scheduling files:
+
+- `feature/studymap/StudyMapModels.kt`
+- `feature/studymap/StudyScheduleCalculator.kt`
+- `feature/studymap/StudyScheduleModels.kt`
+- `feature/studymap/StudyPlanNormalizer.kt`
+- `feature/studymap/PlanRealism.kt`
+- `feature/plangeneration/StudyWorkload.kt`
+- `feature/plangeneration/StudyWorkloadBudget.kt`
+- `feature/plangeneration/StudyPlanFeasibilityChecker.kt`
+
+Scheduling invariants:
+
+- Preserve block order.
+- Preserve dependencies.
+- Preserve continuity groups where possible.
+- Use selected study days only.
+- Treat deadline as exclusive.
+- Balance by robust minutes and cognitive load, not just raw task count.
+- Locked/completed tasks have special handling and should not be casually
+  rewritten.
+- `DeferredByUser` and `ExcludedByUser` do not count toward required workload.
+- Unplaced required work must surface as `Unscheduled` or `OverCapacity`; it
+  must not disappear.
+
+Workload/realism:
+
+- `requiredStudyMinutes()` applies a buffer for planning realism.
+- `PlanRealismCalculator` compares required work with available capacity and
+  unscheduled work.
+- `StudyScheduleCalculator` returns `StudyScheduleDay` plus `unscheduledTasks`.
+- Dynamic splitting happens before local scheduling, not before Room persistence.
+
+## Persistence
+
+`StudyProjectRepository` owns the active project Room row.
+
+Stored project data includes:
+
+- title
+- canonical generated plan
+- normalized setup/deadline
+- timestamps
+- daily-time override
+- accepted tight-plan flag
+
+It deliberately does not store the uploaded PDFs or source content URI.
+
+Room schema files under `app/schemas/...` should be committed when the DB version
+changes.
+
+The Room database is excluded from Android backup:
+
+```text
+ren-study-projects.db
+ren-study-projects.db-shm
+ren-study-projects.db-wal
+```
+
+## UI principles
+
+- Prefer Material 3/Compose components and surfaces unless custom UI is genuinely
+  needed.
+- Avoid patchy per-device layout hacks; fix shared layout primitives instead.
+- Use `MaterialTheme`, `RenTheme`, and `RenMotion`; do not create parallel design
+  systems casually.
+- User-facing strings belong in `app/src/main/res/values/strings.xml`.
+- Keep dark mode/OLED-friendly backgrounds consistent.
+- Maintain accessible semantics, content descriptions, touch targets, font
+  scaling, RTL, and reduced motion.
+- The processing page should communicate progress clearly without fake “AI magic”
+  language.
+
+Current planned UI direction:
+
+- Study plan is the main map.
+- Today will become the operational focus/replanning surface.
+- Progress will show outcomes/analytics later.
+
+## Change map
+
+| If changing... | Read first | Tests/checks |
+|---|---|---|
+| Top-level routing/tabs | `MainActivity.kt` | relevant Compose tests, `compileDebugAndroidTestKotlin` |
+| PDF upload/preview | `PdfUploadRoute.kt`, `PdfUploadViewModel.kt`, `PdfUploadScreen.kt` | `PdfUploadUiStateTest`, `PdfUploadScreenTest` |
+| Setup wizard | `PlanSetupUiState.kt`, `PlanSetupViewModel.kt`, `PlanSetupScreen.kt` | `PlanSetupUiStateTest`, `PlanSetupScreenTest` |
+| Backend API client | `PlanApiRepository.kt`, backend `main.py`, `models.py` | backend pytest, Android generation tests |
+| Processing/retry/recovery | `PlanGenerationViewModel.kt`, `PlanGenerationModels.kt`, `PlanGenerationScreen.kt` | `PlanGenerationScreenTest`, unit tests |
+| Scheduling/realism | `StudyScheduleCalculator.kt`, `StudyPlanNormalizer.kt`, `PlanRealism.kt`, workload files | `StudyMapModelsTest`, feasibility tests |
+| Study plan UI | `StudyMapScreen.kt`, `StudyMapDetailRoute.kt`, `StudyMapDetailViewModel.kt` | `StudyMapScreenTest`, visual emulator check |
+| Persistence/Room | `StudyProjectRepository.kt`, schema files | `StudyProjectPersistenceTest`, `StudyProjectDatabaseTest` |
+| Backend extraction/Gemini | backend `provider.py`, `planner.py`, `pdf_parser.py`, `models.py` | `test_provider.py`, `test_planner.py`, `test_pdf_parser.py` |
+| Theme/motion/components | `ui/theme/`, `ui/motion/`, `ui/components/` | screen tests, visual check |
+| Build/dependencies | Gradle files and version catalog | unit tests, assemble, lint if relevant |
 
 ## Verification
 
-Use Android Studio's bundled JBR as `JAVA_HOME` when the shell JDK is incompatible.
+Use Android Studio bundled JBR as `JAVA_HOME` if the shell JDK is incompatible:
 
 ```powershell
-# focused Android unit test
-.\gradlew.bat testDebugUnitTest --tests "*TestClass"
-
-# all local Android logic
-.\gradlew.bat testDebugUnitTest
-
-# compile Compose/instrumented tests (no device required)
-.\gradlew.bat compileDebugAndroidTestKotlin
-
-# source/resource/build checks
-.\gradlew.bat lintDebug
-.\gradlew.bat assembleDebug
-
-# backend (run from backend/ to avoid Python package shadowing)
-.\.venv\Scripts\python.exe -m pytest tests -q
+$env:JAVA_HOME='C:\Program Files\Android\Android Studio\jbr'
+$env:Path="$env:JAVA_HOME\bin;$env:Path"
 ```
 
-Run `connectedDebugAndroidTest` only with an emulator/device. For a physical
-device talking to the local backend, first run `adb reverse tcp:8000 tcp:8000`.
-If Gradle hits a Windows file lock around generated resources, run
-`.\gradlew.bat --stop` once, then retry the failed command.
+Common checks:
 
-Verification scope:
+```powershell
+# Android unit tests
+.\gradlew.bat testDebugUnitTest
 
-- Documentation only: inspect file and Git diff/status
-- Pure model/validation logic: focused unit test, then full unit suite
-- Compose behavior/semantics: relevant UI test plus Android-test compilation
-- Resource/manifest/build change: lint plus assemble
-- Backend contract/lifecycle: relevant pytest file, then all backend tests
-- Cross-stack contract: Android and backend suites
+# compile Android/Compose instrumentation tests without a device
+.\gradlew.bat compileDebugAndroidTestKotlin
+
+# debug APK build
+.\gradlew.bat assembleDebug
+
+# backend tests, run from backend/ to avoid Python package shadowing
+cd backend
+.\.venv\Scripts\python.exe -m pytest
+```
+
+Most recent broad checks that passed locally:
+
+```text
+backend pytest: 40 passed
+Android: testDebugUnitTest passed
+Android: compileDebugAndroidTestKotlin passed
+Android: assembleDebug passed
+```
 
 Never claim a check passed unless it ran successfully in the current session.
 
+## Git and local files
+
+Do not commit or push unless explicitly asked.
+
+Ignored local/sensitive/generated files include:
+
+- `backend/.env`
+- `backend/data/`
+- `backend/.venv/`
+- `backend/*.log`
+- `backend/*.zip`
+- `context.local.md`
+- `chatgpt/`
+- `.codex-logs/`
+- `local.properties`
+- `.idea/`
+- `.gradle/`
+- `build/`
+- `app/build/`
+- Python caches and pytest caches
+
+Before pushing, inspect:
+
+```powershell
+git status --short
+git ls-files --others --exclude-standard
+```
+
+Expected untracked project files after the scheduling/backend migration include
+new source files, new backend parser/planner tests, and Room schema `2.json`.
+
 ## Safe working procedure
 
-1. `git status --short --branch`; treat existing changes as user-owned.
-2. Read the relevant row in **Change map**, implementation, and nearby tests.
-3. For behavior changes, add a focused regression test where practical.
-4. Make the smallest coherent change; avoid unrelated refactors/upgrades.
-5. Run focused verification, then the broader check justified by risk.
-6. Review `git diff` and status for generated files, secrets, and scope drift.
-7. Do not commit, push, branch, or open a PR unless explicitly requested.
+1. Check `git status --short --branch`.
+2. Read the relevant section of this file and the code/tests listed in Change map.
+3. Confirm current behavior in source before editing.
+4. Add/update focused tests for behavior changes where practical.
+5. Make the smallest coherent change.
+6. Run focused verification, then broader checks proportional to risk.
+7. Review diff/status for secrets, generated files, and scope drift.
+8. Do not push or commit unless the user explicitly says to.
 
-Never edit or commit generated/machine data: `.gradle/`, `.kotlin/`, `.idea/`,
-`build/`, `app/build/`, `local.properties`, `backend/data/`, `__pycache__/`, or
-`.env`. `AGENTS.md` is intentionally local; do not stage it.
-
-## Keeping this context useful
-
-Update `context.md` in the same change when a feature boundary, navigation flow,
-API endpoint/payload, persistence mechanism, invariant, or verification command
-changes. Keep it compact: replace stale facts instead of appending history.
-Do not add secrets, personal paths, branch-specific state, line numbers, exhaustive
-symbol lists, transient test counts, or general advice already in `AGENTS.md`.
+Keep this file compact. Replace stale facts instead of appending history.

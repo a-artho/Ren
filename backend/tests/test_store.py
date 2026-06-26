@@ -8,7 +8,7 @@ from app.store import Store
 def request(request_id="request-1", document_id="doc-1"):
     return CreatePlanRequest.model_validate({
         "documentIds": [document_id], "requestId": request_id,
-        "setup": {"goal": "LearnThoroughly", "deadline": "InOneWeek", "dailyStudyMinutes": 30, "studyDays": ["Monday"]},
+        "setup": {"goal": "PrepareForExam", "planTitle": "HCI final", "deadline": "InOneWeek", "dailyStudyMinutes": 30, "studyDays": ["Monday"]},
     })
 
 
@@ -57,6 +57,18 @@ def test_store_reuses_document_for_upload_request(tmp_path: Path):
     assert store.document_id_for_request("upload-request") == document_id
 
 
+def test_store_persists_document_filename(tmp_path: Path):
+    store = Store(tmp_path / "ren.db")
+    pdf = tmp_path / "random-upload.pdf"
+    pdf.write_bytes(b"%PDF-test")
+
+    document_id = store.add_document(pdf, filename="Lecture 10.pdf")
+
+    document = store.documents_for_ids([document_id])[0]
+    assert document.path == pdf
+    assert document.filename == "Lecture 10.pdf"
+
+
 def test_store_finds_only_old_unclaimed_documents(tmp_path: Path):
     store = Store(tmp_path / "ren.db")
     old_pdf = tmp_path / "old.pdf"
@@ -81,7 +93,7 @@ def test_create_plan_with_multiple_documents(tmp_path: Path):
     d2 = store.add_document(p2, request_id="r1-1")
     req = CreatePlanRequest.model_validate({
         "documentIds": [d1, d2], "requestId": "plan-1",
-        "setup": {"goal": "LearnThoroughly", "deadline": "InOneWeek", "dailyStudyMinutes": 30, "studyDays": ["Monday"]},
+        "setup": {"goal": "PrepareForExam", "planTitle": "HCI final", "deadline": "InOneWeek", "dailyStudyMinutes": 30, "studyDays": ["Monday"]},
     })
     plan_id, created = store.create_plan(req)
     assert created
@@ -97,7 +109,7 @@ def test_abandoned_ignores_multi_doc_plan(tmp_path: Path):
     d2 = store.add_document(p2)
     req = CreatePlanRequest.model_validate({
         "documentIds": [d1, d2], "requestId": "multi-plan",
-        "setup": {"goal": "LearnThoroughly", "deadline": "InOneWeek", "dailyStudyMinutes": 30, "studyDays": ["Monday"]},
+        "setup": {"goal": "PrepareForExam", "planTitle": "HCI final", "deadline": "InOneWeek", "dailyStudyMinutes": 30, "studyDays": ["Monday"]},
     })
     store.create_plan(req)
     with store.connect() as db:

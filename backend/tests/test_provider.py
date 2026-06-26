@@ -1,7 +1,8 @@
 from pathlib import Path
 from google.genai import types
 
-from app.provider import AIProvider, GEMINI_PLAN_SCHEMA
+from app.pdf_parser import PdfPageAnchor
+from app.provider import AIProvider, GEMINI_PLAN_SCHEMA, SourceDocument, format_document_context
 from app.models import GeneratedPlan, Setup
 
 
@@ -18,18 +19,17 @@ class RecordingProvider(AIProvider):
     """Captures pdfs and setup for inspection without calling Gemini."""
 
     def __init__(self):
-        self.pdfs = None
+        self.documents = None
         self.setup = None
 
-    async def create_plan(self, pdfs: list[Path], setup: Setup) -> GeneratedPlan:
-        self.pdfs = pdfs
+    async def create_plan(self, documents: list[SourceDocument], setup: Setup) -> GeneratedPlan:
+        self.documents = documents
         self.setup = setup
         return GeneratedPlan(
             title="Test",
             topics=[{"id": "t1", "title": "Topic", "order": 1}],
             blocks=[{"id": "b1", "title": "Block", "order": 1, "durationMinutes": 20,
-                      "minimumUsefulMinutes": 10, "priority": "MEDIUM", "taskType": "REVIEW",
-                      "priorityReason": "Foundation", "isSkippable": True,
+                      "minimumUsefulMinutes": 10, "taskType": "REVIEW",
                       "instructions": "Read", "topicIds": ["t1"]}],
         )
 
@@ -45,14 +45,36 @@ def test_create_plan_with_multiple_pdfs():
 
     import asyncio
     provider = RecordingProvider()
-    setup = Setup(goal="x", deadline="y", dailyStudyMinutes=30, studyDays=["Monday"])
-    result = asyncio.run(provider.create_plan([Path(p1.name), Path(p2.name)], setup))
+    setup = Setup(goal="PrepareForExam", planTitle="HCI final", deadline="InOneWeek", dailyStudyMinutes=30, studyDays=["Monday"])
+    result = asyncio.run(provider.create_plan([
+        SourceDocument(Path(p1.name), "Lecture 1.pdf"),
+        SourceDocument(Path(p2.name), "Lecture 2.pdf"),
+    ], setup))
 
-    assert len(provider.pdfs) == 2
-    assert provider.pdfs[0].read_bytes() == b"fake-pdf-1"
-    assert provider.pdfs[1].read_bytes() == b"fake-pdf-2"
+    assert len(provider.documents) == 2
+    assert provider.documents[0].path.read_bytes() == b"fake-pdf-1"
+    assert provider.documents[1].path.read_bytes() == b"fake-pdf-2"
+    assert provider.documents[0].filename == "Lecture 1.pdf"
     assert provider.setup == setup
+    assert provider.setup.planTitle == "HCI final"
     assert result.title == "Test"
 
     Path(p1.name).unlink(missing_ok=True)
     Path(p2.name).unlink(missing_ok=True)
+
+
+def test_format_document_context_includes_page_anchors(tmp_path):
+    path = tmp_path / "lecture.pdf"
+    path.write_bytes(b"%PDF-test")
+    document = SourceDocument(
+        path=path,
+        filename="Lecture 1.pdf",
+        source_id="doc1",
+        page_count=12,
+        page_anchors=[PdfPageAnchor(page=3, word_count=42, text="HCI has gulfs of execution and evaluation.")],
+    )
+
+    context = format_document_context(1, document)
+
+    assert "Document 1 (doc1): Lecture 1.pdf, 12 pages" in context
+    assert "Page 3 (42 words): HCI has gulfs" in context

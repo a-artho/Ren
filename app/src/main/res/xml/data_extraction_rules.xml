@@ -6,6 +6,9 @@
 <data-extraction-rules>
     <cloud-backup>
         <exclude domain="sharedpref" path="plan_generation.xml" />
+        <exclude domain="database" path="ren-study-projects.db" />
+        <exclude domain="database" path="ren-study-projects.db-shm" />
+        <exclude domain="database" path="ren-study-projects.db-wal" />
         <!-- TODO: Use <include> and <exclude> to control what is backed up.
         <include .../>
         <exclude .../>
@@ -13,5 +16,8 @@
     </cloud-backup>
     <device-transfer>
         <exclude domain="sharedpref" path="plan_generation.xml" />
+        <exclude domain="database" path="ren-study-projects.db" />
+        <exclude domain="database" path="ren-study-projects.db-shm" />
+        <exclude domain="database" path="ren-study-projects.db-wal" />
     </device-transfer>
 </data-extraction-rules>

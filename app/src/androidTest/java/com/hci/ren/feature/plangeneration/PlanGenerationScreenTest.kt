@@ -45,6 +45,24 @@ class PlanGenerationScreenTest {
         composeRule.onNodeWithText(analyzingContentStr).assertDoesNotExist()
     }
 
+    @Test fun uploadRowShowsPdfCountProgressWhenUploadingMultipleDocuments() {
+        composeRule.setContent {
+            RenTheme {
+                PlanGenerationScreen(
+                    PlanGenerationUiState(
+                        status = PlanStatus.Uploading,
+                        uploadingDocumentIndex = 2,
+                        uploadingDocumentTotal = 5,
+                    ),
+                    onBack = {},
+                    onRetry = {}
+                )
+            }
+        }
+
+        composeRule.onNodeWithText(context.getString(R.string.uploading_pdf_progress, 2, 5)).assertIsDisplayed()
+    }
+
     @Test fun backendStageIsActiveAfterUploadCompletes() {
         composeRule.setContent {
             RenTheme {
@@ -89,43 +107,6 @@ class PlanGenerationScreenTest {
         assertTrue(backed)
     }
 
-    @Test fun completedPlanRendersOrderedContentAndDurations() {
-        val plan = GeneratedStudyPlan(
-            id = "plan", totalEstimatedMinutes = 45,
-            topics = listOf(StudyTopic("t1", "Foundations", 1)),
-            blocks = listOf(GeneratedStudyBlock("b1", "Review", 1, 45, "Summarize the chapter.", listOf("t1"))),
-        )
-        composeRule.setContent { RenTheme { PlanDetailsScreen(plan, {}) } }
-        composeRule.onNodeWithText("1. Foundations").assertIsDisplayed()
-        composeRule.onNodeWithText("Review").assertIsDisplayed()
-        composeRule.onNodeWithText("Block 1").assertIsDisplayed()
-        
-        val totalMinutesStr = context.resources.getQuantityString(R.plurals.scheduled_minutes, 45, 45)
-        val blockMinutesStr = context.resources.getQuantityString(R.plurals.block_minutes, 45, 45)
-        composeRule.onNodeWithText(totalMinutesStr).assertIsDisplayed()
-        composeRule.onNodeWithText(blockMinutesStr).assertIsDisplayed()
-        composeRule.onNodeWithText("Summarize the chapter.").assertIsDisplayed()
-    }
-
-    @Test fun postponedTasksAreSeparatedAndOnlyActiveTasksAreNumbered() {
-        val plan = GeneratedStudyPlan(
-            id = "plan",
-            topics = emptyList(),
-            blocks = listOf(
-                GeneratedStudyBlock("active", "Active task", 8, 45, "Study", emptyList()),
-                GeneratedStudyBlock("later", "Later task", 15, 45, "Study later", emptyList(), disposition = TaskDisposition.Postponed),
-            ),
-            totalEstimatedMinutes = 45,
-        )
-        composeRule.setContent { RenTheme { PlanDetailsScreen(plan) {} } }
-
-        composeRule.onNodeWithText(context.getString(R.string.scheduled_now)).assertIsDisplayed()
-        composeRule.onNodeWithText(context.getString(R.string.postponed)).assertIsDisplayed()
-        composeRule.onNodeWithText("Block 1").assertIsDisplayed()
-        composeRule.onNodeWithText("Block 8").assertDoesNotExist()
-        composeRule.onNodeWithText("Block 15").assertDoesNotExist()
-    }
-
     @Test fun systemBackLeavesFailedScreen() {
         var backed = false
         composeRule.setContent {
@@ -137,15 +118,6 @@ class PlanGenerationScreenTest {
                 )
             }
         }
-
-        pressBack()
-        composeRule.runOnIdle { assertTrue(backed) }
-    }
-
-    @Test fun systemBackLeavesPlanDetails() {
-        var backed = false
-        val plan = GeneratedStudyPlan("plan", emptyList(), emptyList(), 0)
-        composeRule.setContent { RenTheme { PlanDetailsScreen(plan) { backed = true } } }
 
         pressBack()
         composeRule.runOnIdle { assertTrue(backed) }

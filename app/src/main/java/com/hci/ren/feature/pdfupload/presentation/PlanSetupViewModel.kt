@@ -35,8 +35,8 @@ class PlanSetupViewModel(
         persistState(state)
     }
 
-    fun selectGoal(goal: StudyGoal) {
-        updateAndPersist { it.copy(selectedGoal = goal) }
+    fun updatePlanTitle(value: String) {
+        updateAndPersist { it.copy(planTitle = value.take(80)) }
     }
 
     fun selectDeadline(deadline: StudyDeadline) {
@@ -74,7 +74,13 @@ class PlanSetupViewModel(
 
     fun updateCustomMinutes(value: String) {
         updateAndPersist {
-            it.copy(customMinutesText = value.filter(Char::isDigit).take(4))
+            it.copy(customMinutesText = value.filter(Char::isDigit).take(2))
+        }
+    }
+
+    fun updateCustomHours(value: String) {
+        updateAndPersist {
+            it.copy(customHoursText = value.filter(Char::isDigit).take(2))
         }
     }
 
@@ -93,13 +99,9 @@ class PlanSetupViewModel(
         updateAndPersist { it.copy(selectedDays = daysForShortcut(shortcut)) }
     }
 
-    fun showAdvancedMessage() {
-        _uiState.update { it.copy(isAdvancedMessageVisible = true) }
-    }
-
     fun goBack(): Boolean {
         val step = _uiState.value.currentStep
-        if (step == PlanSetupStep.Goal) return false
+        if (step == PlanSetupStep.PlanTitle) return false
 
         updateAndPersist {
             it.copy(currentStep = PlanSetupStep.entries[step.ordinal - 1])
@@ -135,11 +137,12 @@ class PlanSetupViewModel(
     private fun persistState(state: PlanSetupUiState) {
         savedStateHandle[KEY_DOCUMENT_URI_LIST] = state.documentUris.joinToString("|")
         savedStateHandle[KEY_STEP] = state.currentStep.name
-        setOrRemove(KEY_GOAL, state.selectedGoal?.name)
+        setOrRemove(KEY_PLAN_TITLE, state.planTitle)
         setOrRemove(KEY_DEADLINE, state.selectedDeadline?.name)
         setOrRemove(KEY_CUSTOM_DEADLINE_DATE, state.customDeadlineDate)
         setOrRemove(KEY_CUSTOM_DEADLINE_LABEL, state.customDeadlineLabel)
         setOrRemove(KEY_DAILY_TIME, state.selectedDailyTime?.name)
+        savedStateHandle[KEY_CUSTOM_HOURS] = state.customHoursText
         savedStateHandle[KEY_CUSTOM_MINUTES] = state.customMinutesText
         savedStateHandle[KEY_DAYS] = state.selectedDays.joinToString(",") { it.name }
     }
@@ -158,15 +161,15 @@ class PlanSetupViewModel(
             documentUris = documentUris,
             currentStep = savedStateHandle.get<String>(KEY_STEP)
                 ?.let { runCatching { PlanSetupStep.valueOf(it) }.getOrNull() }
-                ?: PlanSetupStep.Goal,
-            selectedGoal = savedStateHandle.get<String>(KEY_GOAL)
-                ?.let { runCatching { StudyGoal.valueOf(it) }.getOrNull() },
+                ?: PlanSetupStep.PlanTitle,
+            planTitle = savedStateHandle.get<String>(KEY_PLAN_TITLE) ?: "",
             selectedDeadline = savedStateHandle.get<String>(KEY_DEADLINE)
                 ?.let { runCatching { StudyDeadline.valueOf(it) }.getOrNull() },
             customDeadlineDate = savedStateHandle[KEY_CUSTOM_DEADLINE_DATE],
             customDeadlineLabel = savedStateHandle[KEY_CUSTOM_DEADLINE_LABEL],
             selectedDailyTime = savedStateHandle.get<String>(KEY_DAILY_TIME)
                 ?.let { runCatching { DailyStudyTime.valueOf(it) }.getOrNull() },
+            customHoursText = savedStateHandle.get<String>(KEY_CUSTOM_HOURS) ?: "",
             customMinutesText = savedStateHandle.get<String>(KEY_CUSTOM_MINUTES) ?: "",
             selectedDays = savedStateHandle.get<String>(KEY_DAYS)
                 ?.split(",")
@@ -180,11 +183,12 @@ class PlanSetupViewModel(
     private companion object {
         const val KEY_DOCUMENT_URI_LIST = "setup_document_uri_list"
         const val KEY_STEP = "setup_step"
-        const val KEY_GOAL = "setup_goal"
+        const val KEY_PLAN_TITLE = "setup_plan_title"
         const val KEY_DEADLINE = "setup_deadline"
         const val KEY_CUSTOM_DEADLINE_DATE = "setup_custom_date"
         const val KEY_CUSTOM_DEADLINE_LABEL = "setup_custom_label"
         const val KEY_DAILY_TIME = "setup_daily_time"
+        const val KEY_CUSTOM_HOURS = "setup_custom_hours"
         const val KEY_CUSTOM_MINUTES = "setup_custom_minutes"
         const val KEY_DAYS = "setup_days"
 
@@ -224,5 +228,5 @@ internal fun isSelectableDeadlineUtc(
         )
         timeInMillis
     }
-    return selectedUtcDay >= localTodayAsUtcDay
+    return selectedUtcDay > localTodayAsUtcDay
 }

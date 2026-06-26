@@ -13,9 +13,9 @@ class PlanSetupUiStateTest {
         val handle = SavedStateHandle()
         val original = PlanSetupViewModel(handle)
         original.beginNewSession(listOf("content://ren/doc"))
-        original.selectGoal(StudyGoal.PrepareForExam)
+        original.updatePlanTitle("HCI final")
         original.selectDeadline(StudyDeadline.InOneWeek)
-        original.selectDailyTime(DailyStudyTime.FortyFiveMinutes)
+        original.selectDailyTime(DailyStudyTime.FiveHours)
         original.toggleStudyDay(StudyDay.Monday)
         original.toggleStudyDay(StudyDay.Friday)
         original.goNext() // Goal -> Deadline
@@ -27,9 +27,9 @@ class PlanSetupUiStateTest {
 
         assertEquals(listOf("content://ren/doc"), state.documentUris)
         assertEquals(PlanSetupStep.Deadline, state.currentStep)
-        assertEquals(StudyGoal.PrepareForExam, state.selectedGoal)
+        assertEquals("HCI final", state.planTitle)
         assertEquals(StudyDeadline.InOneWeek, state.selectedDeadline)
-        assertEquals(DailyStudyTime.FortyFiveMinutes, state.selectedDailyTime)
+        assertEquals(DailyStudyTime.FiveHours, state.selectedDailyTime)
         assertEquals(setOf(StudyDay.Monday, StudyDay.Friday), state.selectedDays)
     }
 
@@ -42,7 +42,7 @@ class PlanSetupUiStateTest {
 
             viewModel.selectCustomDate(
                 epochMillis = 1_772_582_400_000L,
-                nowMillis = 1_772_582_400_000L,
+                nowMillis = 1_772_496_000_000L,
             ) // 2026-03-04T00:00:00Z
 
             assertEquals("2026-03-04", viewModel.uiState.value.customDeadlineDate)
@@ -55,30 +55,30 @@ class PlanSetupUiStateTest {
     fun beginNewSessionClearsAnswersEvenForSameDocument() {
         val viewModel = PlanSetupViewModel(SavedStateHandle())
         viewModel.setDocuments(listOf("content://ren/document"))
-        viewModel.selectGoal(StudyGoal.PrepareForExam)
+        viewModel.updatePlanTitle("HCI final")
 
         viewModel.beginNewSession(listOf("content://ren/document"))
 
         assertEquals(listOf("content://ren/document"), viewModel.uiState.value.documentUris)
-        assertEquals(null, viewModel.uiState.value.selectedGoal)
+        assertEquals("", viewModel.uiState.value.planTitle)
     }
     @Test
     fun nextRequiresValidSelectionForEachStep() {
-        assertFalse(PlanSetupUiState(currentStep = PlanSetupStep.Goal).canContinue)
+        assertFalse(PlanSetupUiState(currentStep = PlanSetupStep.PlanTitle).canContinue)
         assertFalse(PlanSetupUiState(currentStep = PlanSetupStep.Deadline).canContinue)
         assertFalse(PlanSetupUiState(currentStep = PlanSetupStep.DailyTime).canContinue)
         assertFalse(PlanSetupUiState(currentStep = PlanSetupStep.StudyDays).canContinue)
 
         assertTrue(
             PlanSetupUiState(
-                currentStep = PlanSetupStep.Goal,
-                selectedGoal = StudyGoal.PrepareForExam,
+                currentStep = PlanSetupStep.PlanTitle,
+                planTitle = "HCI final",
             ).canContinue,
         )
         assertTrue(
             PlanSetupUiState(
                 currentStep = PlanSetupStep.Deadline,
-                selectedDeadline = StudyDeadline.NoFixedDeadline,
+                selectedDeadline = StudyDeadline.InOneWeek,
             ).canContinue,
         )
         assertTrue(
@@ -90,13 +90,16 @@ class PlanSetupUiStateTest {
         assertTrue(
             PlanSetupUiState(
                 currentStep = PlanSetupStep.StudyDays,
+                planTitle = "HCI final",
+                selectedDeadline = StudyDeadline.InOneWeek,
+                selectedDailyTime = DailyStudyTime.OneHour,
                 selectedDays = setOf(StudyDay.Monday),
             ).canContinue,
         )
     }
 
     @Test
-    fun customTimeRequiresPositiveMinutes() {
+    fun customTimeRequiresPositiveTotalMinutes() {
         val state = PlanSetupUiState(
             currentStep = PlanSetupStep.DailyTime,
             selectedDailyTime = DailyStudyTime.Custom,
@@ -105,7 +108,40 @@ class PlanSetupUiStateTest {
         assertFalse(state.canContinue)
         assertFalse(state.copy(customMinutesText = "0").canContinue)
         assertFalse(state.copy(customMinutesText = "abc").canContinue)
-        assertTrue(state.copy(customMinutesText = "90").canContinue)
+        assertFalse(state.copy(customHoursText = "25").canContinue)
+        assertFalse(state.copy(customMinutesText = "60").canContinue)
+        assertTrue(state.copy(customHoursText = "1").canContinue)
+        assertTrue(state.copy(customMinutesText = "45").canContinue)
+        assertTrue(state.copy(customHoursText = "2", customMinutesText = "30").canContinue)
+        assertEquals("Enter hours, minutes, or both.", state.customTimeError)
+        assertEquals("Minutes should be 0-59.", state.copy(customMinutesText = "60").customTimeError)
+        assertEquals("Needs at least 1 minute. Tiny, but still something.", state.copy(customHoursText = "0").customTimeError)
+    }
+
+    @Test
+    fun studyDaysMustFitBeforeDeadline() {
+        val now = 1_772_625_600_000L // 2026-03-04T12:00:00Z, Wednesday
+        val state = PlanSetupUiState(
+            currentStep = PlanSetupStep.StudyDays,
+            planTitle = "HCI final",
+            selectedDeadline = StudyDeadline.Tomorrow,
+            selectedDailyTime = DailyStudyTime.OneHour,
+            selectedDays = setOf(StudyDay.Sunday),
+        )
+
+        assertFalse(state.canContinueAt(nowMillis = now, localTimeZone = TimeZone.getTimeZone("UTC")))
+        assertEquals(
+            "No picked day lands before the deadline. Tiny issue.",
+            state.studyDaysDeadlineError(nowMillis = now, localTimeZone = TimeZone.getTimeZone("UTC")),
+        )
+        assertFalse(
+            state.copy(selectedDays = setOf(StudyDay.Thursday))
+                .canContinueAt(nowMillis = now, localTimeZone = TimeZone.getTimeZone("UTC")),
+        )
+        assertTrue(
+            state.copy(selectedDays = setOf(StudyDay.Wednesday))
+                .canContinueAt(nowMillis = now, localTimeZone = TimeZone.getTimeZone("UTC")),
+        )
     }
 
     @Test
@@ -135,11 +171,12 @@ class PlanSetupUiStateTest {
         val state = PlanSetupUiState(
             documentUris = listOf("content://ren/document"),
             currentStep = PlanSetupStep.StudyDays,
-            selectedGoal = StudyGoal.PrepareForExam,
+            planTitle = "HCI final",
             selectedDeadline = StudyDeadline.ChooseDate,
-            customDeadlineDate = "2026-06-21",
+            customDeadlineDate = "2099-06-21",
             selectedDailyTime = DailyStudyTime.Custom,
-            customMinutesText = "75",
+            customHoursText = "1",
+            customMinutesText = "15",
             selectedDays = setOf(StudyDay.Monday, StudyDay.Wednesday),
         )
 
@@ -147,8 +184,9 @@ class PlanSetupUiStateTest {
 
         assertEquals("content://ren/document", submission?.documentUris?.first())
         assertEquals(StudyGoal.PrepareForExam, submission?.goal)
+        assertEquals("HCI final", submission?.planTitle)
         assertEquals(StudyDeadline.ChooseDate, submission?.deadline)
-        assertEquals("2026-06-21", submission?.deadlineDate)
+        assertEquals("2099-06-21", submission?.deadlineDate)
         assertEquals(75, submission?.dailyStudyMinutes)
         assertEquals(setOf(StudyDay.Monday, StudyDay.Wednesday), submission?.studyDays)
     }
@@ -165,19 +203,19 @@ class PlanSetupUiStateTest {
     }
 
     @Test
-    fun currentLocalDayIsSelectable() {
+    fun currentLocalDayIsNotSelectable() {
         val selectedDay = 1_772_582_400_000L // 2026-03-04T00:00:00Z
         val now = 1_772_625_600_000L // 2026-03-04T12:00:00Z
 
-        assertTrue(isSelectableDeadlineUtc(selectedDay, now))
+        assertFalse(isSelectableDeadlineUtc(selectedDay, now))
     }
 
     @Test
-    fun localTodayWestOfUtcIsNotRejectedAsYesterday() {
+    fun localTodayWestOfUtcIsNotSelectable() {
         val selectedDay = 1_772_496_000_000L // 2026-03-03T00:00:00Z
         val now = 1_772_604_000_000L // 2026-03-04T06:00:00Z, still Mar 3 in Los Angeles
 
-        assertTrue(
+        assertFalse(
             isSelectableDeadlineUtc(
                 selectedMillis = selectedDay,
                 nowMillis = now,

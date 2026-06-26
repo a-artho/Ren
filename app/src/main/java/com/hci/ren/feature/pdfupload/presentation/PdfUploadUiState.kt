@@ -13,10 +13,17 @@ data class PdfUploadUiState(
     val documentGroup: DocumentGroup? = null,
     val selectedPageIndex: Int = 0,
     val loadStatus: PdfLoadStatus = PdfLoadStatus.Idle,
+    val noticeMessage: String? = null,
     val renderedPages: Map<PdfRenderKey, PdfPageRenderState> = emptyMap(),
 ) {
     val canContinue: Boolean
         get() = documentGroup != null && documentGroup.documents.isNotEmpty() && loadStatus == PdfLoadStatus.Ready
+
+    val selectedDocumentCount: Int
+        get() = documentGroup?.documents?.size ?: 0
+
+    val remainingDocumentSlots: Int
+        get() = (MaxPdfDocumentCount - selectedDocumentCount).coerceAtLeast(0)
 
     val thumbnailPageIndexes: List<Int>
         get() {
@@ -36,6 +43,35 @@ data class PdfDocumentUiModel(
     val details: String
         get() = "$pageCount ${if (pageCount == 1) "page" else "pages"} • ${formatFileSize(sizeBytes)}"
 }
+
+data class DuplicateFilterResult<T>(
+    val uniqueItems: List<T>,
+    val duplicateCount: Int,
+)
+
+fun <T> filterDuplicateDocuments(
+    candidates: List<T>,
+    existingKeys: Set<String> = emptySet(),
+    keyOf: (T) -> String,
+): DuplicateFilterResult<T> {
+    val seen = existingKeys.toMutableSet()
+    val uniqueItems = mutableListOf<T>()
+    var duplicateCount = 0
+
+    candidates.forEach { item ->
+        val key = keyOf(item)
+        if (seen.add(key)) {
+            uniqueItems += item
+        } else {
+            duplicateCount += 1
+        }
+    }
+
+    return DuplicateFilterResult(uniqueItems = uniqueItems, duplicateCount = duplicateCount)
+}
+
+fun PdfDocumentUiModel.identityKey(): String =
+    "${fileName.trim().lowercase(Locale.US)}|$sizeBytes|$pageCount"
 
 sealed interface PdfLoadStatus {
     data object Idle : PdfLoadStatus
@@ -140,6 +176,7 @@ class BoundedPageCache<K, V>(
 }
 
 const val MaxPdfUploadBytes = 25L * 1024 * 1024
+const val MaxPdfDocumentCount = 10
 
 fun isUploadSizeAllowed(sizeBytes: Long): Boolean =
     sizeBytes <= 0L || sizeBytes <= MaxPdfUploadBytes

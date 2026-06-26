@@ -59,11 +59,13 @@ class PdfUploadViewModel(
     }
 
     fun selectDocuments(uris: List<Uri>) {
-        if (uris.size > MAX_DOCUMENTS) {
+        val uriFilter = filterDuplicateDocuments(uris, keyOf = { it.toString() })
+        val uniqueUris = uriFilter.uniqueItems
+        if (uniqueUris.size > MaxPdfDocumentCount) {
             _uiState.value = PdfUploadUiState(
                 sessionId = sessionId,
                 loadStatus = PdfLoadStatus.Error(
-                    getApplication<Application>().getString(R.string.too_many_pdfs, MAX_DOCUMENTS)
+                    getApplication<Application>().getString(R.string.too_many_pdfs, MaxPdfDocumentCount)
                 ),
             )
             return
@@ -74,13 +76,16 @@ class PdfUploadViewModel(
         _uiState.value = PdfUploadUiState(sessionId = sessionId, loadStatus = PdfLoadStatus.Loading)
 
         viewModelScope.launch {
-            val result = withContext(Dispatchers.IO) { repository.loadDocuments(uris) }
+            val result = withContext(Dispatchers.IO) { repository.loadDocuments(uniqueUris) }
             if (loadGeneration != documentLoadGeneration) return@launch
             result
                 .onSuccess { documents ->
-                    saveUriList(uris)
+                    val documentFilter = filterDuplicateDocuments(documents, keyOf = PdfDocumentUiModel::identityKey)
+                    val uniqueDocuments = documentFilter.uniqueItems
+                    val duplicateCount = uriFilter.duplicateCount + documentFilter.duplicateCount
+                    saveUriList(uniqueDocuments.map { it.uri.toUri() })
                     savedStateHandle[KEY_SELECTED_PDF_INDEX] = 0
-                    val oversized = documents.filter { !isUploadSizeAllowed(it.sizeBytes) }
+                    val oversized = uniqueDocuments.filter { !isUploadSizeAllowed(it.sizeBytes) }
                     if (oversized.isNotEmpty()) {
                         val name = oversized.first().fileName
                         _uiState.value = PdfUploadUiState(
@@ -91,12 +96,13 @@ class PdfUploadViewModel(
                         )
                         return@onSuccess
                     }
-                    val group = DocumentGroup(documents = documents, selectedPdfIndex = 0)
+                    val group = DocumentGroup(documents = uniqueDocuments, selectedPdfIndex = 0)
                     _uiState.value = PdfUploadUiState(
                         sessionId = sessionId,
                         documentGroup = group,
                         selectedPageIndex = 0,
                         loadStatus = PdfLoadStatus.Ready,
+                        noticeMessage = duplicateNoticeMessage(duplicateCount),
                     )
                     requestPage(PdfRenderKey(0, 0, PdfRenderKind.Preview), previewWidthPx)
                 }
@@ -104,7 +110,7 @@ class PdfUploadViewModel(
                     _uiState.value = PdfUploadUiState(
                         sessionId = sessionId,
                         loadStatus = PdfLoadStatus.Error(
-                            getApplication<Application>().getString(R.string.pdf_corrupt_with_name, "")
+                            getApplication<Application>().getString(R.string.pdf_corrupt_generic)
                         ),
                     )
                 }
@@ -113,17 +119,30 @@ class PdfUploadViewModel(
 
     fun appendDocuments(uris: List<Uri>) {
         val currentCount = _uiState.value.documentGroup?.documents?.size ?: 0
-        if (currentCount + uris.size > MAX_DOCUMENTS) {
+        val existingUriKeys = _uiState.value.documentGroup?.documents?.map { it.uri }?.toSet().orEmpty()
+        val uriFilter = filterDuplicateDocuments(uris, existingKeys = existingUriKeys, keyOf = { it.toString() })
+        val uniqueUris = uriFilter.uniqueItems
+        if (uniqueUris.isEmpty()) {
             _uiState.update { state ->
-                state.copy(loadStatus = PdfLoadStatus.Error(
-                    getApplication<Application>().getString(R.string.too_many_pdfs, MAX_DOCUMENTS)
-                ))
+                state.copy(
+                    loadStatus = if (state.documentGroup?.documents?.isNotEmpty() == true) PdfLoadStatus.Ready else state.loadStatus,
+                    noticeMessage = duplicateNoticeMessage(uriFilter.duplicateCount),
+                )
+            }
+            return
+        }
+        if (currentCount + uniqueUris.size > MaxPdfDocumentCount) {
+            _uiState.update { state ->
+                state.copy(
+                    loadStatus = if (state.documentGroup?.documents?.isNotEmpty() == true) PdfLoadStatus.Ready else state.loadStatus,
+                    noticeMessage = getApplication<Application>().getString(R.string.too_many_pdfs, MaxPdfDocumentCount),
+                )
             }
             return
         }
         val loadGeneration = ++documentLoadGeneration
         viewModelScope.launch {
-            val result = withContext(Dispatchers.IO) { repository.loadDocuments(uris) }
+            val result = withContext(Dispatchers.IO) { repository.loadDocuments(uniqueUris) }
             if (loadGeneration != documentLoadGeneration) return@launch
             result
                 .onSuccess { newDocs ->
@@ -139,15 +158,30 @@ class PdfUploadViewModel(
                     }
                     _uiState.update { state ->
                         val group = state.documentGroup ?: return@update state
-                        val updated = group.copy(documents = group.documents + newDocs)
-                        state.copy(documentGroup = updated, loadStatus = PdfLoadStatus.Ready)
+                        val documentFilter = filterDuplicateDocuments(
+                            candidates = newDocs,
+                            existingKeys = group.documents.map { it.identityKey() }.toSet(),
+                            keyOf = PdfDocumentUiModel::identityKey,
+                        )
+                        val uniqueDocs = documentFilter.uniqueItems
+                        val duplicateCount = uriFilter.duplicateCount + documentFilter.duplicateCount
+                        if (uniqueDocs.isEmpty()) {
+                            state.copy(loadStatus = PdfLoadStatus.Ready, noticeMessage = duplicateNoticeMessage(duplicateCount))
+                        } else {
+                            val updated = group.copy(documents = group.documents + uniqueDocs)
+                            state.copy(
+                                documentGroup = updated,
+                                loadStatus = PdfLoadStatus.Ready,
+                                noticeMessage = duplicateNoticeMessage(duplicateCount),
+                            )
+                        }
                     }
                     updateSavedUriList()
                 }
                 .onFailure {
                     _uiState.update { state ->
                         state.copy(loadStatus = PdfLoadStatus.Error(
-                            getApplication<Application>().getString(R.string.pdf_corrupt_with_name, "")
+                            getApplication<Application>().getString(R.string.pdf_corrupt_generic)
                         ))
                     }
                 }
@@ -171,6 +205,7 @@ class PdfUploadViewModel(
                 renderedPages = state.renderedPages.filterKeys { it.documentIndex != index },
                 selectedPageIndex = 0,
                 loadStatus = if (newDocs.isNotEmpty()) PdfLoadStatus.Ready else PdfLoadStatus.Idle,
+                noticeMessage = null,
             )
         }
         updateSavedUriList()
@@ -292,8 +327,14 @@ class PdfUploadViewModel(
         return savedStateHandle.get<String>(KEY_DOCUMENT_URI)?.let { listOf(it.toUri()) }
     }
 
+    private fun duplicateNoticeMessage(duplicateCount: Int): String? =
+        if (duplicateCount > 0) {
+            getApplication<Application>().getString(R.string.duplicate_pdfs_skipped)
+        } else {
+            null
+        }
+
     private companion object {
-        const val MAX_DOCUMENTS = 10
         const val previewWidthPx = 1400
         const val MaxBitmapCacheBytes = 32L * 1024 * 1024
         const val KEY_SESSION_ID = "pdf_session_id"

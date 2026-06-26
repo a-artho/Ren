@@ -6,9 +6,11 @@ import com.hci.ren.feature.pdfupload.presentation.StudyDeadline
 import com.hci.ren.feature.pdfupload.presentation.StudyGoal
 import com.hci.ren.feature.plangeneration.GeneratedStudyBlock
 import com.hci.ren.feature.plangeneration.GeneratedStudyPlan
+import com.hci.ren.feature.plangeneration.StudyBlockDifficulty
 import com.hci.ren.feature.plangeneration.StudyTaskStatus
 import com.hci.ren.feature.plangeneration.StudyTaskType
-import com.hci.ren.feature.plangeneration.TaskPriority
+import com.hci.ren.feature.plangeneration.effectiveCognitivePoints
+import com.hci.ren.feature.plangeneration.effectiveRobustMinutes
 import java.util.Calendar
 import java.util.GregorianCalendar
 import org.junit.Assert.assertEquals
@@ -34,27 +36,27 @@ class StudyMapModelsTest {
 
     @Test fun slightlyOverCapacityPlanIsTight() {
         val result = PlanRealismCalculator().calculate(
-            listOf(task("one", 65)),
-            submission(60, StudyDeadline.Today),
+            listOf(task("one", 64)),
+            submission(60, StudyDeadline.ChooseDate, "2026-06-23"),
             monday,
         )
 
         assertEquals(PlanRealismStatus.Tight, result.status)
-        assertEquals(5, result.shortageMinutes)
+        assertEquals(4, result.shortageMinutes)
     }
 
     @Test fun farOverCapacityPlanIsUnrealistic() {
         val result = PlanRealismCalculator().calculate(
             listOf(task("one", 150)),
-            submission(60, StudyDeadline.Today),
+            submission(60, StudyDeadline.ChooseDate, "2026-06-23"),
             monday,
         )
 
         assertEquals(PlanRealismStatus.Unrealistic, result.status)
     }
 
-    @Test fun suggestedDeadlineIsFutureAndProvidesBufferedCapacity() {
-        val preferences = submission(60, StudyDeadline.Today)
+    @Test fun suggestedDeadlineIsFutureAndProvidesEnoughCapacity() {
+        val preferences = submission(60, StudyDeadline.ChooseDate, "2026-06-23")
         val suggestion = PlanAdjustmentService().suggestedDeadline(
             listOf(task("one", 180)),
             preferences,
@@ -70,37 +72,107 @@ class StudyMapModelsTest {
     }
 
     @Test fun increasingDailyTimeIncreasesAvailabilityAndScheduleCapacity() {
-        val preferences = submission(60, StudyDeadline.Today)
+        val preferences = submission(60, StudyDeadline.ChooseDate, "2026-06-23")
         val tasks = listOf(task("one", 45), task("two", 45))
         val before = PlanRealismCalculator().calculate(tasks, preferences, monday)
         val after = PlanRealismCalculator().calculate(tasks, preferences, monday, dailyMinutesOverride = 120)
         val schedule = StudyScheduleCalculator().calculate(tasks, preferences, monday, dailyMinutesOverride = 120)
 
-        assertTrue(after.availableMinutes!! > before.availableMinutes!!)
+        assertTrue(after.availableMinutes > before.availableMinutes)
         assertEquals(90, schedule.days.single().totalScheduledMinutes)
         assertTrue(schedule.unscheduledTasks.isEmpty())
     }
 
-    @Test fun scopeReductionExcludesTasksFromRequiredTimeAndTopicCounts() {
+    @Test fun chosenTopicScopeExcludesOtherTopicsFromRequiredTimeAndTopicCounts() {
         val tasks = listOf(
-            task("high", 60, priority = TaskPriority.High, topic = "a"),
-            task("low", 60, priority = TaskPriority.Low, topic = "b"),
+            task("kept", 60, topic = "a"),
+            task("removed", 60, topic = "b"),
         )
-        val reduced = PlanAdjustmentService().applyScope(tasks, ScopeReduction.HighPriorityOnly)
+        val reduced = PlanAdjustmentService().applyScope(tasks, ScopeReduction.ChooseTopics, selectedTopicIds = setOf("a"))
         val data = buildStudyMapData(plan(reduced), submission(60, StudyDeadline.InThreeDays), today = monday)
 
         assertEquals(60, data.totalEstimatedMinutes)
-        assertTrue(reduced.single { it.id == "low" }.isOptional)
-        assertEquals(0 to 1, TaskProgressCalculator().topicProgress(reduced, "b"))
+        assertEquals(StudyTaskStatus.ExcludedByUser, reduced.single { it.id == "removed" }.status)
+        assertEquals(0 to 0, TaskProgressCalculator().topicProgress(reduced, "b"))
     }
 
     @Test fun overflowTasksRemainVisibleAndDailyTotalsMatchVisibleDurations() {
         val tasks = listOf(task("one", 45), task("two", 45), task("three", 45))
-        val schedule = StudyScheduleCalculator().calculate(tasks, submission(60, StudyDeadline.Today), monday)
+        val schedule = StudyScheduleCalculator().calculate(tasks, submission(60, StudyDeadline.ChooseDate, "2026-06-23"), monday)
 
         assertEquals(schedule.days.single().tasks.sumOf { it.durationMinutes }, schedule.days.single().totalScheduledMinutes)
         assertEquals(2, schedule.unscheduledTasks.size)
         assertTrue(schedule.unscheduledTasks.all { it.status == StudyTaskStatus.Unscheduled })
+    }
+
+    @Test fun scheduleSpreadsWorkAcrossAvailableDeadlineWindow() {
+        val tasks = (1..4).map { index -> task("task$index", 30).copy(order = index) }
+        val schedule = StudyScheduleCalculator().calculate(tasks, submission(120, StudyDeadline.InOneWeek), monday)
+
+        assertEquals(
+            listOf("2026-06-22", "2026-06-23", "2026-06-24", "2026-06-25"),
+            schedule.days.map { it.date },
+        )
+        assertEquals(listOf(1, 2, 3, 4), schedule.days.map { it.dayIndex })
+        assertTrue(schedule.days.all { it.totalScheduledMinutes <= 120 })
+        assertTrue(schedule.unscheduledTasks.isEmpty())
+    }
+
+    @Test fun fallbackScheduleBalancesOrderedWorkInsteadOfDumpingLastDay() {
+        val friday = GregorianCalendar(2026, Calendar.JUNE, 26)
+        val tasks = listOf(45, 60, 45, 30, 60).mapIndexed { index, minutes ->
+            task("task${index + 1}", minutes).copy(order = index + 1)
+        }
+
+        val schedule = StudyScheduleCalculator().calculate(tasks, submission(180, StudyDeadline.InThreeDays), friday)
+
+        assertEquals(listOf("2026-06-26", "2026-06-27", "2026-06-28"), schedule.days.map { it.date })
+        assertTrue(schedule.days.last().plannedMinutes <= schedule.days.first().plannedMinutes)
+        assertTrue(schedule.unscheduledTasks.isEmpty())
+    }
+
+    @Test fun fallbackScheduleDoesNotSkipAheadAfterOversizedOrderedTask() {
+        val tasks = listOf(
+            task("first", 30).copy(order = 1),
+            task("too-big", 100).copy(order = 2),
+            task("later", 30).copy(order = 3),
+        )
+
+        val schedule = StudyScheduleCalculator().calculate(tasks, submission(60, StudyDeadline.InOneWeek), monday)
+
+        assertEquals(listOf("first"), schedule.days.flatMap { it.tasks }.map { it.id })
+        assertEquals(
+            listOf(StudyTaskStatus.OverCapacity, StudyTaskStatus.Unscheduled),
+            schedule.unscheduledTasks.map { it.status },
+        )
+    }
+
+    @Test fun fallbackScheduleDefersSuffixWhenTotalFitsButOrderedPartitionDoesNot() {
+        val tasks = listOf(60, 60, 60).mapIndexed { index, minutes ->
+            task("task${index + 1}", minutes).copy(order = index + 1)
+        }
+
+        val schedule = StudyScheduleCalculator().calculate(
+            tasks,
+            submission(90, StudyDeadline.ChooseDate, "2026-06-24"),
+            monday,
+        )
+
+        assertEquals(listOf("task1", "task2"), schedule.days.flatMap { it.tasks }.map { it.id })
+        assertEquals(listOf("2026-06-22", "2026-06-23"), schedule.days.map { it.date })
+        assertEquals(listOf("task3"), schedule.unscheduledTasks.map { it.id })
+        assertEquals(StudyTaskStatus.Unscheduled, schedule.unscheduledTasks.single().status)
+    }
+
+    @Test fun scheduleAllowsDependenciesAfterEarlierBlocksAreScheduled() {
+        val tasks = listOf(
+            task("first", 30).copy(order = 1),
+            task("second", 30).copy(order = 2, dependencies = listOf("first")),
+        )
+        val schedule = StudyScheduleCalculator().calculate(tasks, submission(120, StudyDeadline.InThreeDays), monday)
+
+        assertTrue(schedule.unscheduledTasks.isEmpty())
+        assertEquals(listOf("first", "second"), schedule.days.flatMap { it.tasks }.map { it.id })
     }
 
     @Test fun completedTasksKeepStatusAndNextTaskAdvances() {
@@ -108,23 +180,96 @@ class StudyMapModelsTest {
             task("done", 30).copy(status = StudyTaskStatus.Completed, scheduledDate = "2026-06-22"),
             task("next", 30),
         )
-        val data = buildStudyMapData(plan(tasks), submission(60, StudyDeadline.Today), today = monday)
+        val data = buildStudyMapData(plan(tasks), submission(60, StudyDeadline.ChooseDate, "2026-06-23"), today = monday)
 
         assertEquals(StudyTaskStatus.Completed, data.schedule.days.single().tasks.first().status)
         assertEquals("next", data.nextTask?.id)
         assertEquals(1, data.completedTasks)
     }
 
-    @Test fun noDeadlineProducesNeutralStatusWithoutCrash() {
-        val data = buildStudyMapData(
-            plan(listOf(task("one", 30))),
-            submission(60, StudyDeadline.NoFixedDeadline),
+    @Test fun completedPastTasksDoNotConsumeCurrentScheduleCapacity() {
+        val tasks = listOf(
+            task("done", 60).copy(status = StudyTaskStatus.Completed, scheduledDate = "2026-06-21"),
+            task("today", 60).copy(order = 2),
+        )
+
+        val schedule = StudyScheduleCalculator().calculate(
+            tasks,
+            submission(60, StudyDeadline.Tomorrow),
             today = monday,
         )
 
-        assertEquals(PlanRealismStatus.NoDeadline, data.realism.status)
-        assertNull(data.realism.availableMinutes)
-        assertTrue(data.schedule.days.isNotEmpty())
+        assertEquals(listOf("today"), schedule.days.single().tasks.map { it.id })
+        assertTrue(schedule.unscheduledTasks.isEmpty())
+    }
+
+    @Test fun lockedTaskKeepsManualScheduleAndConsumesCapacity() {
+        val tasks = listOf(
+            task("locked", 45).copy(
+                order = 1,
+                status = StudyTaskStatus.Locked,
+                scheduledDate = "2026-06-22",
+            ),
+            task("auto", 30).copy(order = 2),
+        )
+
+        val schedule = StudyScheduleCalculator().calculate(
+            tasks,
+            submission(60, StudyDeadline.InThreeDays),
+            today = monday,
+        )
+
+        assertEquals(listOf("locked"), schedule.days.first { it.date == "2026-06-22" }.tasks.map { it.id })
+        assertEquals(listOf("auto"), schedule.days.flatMap { it.tasks }.filterNot { it.id == "locked" }.map { it.id })
+        assertEquals("2026-06-23", schedule.days.flatMap { it.tasks }.single { it.id == "auto" }.scheduledDate)
+    }
+
+    @Test fun buildStudyMapDataSplitsLargeBlocksFromCurrentDailyCapacity() {
+        val canonical = task("chapter", 100).copy(
+            order = 1,
+            minimumUsefulMinutes = 20,
+            splitAllowed = true,
+        )
+        val data = buildStudyMapData(
+            plan(listOf(canonical)),
+            submission(60, StudyDeadline.InThreeDays),
+            today = monday,
+        )
+
+        assertEquals(listOf("chapter_part1", "chapter_part2"), data.plan.blocks.map { it.id })
+        assertEquals(listOf(50, 50), data.plan.blocks.map { it.durationMinutes })
+        assertEquals(listOf("chapter_part1", "chapter_part2"), data.schedule.days.flatMap { it.tasks }.map { it.id })
+    }
+
+    @Test fun deferredTasksDoNotCountInvisibleWorkload() {
+        val tasks = listOf(
+            task("active", 30),
+            task("deferred", 120).copy(status = StudyTaskStatus.DeferredByUser),
+        )
+        val data = buildStudyMapData(
+            plan(tasks),
+            submission(60, StudyDeadline.ChooseDate, "2026-06-23"),
+            today = monday,
+        )
+
+        assertEquals(StudyTaskStatus.DeferredByUser, data.plan.blocks.single { it.id == "deferred" }.status)
+        assertEquals(listOf("active"), data.schedule.days.flatMap { it.tasks }.map { it.id })
+        assertTrue(data.schedule.unscheduledTasks.isEmpty())
+        assertEquals(30, data.realism.remainingMinutes)
+    }
+
+    @Test fun localDurationEditsKeepWorkloadFieldsInSync() {
+        val updated = task("edited", 100).copy(
+            effortMinMinutes = 70,
+            effortLikelyMinutes = 100,
+            effortMaxMinutes = 140,
+        ).withLocalDuration(50)
+
+        assertEquals(50, updated.durationMinutes)
+        assertEquals(50, updated.estimatedMinutes)
+        assertEquals(50, updated.effortLikelyMinutes)
+        assertEquals(57, updated.effectiveRobustMinutes())
+        assertEquals(70, updated.effectiveCognitivePoints())
     }
 
     @Test fun lockedTaskIsNotSelectedAsNextTask() {
@@ -132,13 +277,13 @@ class StudyMapModelsTest {
             task("locked", 30).copy(status = StudyTaskStatus.Locked, dependencies = listOf("missing")),
             task("available", 30),
         )
-        val data = buildStudyMapData(plan(tasks), submission(60, StudyDeadline.Today), today = monday)
+        val data = buildStudyMapData(plan(tasks), submission(60, StudyDeadline.Tomorrow), today = monday)
 
         assertEquals("available", data.nextTask?.id)
     }
 
     @Test fun emptyTasksProduceEmptyScheduleAndZeroProgress() {
-        val data = buildStudyMapData(plan(emptyList()), submission(60, StudyDeadline.Today), today = monday)
+        val data = buildStudyMapData(plan(emptyList()), submission(60, StudyDeadline.Tomorrow), today = monday)
 
         assertTrue(data.schedule.days.isEmpty())
         assertTrue(data.schedule.unscheduledTasks.isEmpty())
@@ -146,10 +291,37 @@ class StudyMapModelsTest {
         assertNull(data.nextTask)
     }
 
+    @Test fun availableStudyDatesExcludeDeadlineDate() {
+        val dates = availableStudyDates(
+            submission(60, StudyDeadline.ChooseDate, "2026-06-24"),
+            monday,
+        ).map { it.toStudyDate() }
+
+        assertEquals(listOf("2026-06-22", "2026-06-23"), dates)
+    }
+
+    @Test fun sameDayDeadlineHasNoStudyWindow() {
+        val dates = availableStudyDates(
+            submission(60, StudyDeadline.ChooseDate, "2026-06-22"),
+            monday,
+        )
+
+        assertTrue(dates.isEmpty())
+    }
+
+    @Test fun extendingDeadlineReturnsDayAfterLastStudyDay() {
+        val deadline = deadlineAfterSelectedStudyDays(
+            days = 2,
+            selectedDays = setOf(StudyDay.Monday, StudyDay.Wednesday),
+            today = monday,
+        )
+
+        assertEquals("2026-06-25", deadline)
+    }
+
     private fun task(
         id: String,
         minutes: Int,
-        priority: TaskPriority = TaskPriority.Medium,
         topic: String = "topic",
     ) = GeneratedStudyBlock(
         id = id,
@@ -159,7 +331,6 @@ class StudyMapModelsTest {
         instructions = "Study $id",
         topicIds = listOf(topic),
         minimumUsefulMinutes = 10,
-        priority = priority,
         taskType = StudyTaskType.Concept,
     )
 
@@ -171,11 +342,11 @@ class StudyMapModelsTest {
         projectName = "Calculus",
     )
 
-    private fun submission(minutes: Int, deadline: StudyDeadline) = PlanSetupSubmission(
+    private fun submission(minutes: Int, deadline: StudyDeadline, deadlineDate: String? = null) = PlanSetupSubmission(
         documentUris = listOf("content://test"),
         goal = StudyGoal.PrepareForExam,
         deadline = deadline,
-        deadlineDate = null,
+        deadlineDate = deadlineDate,
         dailyStudyMinutes = minutes,
         studyDays = StudyDay.entries.toSet(),
     )

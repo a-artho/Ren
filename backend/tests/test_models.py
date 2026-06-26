@@ -12,27 +12,39 @@ def test_plan_rejects_non_contiguous_order():
         GeneratedPlan.model_validate({"topics":[{"id":"t1","title":"One","order":2}],
           "blocks":[{"id":"b1","title":"Block","order":1,"durationMinutes":30,"instructions":"Read","topicIds":["t1"]}]})
 
-def test_plan_rejects_duration_below_minimum_useful_time():
-    with pytest.raises(ValidationError):
-        GeneratedPlan.model_validate({"topics":[{"id":"t1","title":"One","order":1}],
-          "blocks":[{"id":"b1","title":"Block","order":1,"durationMinutes":10,
-            "minimumUsefulMinutes":20,"priority":"HIGH","taskType":"LEARN",
-            "priorityReason":"Foundation","isSkippable":False,"instructions":"Read","topicIds":["t1"]}]})
+def test_plan_normalizes_duration_below_minimum_useful_time():
+    plan = GeneratedPlan.model_validate({"topics":[{"id":"t1","title":"One","order":1}],
+      "blocks":[{"id":"b1","title":"Block","order":1,"durationMinutes":10,
+        "minimumUsefulMinutes":20,"taskType":"CONCEPT",
+        "instructions":"Read","topicIds":["t1"]}]})
+
+    assert plan.blocks[0].durationMinutes == 20
+    assert plan.blocks[0].minimumUsefulMinutes == 20
+
+def test_plan_normalizes_minimum_useful_time_for_task_type():
+    plan = GeneratedPlan.model_validate({"topics":[{"id":"t1","title":"One","order":1}],
+      "blocks":[{"id":"b1","title":"Block","order":1,"durationMinutes":30,
+        "minimumUsefulMinutes":5,"taskType":"CONCEPT",
+        "instructions":"Read","topicIds":["t1"]}]})
+
+    assert plan.blocks[0].durationMinutes == 30
+    assert plan.blocks[0].minimumUsefulMinutes == 20
 
 def test_create_plan_request_single_document():
     req = CreatePlanRequest(
         documentIds=["doc-1"],
         requestId="req-1",
-        setup=Setup(goal="x", deadline="y", dailyStudyMinutes=30, studyDays=["Monday"]),
+        setup=Setup(goal="PrepareForExam", planTitle="HCI final", deadline="InOneWeek", dailyStudyMinutes=30, studyDays=["Monday"]),
     )
     assert len(req.documentIds) == 1
     assert req.documentIds[0] == "doc-1"
+    assert req.setup.planTitle == "HCI final"
 
 def test_create_plan_request_multiple_documents():
     req = CreatePlanRequest(
         documentIds=["doc-1", "doc-2", "doc-3"],
         requestId="req-1",
-        setup=Setup(goal="x", deadline="y", dailyStudyMinutes=30, studyDays=["Monday"]),
+        setup=Setup(goal="PrepareForExam", planTitle="HCI final", deadline="InOneWeek", dailyStudyMinutes=30, studyDays=["Monday"]),
     )
     assert len(req.documentIds) == 3
 
@@ -41,7 +53,7 @@ def test_create_plan_request_empty_document_ids_rejected():
         CreatePlanRequest(
             documentIds=[],
             requestId="req-1",
-            setup=Setup(goal="x", deadline="y", dailyStudyMinutes=30, studyDays=["Monday"]),
+            setup=Setup(goal="PrepareForExam", planTitle="HCI final", deadline="InOneWeek", dailyStudyMinutes=30, studyDays=["Monday"]),
         )
 
 def test_create_plan_request_too_many_document_ids_rejected():
@@ -49,5 +61,34 @@ def test_create_plan_request_too_many_document_ids_rejected():
         CreatePlanRequest(
             documentIds=[f"doc-{i}" for i in range(11)],
             requestId="req-1",
-            setup=Setup(goal="x", deadline="y", dailyStudyMinutes=30, studyDays=["Monday"]),
+            setup=Setup(goal="PrepareForExam", planTitle="HCI final", deadline="InOneWeek", dailyStudyMinutes=30, studyDays=["Monday"]),
+        )
+
+def test_setup_rejects_invalid_custom_deadline_date():
+    with pytest.raises(ValidationError):
+        Setup(
+            goal="PrepareForExam",
+            planTitle="HCI final",
+            deadline="ChooseDate",
+            deadlineDate="not-a-date",
+            dailyStudyMinutes=30,
+            studyDays=["Monday"],
+        )
+
+def test_setup_rejects_invalid_or_duplicate_study_days():
+    with pytest.raises(ValidationError):
+        Setup(
+            goal="PrepareForExam",
+            planTitle="HCI final",
+            deadline="InOneWeek",
+            dailyStudyMinutes=30,
+            studyDays=["Moonday"],
+        )
+    with pytest.raises(ValidationError):
+        Setup(
+            goal="PrepareForExam",
+            planTitle="HCI final",
+            deadline="InOneWeek",
+            dailyStudyMinutes=30,
+            studyDays=["Monday", "Monday"],
         )

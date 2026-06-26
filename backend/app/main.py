@@ -1,12 +1,14 @@
 from __future__ import annotations
 
-import asyncio, json, logging, os
+import asyncio, json, logging, os, re
 from contextlib import asynccontextmanager
 from pathlib import Path
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from dotenv import load_dotenv
-from .models import CreatePlanRequest, GeneratedPlan, PlanStatus, Setup
-from .provider import AIProvider, GeminiProvider
+from .models import CreatePlanRequest, GeneratedPlan, PlanStatus, Setup, StudyTaskStatus
+from .pdf_parser import parse_pdf_metadata
+from .planner import build_master_plan
+from .provider import AIProvider, GeminiProvider, SourceDocument
 from .store import Store
 
 BACKEND_ROOT = Path(__file__).parents[1]
@@ -18,6 +20,48 @@ STORE = Store(DATA / "ren.db")
 provider: AIProvider | None = None
 logger = logging.getLogger("ren")
 TASKS: dict[str, asyncio.Task] = {}
+
+
+def natural_filename_key(filename: str):
+    return [
+        int(part) if part.isdigit() else part.casefold()
+        for part in re.split(r"(\d+)", filename)
+    ]
+
+
+def ordered_documents(document_ids: list[str]) -> list[SourceDocument]:
+    records = STORE.documents_for_ids(document_ids)
+    documents: list[SourceDocument] = []
+    for record in records:
+        if not record.path.exists():
+            continue
+        metadata = parse_pdf_metadata(record.path)
+        documents.append(
+            SourceDocument(
+                path=record.path,
+                filename=record.filename,
+                id=record.id,
+                page_count=metadata.page_count,
+                page_anchors=metadata.page_anchors,
+                anchors_truncated=metadata.anchors_truncated,
+                parser_error=metadata.parser_error,
+            )
+        )
+    documents = sorted(documents, key=lambda document: natural_filename_key(document.filename))
+    return [
+        SourceDocument(
+            path=document.path,
+            filename=document.filename,
+            id=document.id,
+            source_id=f"doc{index}",
+            order=index,
+            page_count=document.page_count,
+            page_anchors=document.page_anchors,
+            anchors_truncated=document.anchors_truncated,
+            parser_error=document.parser_error,
+        )
+        for index, document in enumerate(documents, start=1)
+    ]
 
 
 def cleanup_document(document_id: str):
@@ -35,19 +79,21 @@ async def process(plan_id: str):
     row = STORE.get(plan_id)
     if not row: return
     document_ids = json.loads(row.document_ids)
-    paths = [p for p in (STORE.document_path(did) for did in document_ids) if p and p.exists()]
+    documents = ordered_documents(document_ids)
     try:
-        if not paths: raise ValueError("No documents available")
+        if not documents: raise ValueError("No documents available")
         STORE.set_status(plan_id, PlanStatus.IDENTIFYING_TOPICS)
         if provider is None: raise RuntimeError("AI provider is not configured")
         result = None
         for attempt in range(2):
             try:
-                result = await provider.create_plan(paths, Setup.model_validate_json(row.setup_json)); break
+                raw_result = await provider.create_plan(documents, Setup.model_validate_json(row.setup_json))
+                STORE.set_status(plan_id, PlanStatus.CREATING_BLOCKS)
+                result = build_master_plan(raw_result, documents, Setup.model_validate_json(row.setup_json))
+                break
             except Exception:
                 logger.warning("Attempt %d failed", attempt + 1, exc_info=True)
                 if attempt == 1: raise
-        STORE.set_status(plan_id, PlanStatus.CREATING_BLOCKS)
         STORE.set_status(plan_id, PlanStatus.FINALIZING)
         STORE.set_status(plan_id, PlanStatus.COMPLETED, result=result)
     except asyncio.CancelledError:
@@ -81,7 +127,7 @@ async def lifespan(app: FastAPI):
         if tasks:
             await asyncio.gather(*tasks, return_exceptions=True)
 
-app = FastAPI(title="Ren API", lifespan=lifespan)
+app = FastAPI(title="Study Planner API", lifespan=lifespan)
 
 @app.post("/documents", status_code=201)
 async def upload_document(
@@ -90,10 +136,6 @@ async def upload_document(
 ):
     if file.content_type != "application/pdf": raise HTTPException(415, "A PDF is required")
     if requestId:
-        completed_request_document_id = STORE.plan_document_id_for_request(requestId)
-        if completed_request_document_id:
-            await file.close()
-            return {"documentId": completed_request_document_id}
         existing_id = STORE.document_id_for_request(requestId)
         if existing_id:
             existing_path = STORE.document_path(existing_id)
@@ -103,6 +145,7 @@ async def upload_document(
             STORE.delete_document(existing_id)
     UPLOADS.mkdir(parents=True, exist_ok=True)
     path = UPLOADS / f"upload-{os.urandom(12).hex()}.pdf"
+    filename = Path((file.filename or "document.pdf").replace("\\", "/")).name or "document.pdf"
     size = 0
     try:
         with path.open("wb") as output:
@@ -115,7 +158,7 @@ async def upload_document(
             header = uploaded.read(5)
         if size < 5 or header != b"%PDF-":
             raise HTTPException(422, "Invalid PDF")
-        return {"documentId": STORE.add_document(path, request_id=requestId)}
+        return {"documentId": STORE.add_document(path, request_id=requestId, filename=filename)}
     except Exception:
         path.unlink(missing_ok=True)
         raise
@@ -167,7 +210,16 @@ def get_plan(plan_id: str):
     if row.status != PlanStatus.COMPLETED: raise HTTPException(409, "Plan is not ready")
     result = GeneratedPlan.model_validate_json(row.result_json)
     document_ids = json.loads(row.document_ids)
-    return {"planId": plan_id, "documentIds": document_ids, "documentId": document_ids[0],
-            "title": result.title, "topics": result.model_dump()["topics"],
-            "blocks": result.model_dump()["blocks"],
-            "totalEstimatedMinutes": sum(b.durationMinutes for b in result.blocks)}
+    dumped = result.model_dump(mode="json")
+    return {"planId": plan_id, "documentIds": document_ids,
+            "planVersion": result.planVersion,
+            "title": result.title,
+            "sourceDocuments": dumped.get("sourceDocuments", []),
+            "extractionWarnings": dumped.get("extractionWarnings", []),
+            "topics": dumped["topics"],
+            "blocks": dumped["blocks"],
+            "totalEstimatedMinutes": sum(
+                b.durationMinutes or 0
+                for b in result.blocks
+                if b.status != StudyTaskStatus.EXCLUDED_BY_USER
+            )}

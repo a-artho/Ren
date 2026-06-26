@@ -17,7 +17,7 @@ def client(tmp_path, monkeypatch):
 
 def setup(document_id, request_id="request-1"):
     return {"documentIds": [document_id], "requestId": request_id, "setup": {
-        "goal": "LearnThoroughly", "deadline": "InOneWeek", "deadlineDate": None,
+        "goal": "PrepareForExam", "planTitle": "HCI final", "deadline": "InOneWeek", "deadlineDate": None,
         "dailyStudyMinutes": 30, "studyDays": ["Monday", "Wednesday"]}}
 
 
@@ -56,25 +56,17 @@ def test_document_upload_is_idempotent_by_request_id(tmp_path, monkeypatch):
         assert len(list(main.UPLOADS.glob("*.pdf"))) == 1
 
 
-def test_completed_plan_retry_does_not_reupload_deleted_document(tmp_path, monkeypatch):
+def test_document_upload_stores_original_filename(tmp_path, monkeypatch):
     with client(tmp_path, monkeypatch) as api:
-        first = api.post(
+        uploaded = api.post(
             "/documents",
-            data={"requestId": "completed-request"},
-            files={"file": ("first.pdf", b"%PDF-first", "application/pdf")},
-        )
-        document_id = first.json()["documentId"]
-        api.post("/plans", json=setup(document_id, request_id="completed-request"))
-        main.cleanup_document(document_id)
-
-        repeated = api.post(
-            "/documents",
-            data={"requestId": "completed-request"},
-            files={"file": ("second.pdf", b"%PDF-second", "application/pdf")},
+            files={"file": ("Lecture 05 - Factoring.pdf", b"%PDF-test", "application/pdf")},
         )
 
-        assert repeated.json()["documentId"] == document_id
-        assert list(main.UPLOADS.glob("*.pdf")) == []
+        assert uploaded.status_code == 201
+        document_id = uploaded.json()["documentId"]
+        document = main.STORE.documents_for_ids([document_id])[0]
+        assert document.filename == "Lecture 05 - Factoring.pdf"
 
 
 def test_upload_rejects_wrong_type_and_invalid_pdf(tmp_path, monkeypatch):
@@ -142,8 +134,12 @@ def test_completed_plan_returns_title(tmp_path, monkeypatch):
             blocks=[{
                 "id": "b1", "title": "Block 1", "order": 1, "durationMinutes": 30,
                 "instructions": "Read", "topicIds": ["t1"],
-                "minimumUsefulMinutes": 10, "priority": "MEDIUM", "taskType": "REVIEW",
-                "priorityReason": "Foundation", "isSkippable": True,
+                "minimumUsefulMinutes": 10, "taskType": "REVIEW",
+            }],
+            extractionWarnings=[{
+                "type": "SOURCE_ORDER_CONFLICT",
+                "message": "Source order was adjusted.",
+                "blockId": "b1",
             }],
         )
         STORE.set_status(plan_id, PlanStatus.COMPLETED, result=plan)
@@ -155,5 +151,6 @@ def test_completed_plan_returns_title(tmp_path, monkeypatch):
         assert data["planId"] == plan_id
         assert "topics" in data
         assert "blocks" in data
+        assert data["extractionWarnings"][0]["type"] == "SOURCE_ORDER_CONFLICT"
         assert "totalEstimatedMinutes" in data
 

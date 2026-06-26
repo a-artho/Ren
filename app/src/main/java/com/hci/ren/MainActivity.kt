@@ -13,27 +13,31 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.animation.core.updateTransition
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.NavigationBarItemDefaults
+import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.Insights
-import androidx.compose.material.icons.filled.Map
+import androidx.compose.material.icons.filled.BarChart
+import androidx.compose.material.icons.filled.Route
+import androidx.compose.material.icons.filled.Timer
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.hci.ren.feature.home.presentation.HomeRoute
 import com.hci.ren.feature.pdfupload.presentation.PlanSetupRoute
 import com.hci.ren.feature.pdfupload.presentation.PlanSetupViewModel
 import com.hci.ren.feature.pdfupload.presentation.PdfUploadRoute
@@ -42,71 +46,95 @@ import com.hci.ren.feature.plangeneration.PlanGenerationScreen
 import com.hci.ren.feature.plangeneration.PlanGenerationViewModel
 import com.hci.ren.feature.studymap.StudyMapDetailRoute
 import com.hci.ren.feature.studymap.StudyMapDetailViewModel
-import com.hci.ren.feature.studymap.StudyMapLibraryScreen
-import com.hci.ren.feature.studymap.StudyMapLibraryViewModel
 import com.hci.ren.ui.theme.RenTheme
 import com.hci.ren.ui.motion.isReducedMotionEnabled
 import com.hci.ren.ui.motion.renScreenTransform
+import com.hci.ren.ui.motion.renTabSwitchTransform
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        preferHighRefreshRate()
         enableEdgeToEdge()
         setContent {
             RenTheme(dynamicColor = false) {
-                var screen by rememberSaveable { mutableStateOf(ScreenHome) }
+                var screen by rememberSaveable { mutableStateOf(ScreenStudyMapDetail) }
                 var setupDocumentUris by rememberSaveable { mutableStateOf("") }
                 var openPickerOnStart by rememberSaveable { mutableStateOf(false) }
                 var setupStartedForUploadSession by rememberSaveable { mutableStateOf(false) }
-                var selectedStudyProjectId by rememberSaveable { mutableStateOf("") }
                 val pdfUploadViewModel: PdfUploadViewModel = viewModel()
                 val planSetupViewModel: PlanSetupViewModel = viewModel()
                 val planGenerationViewModel: PlanGenerationViewModel = viewModel()
-                val studyMapLibraryViewModel: StudyMapLibraryViewModel = viewModel()
                 val studyMapDetailViewModel: StudyMapDetailViewModel = viewModel()
                 val generationState by planGenerationViewModel.uiState.collectAsState()
-                val studyMapLibraryState by studyMapLibraryViewModel.uiState.collectAsState()
+                val studyMapState by studyMapDetailViewModel.uiState.collectAsState()
                 var forward by rememberSaveable { mutableStateOf(true) }
+                val hasActiveStudyPlan = studyMapState.project != null
+                val showBottomBar = hasActiveStudyPlan && screen in tabScreens
 
-                LaunchedEffect(generationState.planId, generationState.plan, generationState.feasibility, generationState.originalGoalDoesNotFit) {
+                LaunchedEffect(generationState.planId, generationState.plan) {
                     if (generationState.plan != null) {
                         forward = true
-                        selectedStudyProjectId = generationState.plan!!.id
+                        studyMapDetailViewModel.loadActiveProject(force = true)
                         screen = ScreenStudyMapDetail
-                    } else if (generationState.planId != null && screen == ScreenHome) {
+                    } else if (generationState.planId != null && screen in tabScreens) {
                         forward = true
                         screen = ScreenPlanProcessing
                     }
                 }
 
+                LaunchedEffect(hasActiveStudyPlan, screen) {
+                    if (!hasActiveStudyPlan && screen in lockedPlanTabs) {
+                        forward = false
+                        screen = ScreenStudyMapDetail
+                    }
+                }
+
                 val reducedMotion = isReducedMotionEnabled()
                 val transition = updateTransition(screen, label = "app-screen")
-                Box(
+                Scaffold(
                     modifier = Modifier
                         .fillMaxSize()
                         .background(MaterialTheme.colorScheme.background),
-                ) {
-                    transition.AnimatedContent(
-                        transitionSpec = { renScreenTransform(forward, reducedMotion) },
-                        contentKey = { it },
-                    ) { currentScreen ->
-                        val isTab = currentScreen in tabScreens
-                        val tabPadding = if (isTab) Modifier.navigationBarsPadding().padding(bottom = TabBarHeight) else Modifier
-                        Box(Modifier.fillMaxSize().then(tabPadding)) {
-                            when (currentScreen) {
-                        ScreenHome -> HomeRoute(
-                            onUploadPdf = {
-                                if (!transition.isRunning) {
-                                    forward = true
-                                    planGenerationViewModel.reset()
-                                    pdfUploadViewModel.beginNewSession()
-                                    setupStartedForUploadSession = false
-                                    openPickerOnStart = true
-                                    screen = ScreenPdfUpload
+                    containerColor = MaterialTheme.colorScheme.background,
+                    contentWindowInsets = WindowInsets(0.dp),
+                    bottomBar = {
+                        if (showBottomBar) {
+                            val selectedTab = tabIndexForScreen(screen)
+                            AppNavigationBar(
+                                selectedTab = selectedTab,
+                                hasActiveStudyPlan = hasActiveStudyPlan,
+                                onTabSelected = { tab ->
+                                    if (!hasActiveStudyPlan && tab != 0) return@AppNavigationBar
+                                    forward = tab >= selectedTab
+                                    screen = when (tab) {
+                                        0 -> ScreenStudyMapDetail
+                                        1 -> ScreenToday
+                                        2 -> ScreenProgress
+                                        else -> ScreenStudyMapDetail
+                                    }
+                                },
+                            )
+                        }
+                    },
+                ) { scaffoldPadding ->
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(MaterialTheme.colorScheme.background),
+                    ) {
+                        transition.AnimatedContent(
+                            transitionSpec = {
+                                if (initialState in tabScreens && targetState in tabScreens) {
+                                    renTabSwitchTransform(reducedMotion)
+                                } else {
+                                    renScreenTransform(forward, reducedMotion)
                                 }
                             },
-                        )
-
+                            contentKey = { it },
+                        ) { currentScreen ->
+                            Box(Modifier.fillMaxSize()) {
+                                when (currentScreen) {
                         ScreenPdfUpload -> PdfUploadRoute(
                             openPickerOnStart = openPickerOnStart,
                             viewModel = pdfUploadViewModel,
@@ -114,7 +142,7 @@ class MainActivity : ComponentActivity() {
                                 if (!transition.isRunning) {
                                     forward = false
                                     openPickerOnStart = false
-                                    screen = ScreenHome
+                                    screen = ScreenStudyMapDetail
                                 }
                             },
                             onContinue = { documentUris ->
@@ -162,114 +190,163 @@ class MainActivity : ComponentActivity() {
                             onRetry = planGenerationViewModel::retry,
                         )
 
-                        ScreenStudyMapLibrary -> StudyMapLibraryScreen(
-                            state = studyMapLibraryState,
-                            onQueryChange = studyMapLibraryViewModel::updateQuery,
-                            onFilterChange = studyMapLibraryViewModel::updateFilter,
-                            onSortChange = studyMapLibraryViewModel::updateSort,
-                            onClearSearchAndFilter = studyMapLibraryViewModel::clearSearchAndFilter,
-                            onOpenProject = { projectId ->
-                                selectedStudyProjectId = projectId
-                                forward = true
-                                screen = ScreenStudyMapDetail
+                        ScreenStudyMapDetail -> StudyMapDetailRoute(
+                            viewModel = studyMapDetailViewModel,
+                            modifier = if (hasActiveStudyPlan) {
+                                Modifier.padding(scaffoldPadding)
+                            } else {
+                                Modifier
                             },
-                            onDeleteProject = studyMapLibraryViewModel::deleteProject,
-                            onRetry = studyMapLibraryViewModel::retry,
-                            onConsumeMessage = studyMapLibraryViewModel::consumeMessage,
-                            onHome = {},
+                            onBack = {
+                                if (!transition.isRunning) {
+                                    forward = false
+                                }
+                            },
                             onCreateProject = {
                                 if (!transition.isRunning) {
                                     forward = true
                                     planGenerationViewModel.reset()
                                     pdfUploadViewModel.beginNewSession()
                                     setupStartedForUploadSession = false
-                                    openPickerOnStart = true
+                                    openPickerOnStart = false
                                     screen = ScreenPdfUpload
                                 }
                             },
-                            onInsights = {},
-                        )
-
-                        ScreenStudyMapDetail -> StudyMapDetailRoute(
-                            projectId = selectedStudyProjectId,
-                            viewModel = studyMapDetailViewModel,
-                            onBack = {
+                            onOpenToday = {
                                 if (!transition.isRunning) {
-                                    forward = false
-                                    screen = ScreenStudyMapLibrary
+                                    forward = true
+                                    screen = ScreenToday
                                 }
                             },
-                            onHome = {},
-                            onInsights = {},
                         )
+
+                        ScreenToday -> PlaceholderTabScreen(
+                            title = stringResource(R.string.today),
+                            message = stringResource(R.string.today_placeholder_message),
+                            modifier = Modifier.padding(scaffoldPadding),
+                        )
+
+                        ScreenProgress -> PlaceholderTabScreen(
+                            title = stringResource(R.string.progress),
+                            message = stringResource(R.string.progress_placeholder_message),
+                            modifier = Modifier.padding(scaffoldPadding),
+                        )
+                                }
                             }
                         }
-                    }
-
-                    if (screen in tabScreens) {
-                        val selectedTab = tabIndexForScreen(screen)
-                        AppNavigationBar(
-                            selectedTab = selectedTab,
-                            onTabSelected = { tab ->
-                                forward = tab >= selectedTab
-                                screen = when (tab) {
-                                    0 -> ScreenHome
-                                    1 -> ScreenStudyMapLibrary
-                                    else -> ScreenHome
-                                }
-                            },
-                            modifier = Modifier.align(Alignment.BottomCenter),
-                        )
                     }
                 }
             }
         }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        preferHighRefreshRate()
+    }
+
+    @Suppress("DEPRECATION")
+    private fun preferHighRefreshRate() {
+        val preferredMode = windowManager.defaultDisplay.supportedModes
+            .maxWithOrNull(compareBy({ it.refreshRate }, { it.physicalWidth * it.physicalHeight }))
+            ?: return
+
+        val attributes = window.attributes
+        attributes.preferredRefreshRate = preferredMode.refreshRate
+        attributes.preferredDisplayModeId = preferredMode.modeId
+        window.attributes = attributes
     }
 }
 
 private data class Tab(val labelRes: Int, val icon: ImageVector)
 
 private val tabs = listOf(
-    Tab(R.string.home, Icons.Default.Home),
-    Tab(R.string.study_map, Icons.Default.Map),
-    Tab(R.string.insights, Icons.Default.Insights),
+    Tab(R.string.study_plan_tab, Icons.Default.Route),
+    Tab(R.string.today, Icons.Default.Timer),
+    Tab(R.string.progress, Icons.Default.BarChart),
 )
 
-private val tabScreens = setOf(ScreenHome, ScreenStudyMapLibrary, ScreenStudyMapDetail)
-
-private val TabBarHeight = 80.dp
+private val tabScreens = setOf(ScreenStudyMapDetail, ScreenToday, ScreenProgress)
+private val lockedPlanTabs = setOf(ScreenToday, ScreenProgress)
 
 private fun tabIndexForScreen(screen: String): Int = when (screen) {
-    ScreenHome -> 0
-    ScreenStudyMapLibrary, ScreenStudyMapDetail -> 1
+    ScreenStudyMapDetail -> 0
+    ScreenToday -> 1
+    ScreenProgress -> 2
     else -> 0
+}
+
+@Composable
+private fun PlaceholderTabScreen(title: String, message: String, modifier: Modifier = Modifier) {
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+            .statusBarsPadding()
+            .padding(horizontal = 20.dp, vertical = 24.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Text(
+            text = title,
+            style = MaterialTheme.typography.headlineSmall,
+            color = MaterialTheme.colorScheme.onBackground,
+        )
+        Text(
+            text = message,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
 }
 
 @Composable
 private fun AppNavigationBar(
     selectedTab: Int,
+    hasActiveStudyPlan: Boolean,
     onTabSelected: (Int) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     NavigationBar(
-        modifier = modifier.navigationBarsPadding(),
+        modifier = modifier,
         containerColor = MaterialTheme.colorScheme.background,
         tonalElevation = 0.dp,
     ) {
         tabs.forEachIndexed { index, tab ->
+            val enabled = index == 0 || hasActiveStudyPlan
+            val selected = index == selectedTab
             NavigationBarItem(
-                selected = index == selectedTab,
+                selected = selected,
+                enabled = enabled,
                 onClick = { onTabSelected(index) },
-                icon = { Icon(tab.icon, contentDescription = null) },
-                label = { Text(stringResource(tab.labelRes)) },
+                icon = {
+                    Icon(
+                        imageVector = tab.icon,
+                        contentDescription = null,
+                        modifier = Modifier.size(22.dp),
+                    )
+                },
+                label = {
+                    Text(
+                        text = stringResource(tab.labelRes),
+                        style = MaterialTheme.typography.labelSmall,
+                    )
+                },
+                colors = NavigationBarItemDefaults.colors(
+                    selectedIconColor = MaterialTheme.colorScheme.primary,
+                    selectedTextColor = MaterialTheme.colorScheme.primary,
+                    indicatorColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.13f),
+                    unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.82f),
+                    unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.82f),
+                    disabledIconColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.32f),
+                    disabledTextColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.32f),
+                ),
             )
         }
     }
 }
 
-private const val ScreenHome = "home"
 private const val ScreenPdfUpload = "pdf_upload"
 private const val ScreenPdfSetup = "pdf_setup"
 private const val ScreenPlanProcessing = "plan_processing"
-private const val ScreenStudyMapLibrary = "study_map_library"
 private const val ScreenStudyMapDetail = "study_map_detail"
+private const val ScreenToday = "today"
+private const val ScreenProgress = "progress"

@@ -34,6 +34,7 @@ class PdfUploadScreenTest {
         }
 
         composeRule.onNodeWithTag("pdf-continue").assertIsNotEnabled()
+        composeRule.onNodeWithText("1 OF 5").assertIsDisplayed()
     }
 
     @Test

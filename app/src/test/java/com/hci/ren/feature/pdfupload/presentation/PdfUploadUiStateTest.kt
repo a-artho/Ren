@@ -57,6 +57,61 @@ class PdfUploadUiStateTest {
     }
 
     @Test
+    fun noticeMessageDoesNotBlockReadyDocuments() {
+        val state = PdfUploadUiState(
+            documentGroup = DocumentGroup(
+                documents = listOf(PdfDocumentUiModel(
+                    uri = "content://ren/document",
+                    fileName = "Lecture.pdf",
+                    sizeBytes = 1_536,
+                    pageCount = 12,
+                )),
+            ),
+            loadStatus = PdfLoadStatus.Ready,
+            noticeMessage = "You can select up to 10 PDFs at once.",
+        )
+
+        assertTrue(state.canContinue)
+        assertEquals(1, state.selectedDocumentCount)
+        assertEquals(MaxPdfDocumentCount - 1, state.remainingDocumentSlots)
+    }
+
+    @Test
+    fun duplicateFilterDropsRepeatedCandidates() {
+        val result = filterDuplicateDocuments(
+            candidates = listOf("a.pdf", "a.pdf", "b.pdf"),
+            keyOf = { it },
+        )
+
+        assertEquals(listOf("a.pdf", "b.pdf"), result.uniqueItems)
+        assertEquals(1, result.duplicateCount)
+    }
+
+    @Test
+    fun duplicateFilterDropsExistingItems() {
+        val result = filterDuplicateDocuments(
+            candidates = listOf("old.pdf", "new.pdf"),
+            existingKeys = setOf("old.pdf"),
+            keyOf = { it },
+        )
+
+        assertEquals(listOf("new.pdf"), result.uniqueItems)
+        assertEquals(1, result.duplicateCount)
+    }
+
+    @Test
+    fun documentIdentityNormalizesFileName() {
+        val document = PdfDocumentUiModel(
+            uri = "content://ren/document",
+            fileName = " Lecture.PDF ",
+            sizeBytes = 1_572_864,
+            pageCount = 8,
+        )
+
+        assertEquals("lecture.pdf|1572864|8", document.identityKey())
+    }
+
+    @Test
     fun formattedDocumentDetailsIncludePagesAndSize() {
         val document = PdfDocumentUiModel(
             uri = "content://ren/document",

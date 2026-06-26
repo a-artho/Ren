@@ -1,6 +1,7 @@
 package com.hci.ren.feature.pdfupload.presentation
 
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertIsOn
@@ -8,6 +9,7 @@ import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextInput
@@ -21,36 +23,62 @@ class PlanSetupScreenTest {
     val composeRule = createComposeRule()
 
     @Test
-    fun goalStepRequiresSelectionBeforeNext() {
-        var selectedGoal: StudyGoal? = null
+    fun planTitleStepRequiresTextBeforeNext() {
+        var title = ""
         composeRule.setContent {
             RenTheme {
                 PlanSetupScreen(
-                    state = PlanSetupUiState(currentStep = PlanSetupStep.Goal),
+                    state = PlanSetupUiState(currentStep = PlanSetupStep.PlanTitle),
                     onBack = {},
-                    onGoalSelected = { selectedGoal = it },
+                    onPlanTitleChanged = { title = it },
                     onDeadlineSelected = {},
                     onDateSelected = {},
                     onDailyTimeSelected = {},
+                    onCustomHoursChanged = {},
                     onCustomMinutesChanged = {},
                     onDayToggled = {},
                     onShortcutSelected = {},
-                    onAdvancedControls = {},
                     onNext = {},
                     onGeneratePlan = {},
                 )
             }
         }
 
-        composeRule.onNodeWithText("1 OF 4").assertIsDisplayed()
+        composeRule.onNodeWithText("2 OF 5").assertIsDisplayed()
         composeRule.onNodeWithTag("plan-next").assertIsNotEnabled()
-        composeRule.onNodeWithText("Prepare for an exam").performClick()
+        composeRule.onNodeWithTag("plan-title").performTextInput("HCI final")
 
-        assertEquals(StudyGoal.PrepareForExam, selectedGoal)
+        assertEquals("HCI final", title)
+    }
+
+    @Test
+    fun deadlineStepShowsOnlyActionableDeadlines() {
+        composeRule.setContent {
+            RenTheme {
+                PlanSetupScreen(
+                    state = PlanSetupUiState(currentStep = PlanSetupStep.Deadline),
+                    onBack = {},
+                    onPlanTitleChanged = {},
+                    onDeadlineSelected = {},
+                    onDateSelected = {},
+                    onDailyTimeSelected = {},
+                    onCustomHoursChanged = {},
+                    onCustomMinutesChanged = {},
+                    onDayToggled = {},
+                    onShortcutSelected = {},
+                    onNext = {},
+                    onGeneratePlan = {},
+                )
+            }
+        }
+
+        composeRule.onNodeWithText("When is it due?").assertIsDisplayed()
+        composeRule.onAllNodesWithText("No fixed deadline").assertCountEquals(0)
     }
 
     @Test
     fun dailyTimeStepShowsCustomInput() {
+        var customHours = ""
         var customMinutes = ""
         composeRule.setContent {
             RenTheme {
@@ -60,26 +88,29 @@ class PlanSetupScreenTest {
                         selectedDailyTime = DailyStudyTime.Custom,
                     ),
                     onBack = {},
-                    onGoalSelected = {},
+                    onPlanTitleChanged = {},
                     onDeadlineSelected = {},
                     onDateSelected = {},
                     onDailyTimeSelected = {},
+                    onCustomHoursChanged = { customHours = it },
                     onCustomMinutesChanged = { customMinutes = it },
                     onDayToggled = {},
                     onShortcutSelected = {},
-                    onAdvancedControls = {},
                     onNext = {},
                     onGeneratePlan = {},
                 )
             }
         }
 
-        composeRule.onNodeWithText("3 OF 4").assertIsDisplayed()
+        composeRule.onNodeWithText("4 OF 5").assertIsDisplayed()
+        composeRule.onNodeWithTag("custom-hours").assertIsDisplayed()
         composeRule.onNodeWithTag("custom-minutes").assertIsDisplayed()
         composeRule.onNodeWithTag("plan-next").assertIsNotEnabled()
-        composeRule.onNodeWithTag("custom-minutes").performTextInput("90")
+        composeRule.onNodeWithTag("custom-hours").performTextInput("1")
+        composeRule.onNodeWithTag("custom-minutes").performTextInput("30")
 
-        assertEquals("90", customMinutes)
+        assertEquals("1", customHours)
+        assertEquals("30", customMinutes)
     }
 
     @Test
@@ -91,6 +122,9 @@ class PlanSetupScreenTest {
                 PlanSetupScreen(
                     state = PlanSetupUiState(
                         currentStep = PlanSetupStep.StudyDays,
+                        planTitle = "HCI final",
+                        selectedDeadline = StudyDeadline.InOneWeek,
+                        selectedDailyTime = DailyStudyTime.OneHour,
                         selectedDays = setOf(
                             StudyDay.Monday,
                             StudyDay.Tuesday,
@@ -100,22 +134,22 @@ class PlanSetupScreenTest {
                         ),
                     ),
                     onBack = {},
-                    onGoalSelected = {},
+                    onPlanTitleChanged = {},
                     onDeadlineSelected = {},
                     onDateSelected = {},
                     onDailyTimeSelected = {},
+                    onCustomHoursChanged = {},
                     onCustomMinutesChanged = {},
                     onDayToggled = {},
                     onShortcutSelected = { shortcut = it },
-                    onAdvancedControls = {},
                     onNext = {},
                     onGeneratePlan = { generated = true },
                 )
             }
         }
 
-        composeRule.onNodeWithText("4 OF 4").assertIsDisplayed()
-        composeRule.onNodeWithText("Advanced controls").assertIsDisplayed()
+        composeRule.onNodeWithText("5 OF 5").assertIsDisplayed()
+        composeRule.onNodeWithText("5 days selected").assertIsDisplayed()
         composeRule.onNodeWithText("Weekdays").performClick()
         composeRule.onNodeWithTag("generate-plan").assertIsEnabled().performClick()
 
@@ -133,14 +167,14 @@ class PlanSetupScreenTest {
                         selectedDays = StudyDay.entries.toSet(),
                     ),
                     onBack = {},
-                    onGoalSelected = {},
+                    onPlanTitleChanged = {},
                     onDeadlineSelected = {},
                     onDateSelected = {},
                     onDailyTimeSelected = {},
+                    onCustomHoursChanged = {},
                     onCustomMinutesChanged = {},
                     onDayToggled = {},
                     onShortcutSelected = {},
-                    onAdvancedControls = {},
                     onNext = {},
                     onGeneratePlan = {},
                 )

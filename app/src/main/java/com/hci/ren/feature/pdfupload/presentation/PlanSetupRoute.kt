@@ -30,14 +30,14 @@ fun PlanSetupRoute(
     PlanSetupScreen(
         state = state,
         onBack = navigateBack,
-        onGoalSelected = viewModel::selectGoal,
+        onPlanTitleChanged = viewModel::updatePlanTitle,
         onDeadlineSelected = viewModel::selectDeadline,
         onDateSelected = viewModel::selectCustomDate,
         onDailyTimeSelected = viewModel::selectDailyTime,
+        onCustomHoursChanged = viewModel::updateCustomHours,
         onCustomMinutesChanged = viewModel::updateCustomMinutes,
         onDayToggled = viewModel::toggleStudyDay,
         onShortcutSelected = viewModel::selectShortcut,
-        onAdvancedControls = viewModel::showAdvancedMessage,
         onNext = viewModel::goNext,
         onGeneratePlan = {
             viewModel.generatePlan()?.let(onGeneratePlan)
