@@ -41,6 +41,7 @@ data class StudyProject(
     val plan: GeneratedStudyPlan,
     val preferences: PlanSetupSubmission,
     val dailyMinutesOverride: Int? = null,
+    val dailyAvailableMinutesByDate: Map<String, Int> = emptyMap(),
     val acceptedTightPlan: Boolean = false,
 )
 
@@ -57,6 +58,7 @@ data class StudyProjectEntity(
     val planJson: String,
     val preferencesJson: String,
     val dailyMinutesOverride: Int?,
+    val dailyAvailableMinutesJson: String,
     val acceptedTightPlan: Boolean,
 )
 
@@ -81,7 +83,7 @@ interface StudyProjectDao {
     }
 }
 
-@Database(entities = [StudyProjectEntity::class], version = 2, exportSchema = true)
+@Database(entities = [StudyProjectEntity::class], version = 3, exportSchema = true)
 abstract class StudyProjectDatabase : RoomDatabase() {
     abstract fun studyProjectDao(): StudyProjectDao
 
@@ -94,14 +96,14 @@ abstract class StudyProjectDatabase : RoomDatabase() {
                 StudyProjectDatabase::class.java,
                 "ren-study-projects.db",
             )
-                .addMigrations(DropLegacyStudyProjectsMigration)
+                .addMigrations(DropLegacyStudyProjectsMigration, AddDailyAvailableMinutesMigration)
                 .build()
                 .also { instance = it }
         }
     }
 }
 
-private val DropLegacyStudyProjectsMigration = object : Migration(1, 2) {
+internal val DropLegacyStudyProjectsMigration = object : Migration(1, 2) {
     override fun migrate(db: SupportSQLiteDatabase) {
         db.execSQL("DROP TABLE IF EXISTS `study_projects`")
         db.execSQL(
@@ -120,6 +122,14 @@ private val DropLegacyStudyProjectsMigration = object : Migration(1, 2) {
                 PRIMARY KEY(`slot`)
             )
             """.trimIndent(),
+        )
+    }
+}
+
+internal val AddDailyAvailableMinutesMigration = object : Migration(2, 3) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL(
+            "ALTER TABLE `active_study_project` ADD COLUMN `dailyAvailableMinutesJson` TEXT NOT NULL DEFAULT '{}'",
         )
     }
 }
@@ -153,6 +163,7 @@ internal object StudyProjectJsonCodec {
         planJson = project.plan.toJson().toString(),
         preferencesJson = project.preferences.toPersistedJson().toString(),
         dailyMinutesOverride = project.dailyMinutesOverride,
+        dailyAvailableMinutesJson = project.dailyAvailableMinutesByDate.toJson().toString(),
         acceptedTightPlan = project.acceptedTightPlan,
     )
 
@@ -167,6 +178,7 @@ internal object StudyProjectJsonCodec {
             plan = plan.copy(projectName = entity.title.safeStudyProjectTitle()),
             preferences = JSONObject(entity.preferencesJson).toSubmission(),
             dailyMinutesOverride = entity.dailyMinutesOverride,
+            dailyAvailableMinutesByDate = JSONObject(entity.dailyAvailableMinutesJson).toDailyAvailableMinutes(),
             acceptedTightPlan = entity.acceptedTightPlan,
         )
     }
@@ -353,6 +365,19 @@ private fun PlanSetupSubmission.toPersistedJson() = JSONObject()
     .put("dailyStudyMinutes", dailyStudyMinutes)
     .put("studyDays", JSONArray(studyDays.map { it.name }))
     .put("studyDayResetOffsetHours", studyDayResetOffsetHours)
+
+private fun Map<String, Int>.toJson() = JSONObject().apply {
+    entries
+        .filter { (date, minutes) -> date.toStudyCalendar() != null && minutes in 0..1_440 }
+        .forEach { (date, minutes) -> put(date, minutes) }
+}
+
+private fun JSONObject.toDailyAvailableMinutes(): Map<String, Int> = keys().asSequence()
+    .mapNotNull { date ->
+        val minutes = optInt(date, -1)
+        if (date.toStudyCalendar() != null && minutes in 0..1_440) date to minutes else null
+    }
+    .toMap()
 
 private fun JSONObject.toSubmission() = PlanSetupSubmission(
     documentUris = emptyList(),

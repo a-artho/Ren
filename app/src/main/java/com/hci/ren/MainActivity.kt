@@ -46,6 +46,7 @@ import com.hci.ren.feature.plangeneration.PlanGenerationScreen
 import com.hci.ren.feature.plangeneration.PlanGenerationViewModel
 import com.hci.ren.feature.studymap.StudyMapDetailRoute
 import com.hci.ren.feature.studymap.StudyMapDetailViewModel
+import com.hci.ren.feature.studymap.TodayScreen
 import com.hci.ren.ui.theme.RenTheme
 import com.hci.ren.ui.motion.isReducedMotionEnabled
 import com.hci.ren.ui.motion.renScreenTransform
@@ -220,7 +221,14 @@ class MainActivity : ComponentActivity() {
                             },
                         )
 
-                        ScreenToday -> PlaceholderTabScreen(
+                        ScreenToday -> studyMapState.project?.let { project ->
+                            TodayScreen(
+                                project = project,
+                                session = studyMapState.todaySession,
+                                onAvailableTimeChanged = studyMapDetailViewModel::updateTodayAvailableTime,
+                                modifier = Modifier.padding(scaffoldPadding),
+                            )
+                        } ?: PlaceholderTabScreen(
                             title = stringResource(R.string.today),
                             message = stringResource(R.string.today_placeholder_message),
                             modifier = Modifier.padding(scaffoldPadding),

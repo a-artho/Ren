@@ -81,6 +81,7 @@ class StudyMapScreenTest {
                     onBack = {},
                     onCreateProject = {},
                     onOpenToday = {},
+                    onRenamePlan = {},
                     onDeletePlan = {},
                     onConsumeMessage = {},
                     onApplyDeadline = {},

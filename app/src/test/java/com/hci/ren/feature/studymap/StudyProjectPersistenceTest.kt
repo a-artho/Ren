@@ -39,7 +39,7 @@ class StudyProjectPersistenceTest {
     }
 
     @Test fun generatedProjectPersistsRelativeDeadlineFromCreationTime() {
-        val now = GregorianCalendar(2026, Calendar.JUNE, 25).timeInMillis
+        val now = GregorianCalendar(2026, Calendar.JUNE, 25, 12, 0).timeInMillis
         val generated = newStudyProject(
             plan(emptyList()),
             preferences().copy(deadline = StudyDeadline.InOneWeek, deadlineDate = null),
@@ -81,6 +81,21 @@ class StudyProjectPersistenceTest {
 
         assertEquals(listOf("Explain it without notes"), block.completionCriteria)
         assertEquals("chapter-1", block.continuityGroup)
+    }
+
+    @Test fun dailyAvailableTimeOverridesPersistSeparatelyFromPlanTime() {
+        val project = newStudyProject(
+            plan(emptyList()),
+            preferences().copy(dailyStudyMinutes = 60),
+            nowMillis = 100,
+        ).copy(
+            dailyAvailableMinutesByDate = mapOf("2026-06-22" to 15),
+        )
+
+        val decoded = StudyProjectJsonCodec.decode(StudyProjectJsonCodec.encode(project))
+
+        assertEquals(60, decoded.preferences.dailyStudyMinutes)
+        assertEquals(mapOf("2026-06-22" to 15), decoded.dailyAvailableMinutesByDate)
     }
 
     @Test fun generatedProjectKeepsCanonicalBlocksBeforePersistence() {

@@ -24,6 +24,7 @@ data class StudyMapDetailUiState(
     val isLoading: Boolean = false,
     val hasLoaded: Boolean = false,
     val project: StudyProject? = null,
+    val todaySession: TodaySessionState? = null,
     val errorMessage: String? = null,
     val userMessage: String? = null,
     val suggestedDeadline: String? = null,
@@ -98,6 +99,15 @@ class StudyMapDetailViewModel(application: Application) : AndroidViewModel(appli
 
     fun increaseDailyTime(minutes: Int) = mutate("Daily study time updated.") {
         it.copy(dailyMinutesOverride = minutes.coerceIn(1, 1_440))
+    }
+
+    fun updateTodayAvailableTime(date: String, minutes: Int?) {
+        if (date.toStudyCalendar() == null) return
+        val normalized = minutes?.coerceIn(0, MaxTodaySessionMinutes)
+        val current = _uiState.value
+        _uiState.value = current.copy(
+            todaySession = normalized?.let { TodaySessionState(date = date, availableMinutes = it) },
+        )
     }
 
     fun renamePlan(name: String) {
@@ -192,6 +202,7 @@ class StudyMapDetailViewModel(application: Application) : AndroidViewModel(appli
     }
 
     private fun publish(project: StudyProject, message: String? = null) {
+        val todaySession = _uiState.value.todaySession
         val required = project.plan.blocks.filter(::isRequiredTask)
         val feasibility = feasibilityChecker.check(
             required,
@@ -201,6 +212,7 @@ class StudyMapDetailViewModel(application: Application) : AndroidViewModel(appli
         _uiState.value = StudyMapDetailUiState(
             hasLoaded = true,
             project = project,
+            todaySession = todaySession,
             userMessage = message,
             suggestedDeadline = adjustmentService.suggestedDeadline(
                 project.plan.blocks,
