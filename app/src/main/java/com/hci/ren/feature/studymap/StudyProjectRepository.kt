@@ -42,8 +42,16 @@ data class StudyProject(
     val preferences: PlanSetupSubmission,
     val dailyMinutesOverride: Int? = null,
     val dailyAvailableMinutesByDate: Map<String, Int> = emptyMap(),
+    val taskProgressById: Map<String, StudyTaskProgress> = emptyMap(),
     val acceptedTightPlan: Boolean = false,
 )
+
+data class StudyTaskProgress(
+    val completedMinutes: Int = 0,
+    val removedMinutes: Int = 0,
+) {
+    val isEmpty: Boolean get() = completedMinutes <= 0 && removedMinutes <= 0
+}
 
 private const val ActiveProjectSlot = "active"
 
@@ -59,6 +67,7 @@ data class StudyProjectEntity(
     val preferencesJson: String,
     val dailyMinutesOverride: Int?,
     val dailyAvailableMinutesJson: String,
+    val taskProgressJson: String,
     val acceptedTightPlan: Boolean,
 )
 
@@ -83,7 +92,7 @@ interface StudyProjectDao {
     }
 }
 
-@Database(entities = [StudyProjectEntity::class], version = 3, exportSchema = true)
+@Database(entities = [StudyProjectEntity::class], version = 4, exportSchema = true)
 abstract class StudyProjectDatabase : RoomDatabase() {
     abstract fun studyProjectDao(): StudyProjectDao
 
@@ -96,7 +105,11 @@ abstract class StudyProjectDatabase : RoomDatabase() {
                 StudyProjectDatabase::class.java,
                 "ren-study-projects.db",
             )
-                .addMigrations(DropLegacyStudyProjectsMigration, AddDailyAvailableMinutesMigration)
+                .addMigrations(
+                    DropLegacyStudyProjectsMigration,
+                    AddDailyAvailableMinutesMigration,
+                    AddTaskProgressMigration,
+                )
                 .build()
                 .also { instance = it }
         }
@@ -134,6 +147,14 @@ internal val AddDailyAvailableMinutesMigration = object : Migration(2, 3) {
     }
 }
 
+internal val AddTaskProgressMigration = object : Migration(3, 4) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL(
+            "ALTER TABLE `active_study_project` ADD COLUMN `taskProgressJson` TEXT NOT NULL DEFAULT '{}'",
+        )
+    }
+}
+
 class StudyProjectRepository(private val dao: StudyProjectDao) {
     suspend fun getActive(): StudyProject? = dao.getActive()?.let(StudyProjectJsonCodec::decode)
 
@@ -164,6 +185,7 @@ internal object StudyProjectJsonCodec {
         preferencesJson = project.preferences.toPersistedJson().toString(),
         dailyMinutesOverride = project.dailyMinutesOverride,
         dailyAvailableMinutesJson = project.dailyAvailableMinutesByDate.toJson().toString(),
+        taskProgressJson = project.taskProgressById.toTaskProgressJson().toString(),
         acceptedTightPlan = project.acceptedTightPlan,
     )
 
@@ -179,6 +201,7 @@ internal object StudyProjectJsonCodec {
             preferences = JSONObject(entity.preferencesJson).toSubmission(),
             dailyMinutesOverride = entity.dailyMinutesOverride,
             dailyAvailableMinutesByDate = JSONObject(entity.dailyAvailableMinutesJson).toDailyAvailableMinutes(),
+            taskProgressById = JSONObject(entity.taskProgressJson).toTaskProgress(),
             acceptedTightPlan = entity.acceptedTightPlan,
         )
     }
@@ -376,6 +399,35 @@ private fun JSONObject.toDailyAvailableMinutes(): Map<String, Int> = keys().asSe
     .mapNotNull { date ->
         val minutes = optInt(date, -1)
         if (date.toStudyCalendar() != null && minutes in 0..1_440) date to minutes else null
+    }
+    .toMap()
+
+private fun Map<String, StudyTaskProgress>.toTaskProgressJson() = JSONObject().apply {
+    entries
+        .filter { (taskId, progress) ->
+            taskId.isNotBlank() &&
+                progress.completedMinutes in 0..1_440 &&
+                progress.removedMinutes in 0..1_440 &&
+                !progress.isEmpty
+        }
+        .forEach { (taskId, progress) ->
+            put(
+                taskId,
+                JSONObject()
+                    .put("completedMinutes", progress.completedMinutes)
+                    .put("removedMinutes", progress.removedMinutes),
+            )
+        }
+}
+
+private fun JSONObject.toTaskProgress(): Map<String, StudyTaskProgress> = keys().asSequence()
+    .mapNotNull { taskId ->
+        val value = optJSONObject(taskId) ?: return@mapNotNull null
+        val progress = StudyTaskProgress(
+            completedMinutes = value.optInt("completedMinutes", 0).coerceIn(0, 1_440),
+            removedMinutes = value.optInt("removedMinutes", 0).coerceIn(0, 1_440),
+        )
+        if (taskId.isNotBlank() && !progress.isEmpty) taskId to progress else null
     }
     .toMap()
 

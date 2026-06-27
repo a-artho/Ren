@@ -227,6 +227,11 @@ class MainActivity : ComponentActivity() {
                                 session = studyMapState.todaySession,
                                 onAvailableTimeChanged = studyMapDetailViewModel::updateTodayAvailableTime,
                                 onTaskAction = studyMapDetailViewModel::updateTodayTaskAction,
+                                onWrapUpToday = { date ->
+                                    studyMapDetailViewModel.wrapUpToday(date)
+                                    forward = false
+                                    screen = ScreenStudyMapDetail
+                                },
                                 modifier = Modifier.padding(scaffoldPadding),
                             )
                         } ?: PlaceholderTabScreen(

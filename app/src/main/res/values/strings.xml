@@ -106,6 +106,8 @@
     <string name="decrease_available_time">Decrease available time</string>
     <string name="increase_available_time">Increase available time</string>
     <string name="reset_to_plan_time">Reset to plan time</string>
+    <string name="wrap_up_today">Wrap up today</string>
+    <string name="today_wrapped_up_message">Today wrapped up. Study map updated.</string>
     <string name="no_tasks_today">No tasks today</string>
     <string name="no_tasks_today_message">Your plan has nothing scheduled for this study day.</string>
     <string name="tomorrow">Tomorrow</string>

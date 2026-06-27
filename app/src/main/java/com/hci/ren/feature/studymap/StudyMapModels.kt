@@ -106,17 +106,26 @@ internal fun buildStudyMapData(
     plan: GeneratedStudyPlan,
     preferences: PlanSetupSubmission,
     dailyMinutesOverride: Int? = null,
+    dailyAvailableMinutesByDate: Map<String, Int> = emptyMap(),
+    taskProgressById: Map<String, StudyTaskProgress> = emptyMap(),
     today: Calendar = currentStudyCalendar(preferences),
 ): StudyMapData {
     val dailyMinutes = dailyMinutesOverride ?: preferences.dailyStudyMinutes
     val schedulingPreferences = preferences.copy(dailyStudyMinutes = dailyMinutes)
-    val schedulingPlan = plan.prepareForLocalScheduling(schedulingPreferences)
-    val schedule = StudyScheduleCalculator().calculate(schedulingPlan.blocks, schedulingPreferences, today)
+    val activePlan = plan.applyTaskProgress(taskProgressById)
+    val schedulingPlan = activePlan.prepareForLocalScheduling(schedulingPreferences)
+    val schedule = StudyScheduleCalculator().calculate(
+        tasks = schedulingPlan.blocks,
+        preferences = schedulingPreferences,
+        today = today,
+        dailyAvailableMinutesByDate = dailyAvailableMinutesByDate,
+    )
     val realism = PlanRealismCalculator().calculate(
         tasks = schedulingPlan.blocks,
         preferences = schedulingPreferences,
         today = today,
         unscheduledTasks = schedule.unscheduledTasks,
+        dailyAvailableMinutesByDate = dailyAvailableMinutesByDate,
     )
     return StudyMapData(schedulingPlan, schedulingPreferences, realism, schedule, dailyMinutes)
 }
@@ -141,3 +150,38 @@ internal fun GeneratedStudyBlock.withLocalDuration(minutes: Int): GeneratedStudy
         effortMaxMinutes = newEffortMax.coerceAtMost(1_440),
     )
 }
+
+private fun GeneratedStudyPlan.applyTaskProgress(
+    progressById: Map<String, StudyTaskProgress>,
+): GeneratedStudyPlan {
+    if (progressById.isEmpty()) return this
+    val updatedBlocks = blocks.map { block ->
+        if (block.status in SourceStatusOverridesProgress) return@map block
+        val progress = progressById[block.id] ?: return@map block
+        val total = block.durationMinutes.coerceAtLeast(1)
+        val completed = progress.completedMinutes.coerceIn(0, total)
+        val removed = progress.removedMinutes.coerceIn(0, total - completed)
+        val remaining = (total - completed - removed).coerceAtLeast(0)
+        when {
+            completed >= total -> block.copy(status = StudyTaskStatus.Completed)
+            remaining == 0 -> block.copy(status = StudyTaskStatus.ExcludedByUser)
+            completed > 0 -> block
+                .withLocalDuration(remaining)
+                .copy(status = StudyTaskStatus.InProgress)
+            removed > 0 -> block.withLocalDuration(remaining)
+            else -> block
+        }
+    }
+    return copy(
+        blocks = updatedBlocks,
+        totalEstimatedMinutes = updatedBlocks
+            .filter(::countsTowardRequiredTime)
+            .sumOf { it.durationMinutes },
+    )
+}
+
+private val SourceStatusOverridesProgress = setOf(
+    StudyTaskStatus.Completed,
+    StudyTaskStatus.DeferredByUser,
+    StudyTaskStatus.ExcludedByUser,
+)

@@ -21,11 +21,16 @@ class StudyScheduleCalculator {
         preferences: PlanSetupSubmission,
         today: Calendar = currentStudyCalendar(preferences),
         dailyMinutesOverride: Int? = null,
+        dailyAvailableMinutesByDate: Map<String, Int> = emptyMap(),
     ): StudySchedule {
         val capacity = (dailyMinutesOverride ?: preferences.dailyStudyMinutes).coerceAtLeast(0)
         val eligibleDates = availableStudyDates(preferences, today)
         val eligibleDateKeys = eligibleDates.map { it.toStudyDate() }
-        if (capacity == 0 || eligibleDates.isEmpty()) {
+        val capacityByDate = eligibleDateKeys.associateWith { date ->
+            dailyAvailableMinutesByDate[date]?.coerceIn(0, 1_440) ?: capacity
+        }
+        val maxTaskCapacity = capacityByDate.values.maxOrNull() ?: 0
+        if (eligibleDates.isEmpty() || maxTaskCapacity <= 0) {
             return StudySchedule(
                 days = emptyList(),
                 unscheduledTasks = tasks
@@ -41,7 +46,7 @@ class StudyScheduleCalculator {
         }
 
         val dayTasks = linkedMapOf<String, MutableList<GeneratedStudyBlock>>()
-        val remainingCapacity = eligibleDateKeys.associateWith { capacity }.toMutableMap()
+        val remainingCapacity = capacityByDate.toMutableMap()
         val unscheduled = mutableListOf<GeneratedStudyBlock>()
         val fixedTaskIds = mutableSetOf<String>()
 
@@ -57,7 +62,8 @@ class StudyScheduleCalculator {
                     return@forEach
                 }
                 dayTasks.getOrPut(date, ::mutableListOf).add(task.copy(scheduledDate = date))
-                remainingCapacity[date] = (remainingCapacity[date] ?: capacity) - task.durationMinutes.coerceAtLeast(0)
+                remainingCapacity[date] = (remainingCapacity[date] ?: capacityByDate[date].orZero()) -
+                    task.durationMinutes.coerceAtLeast(0)
                 fixedTaskIds += task.id
             }
 
@@ -80,7 +86,7 @@ class StudyScheduleCalculator {
         )
         val schedulableTasks = candidateTasks.take(feasibleCount)
         candidateTasks.drop(feasibleCount).forEachIndexed { index, task ->
-            val blockingOversizedTask = index == 0 && task.durationMinutes.coerceAtLeast(1) > capacity
+            val blockingOversizedTask = index == 0 && task.durationMinutes.coerceAtLeast(1) > maxTaskCapacity
             unscheduled += task.copy(
                 scheduledDate = null,
                 status = if (blockingOversizedTask) StudyTaskStatus.OverCapacity else StudyTaskStatus.Unscheduled,
@@ -96,7 +102,7 @@ class StudyScheduleCalculator {
 
         if (safeAssignedDates == null) {
             schedulableTasks.forEach { task ->
-                val oversized = task.durationMinutes.coerceAtLeast(1) > capacity
+                val oversized = task.durationMinutes.coerceAtLeast(1) > maxTaskCapacity
                 unscheduled += task.copy(
                     scheduledDate = null,
                     status = if (oversized) StudyTaskStatus.OverCapacity else StudyTaskStatus.Unscheduled,
@@ -106,7 +112,8 @@ class StudyScheduleCalculator {
             schedulableTasks.zip(safeAssignedDates).forEach { (task, date) ->
                 val scheduledTask = task.copy(scheduledDate = date)
                 dayTasks.getOrPut(date, ::mutableListOf).add(scheduledTask)
-                remainingCapacity[date] = (remainingCapacity[date] ?: capacity) - task.durationMinutes.coerceAtLeast(1)
+                remainingCapacity[date] = (remainingCapacity[date] ?: capacityByDate[date].orZero()) -
+                    task.durationMinutes.coerceAtLeast(1)
             }
         }
 
@@ -117,9 +124,9 @@ class StudyScheduleCalculator {
                     StudyScheduleDay(
                         date = key,
                         tasks = it.sortedBy { task -> task.order },
-                        capacityMinutes = capacity,
+                        capacityMinutes = capacityByDate[key] ?: capacity,
                         dayIndex = index + 1,
-                        load = dayLoad(dayLoadIndex(it, capacity)),
+                        load = dayLoad(dayLoadIndex(it, capacityByDate[key] ?: capacity)),
                     )
                 }
             },
@@ -337,6 +344,8 @@ internal fun availableStudyDates(preferences: PlanSetupSubmission, today: Calend
         }
     }
 }
+
+private fun Int?.orZero(): Int = this ?: 0
 
 internal fun deadlineDate(preferences: PlanSetupSubmission, today: Calendar): Calendar? = when (preferences.deadline) {
     StudyDeadline.Tomorrow -> dayOnly(today).apply { add(Calendar.DAY_OF_MONTH, 1) }

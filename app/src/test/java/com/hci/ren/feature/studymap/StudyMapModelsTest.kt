@@ -241,6 +241,121 @@ class StudyMapModelsTest {
         assertEquals(listOf("chapter_part1", "chapter_part2"), data.schedule.days.flatMap { it.tasks }.map { it.id })
     }
 
+    @Test fun activeProgressReducesRemainingWorkWithoutChangingSourceIdentity() {
+        val canonical = task("chapter", 100).copy(
+            order = 1,
+            minimumUsefulMinutes = 20,
+            splitAllowed = true,
+        )
+        val data = buildStudyMapData(
+            plan(listOf(canonical)),
+            submission(60, StudyDeadline.InThreeDays),
+            taskProgressById = mapOf("chapter" to StudyTaskProgress(completedMinutes = 50)),
+            today = monday,
+        )
+
+        assertEquals(listOf("chapter"), data.plan.blocks.map { it.id })
+        assertEquals(listOf(50), data.plan.blocks.map { it.durationMinutes })
+        assertEquals(StudyTaskStatus.InProgress, data.plan.blocks.single().status)
+        assertEquals(listOf("chapter"), data.schedule.days.flatMap { it.tasks }.map { it.id })
+    }
+
+    @Test fun removedOnlyActiveProgressReducesWorkWithoutMarkingStarted() {
+        val canonical = task("chapter", 100).copy(order = 1)
+        val data = buildStudyMapData(
+            plan(listOf(canonical)),
+            submission(60, StudyDeadline.InThreeDays),
+            taskProgressById = mapOf("chapter" to StudyTaskProgress(removedMinutes = 40)),
+            today = monday,
+        )
+
+        val remaining = data.plan.blocks.single()
+        assertEquals(60, remaining.durationMinutes)
+        assertEquals(StudyTaskStatus.NotStarted, remaining.status)
+        assertEquals(listOf("chapter"), data.schedule.days.flatMap { it.tasks }.map { it.id })
+    }
+
+    @Test fun explicitSourceStatusWinsOverStaleProgress() {
+        val canonical = task("chapter", 100).copy(
+            order = 1,
+            status = StudyTaskStatus.ExcludedByUser,
+        )
+        val data = buildStudyMapData(
+            plan(listOf(canonical)),
+            submission(60, StudyDeadline.InThreeDays),
+            taskProgressById = mapOf("chapter" to StudyTaskProgress(completedMinutes = 40)),
+            today = monday,
+        )
+
+        val task = data.plan.blocks.single()
+        assertEquals(100, task.durationMinutes)
+        assertEquals(StudyTaskStatus.ExcludedByUser, task.status)
+        assertTrue(data.schedule.days.isEmpty())
+    }
+
+    @Test fun splitRemainingInProgressTaskOnlyMarksFirstPartStarted() {
+        val canonical = task("chapter", 180).copy(
+            order = 1,
+            minimumUsefulMinutes = 20,
+            splitAllowed = true,
+        )
+        val data = buildStudyMapData(
+            plan(listOf(canonical)),
+            submission(60, StudyDeadline.InThreeDays),
+            taskProgressById = mapOf("chapter" to StudyTaskProgress(completedMinutes = 60)),
+            today = monday,
+        )
+
+        assertEquals(listOf("chapter_part1", "chapter_part2"), data.plan.blocks.map { it.id })
+        assertEquals(listOf(StudyTaskStatus.InProgress, StudyTaskStatus.NotStarted), data.plan.blocks.map { it.status })
+    }
+
+    @Test fun completedActiveProgressRemovesTaskFromRemainingSchedule() {
+        val canonical = task("chapter", 100).copy(order = 1)
+        val data = buildStudyMapData(
+            plan(listOf(canonical)),
+            submission(60, StudyDeadline.InThreeDays),
+            taskProgressById = mapOf("chapter" to StudyTaskProgress(completedMinutes = 100)),
+            today = monday,
+        )
+
+        assertEquals(StudyTaskStatus.Completed, data.plan.blocks.single().status)
+        assertTrue(data.schedule.days.isEmpty())
+        assertEquals(1, data.completedTasks)
+    }
+
+    @Test fun dailyAvailableOverrideChangesOnlyThatStudyDateCapacity() {
+        val tasks = listOf(
+            task("one", 30).copy(order = 1),
+            task("two", 30).copy(order = 2),
+        )
+        val data = buildStudyMapData(
+            plan(tasks),
+            submission(60, StudyDeadline.InThreeDays),
+            dailyAvailableMinutesByDate = mapOf("2026-06-22" to 0),
+            today = monday,
+        )
+
+        assertFalse("2026-06-22" in data.schedule.days.map { it.date })
+        assertEquals(listOf("one", "two"), data.schedule.days.flatMap { it.tasks }.map { it.id })
+        assertEquals(0, data.realism.shortageMinutes)
+    }
+
+    @Test fun overCapacityUsesPerDayAvailableOverride() {
+        val schedule = StudyScheduleCalculator().calculate(
+            tasks = listOf(task("too-large", 45).copy(order = 1)),
+            preferences = submission(60, StudyDeadline.InThreeDays),
+            today = monday,
+            dailyAvailableMinutesByDate = mapOf(
+                "2026-06-22" to 30,
+                "2026-06-23" to 30,
+                "2026-06-24" to 30,
+            ),
+        )
+
+        assertEquals(StudyTaskStatus.OverCapacity, schedule.unscheduledTasks.single().status)
+    }
+
     @Test fun deferredTasksDoNotCountInvisibleWorkload() {
         val tasks = listOf(
             task("active", 30),

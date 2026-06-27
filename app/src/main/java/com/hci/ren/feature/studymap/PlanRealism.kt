@@ -23,10 +23,13 @@ class PlanRealismCalculator {
         today: Calendar = currentStudyCalendar(preferences),
         dailyMinutesOverride: Int? = null,
         unscheduledTasks: List<GeneratedStudyBlock> = emptyList(),
+        dailyAvailableMinutesByDate: Map<String, Int> = emptyMap(),
     ): PlanRealism {
         val remaining = requiredStudyMinutes(tasks)
         val dailyMinutes = (dailyMinutesOverride ?: preferences.dailyStudyMinutes).coerceAtLeast(0)
-        val available = availableStudyDates(preferences, today).size * dailyMinutes
+        val available = availableStudyDates(preferences, today)
+            .map { it.toStudyDate() }
+            .sumOf { date -> dailyAvailableMinutesByDate[date]?.coerceIn(0, 1_440) ?: dailyMinutes }
         val unplaced = requiredStudyMinutes(unscheduledTasks)
         val shortage = maxOf(unplaced, remaining - available, 0)
         val status = when {

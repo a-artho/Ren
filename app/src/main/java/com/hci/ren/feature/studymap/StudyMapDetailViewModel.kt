@@ -36,6 +36,7 @@ class StudyMapDetailViewModel(application: Application) : AndroidViewModel(appli
     private val repository = StudyProjectRepository.create(application)
     private val adjustmentService = PlanAdjustmentService()
     private val feasibilityChecker = StudyPlanFeasibilityChecker()
+    private val todayWrapUpService = TodayWrapUpService()
     private val writeMutex = Mutex()
     private val _uiState = MutableStateFlow(StudyMapDetailUiState())
     val uiState = _uiState.asStateFlow()
@@ -130,6 +131,32 @@ class StudyMapDetailViewModel(application: Application) : AndroidViewModel(appli
         )
     }
 
+    fun wrapUpToday(date: String) {
+        val before = _uiState.value.project ?: return
+        val result = todayWrapUpService.wrapUp(
+            project = before,
+            date = date,
+            session = _uiState.value.todaySession,
+        ) ?: return
+        val updated = result.project.copy(updatedAtMillis = System.currentTimeMillis())
+        publish(
+            project = updated,
+            message = getApplication<Application>().getString(R.string.today_wrapped_up_message),
+            todaySession = null,
+        )
+        viewModelScope.launch {
+            writeMutex.withLock {
+                try {
+                    repository.upsert(updated)
+                } catch (error: CancellationException) {
+                    throw error
+                } catch (_: Exception) {
+                    publish(before, getApplication<Application>().getString(R.string.study_map_save_error))
+                }
+            }
+        }
+    }
+
     fun renamePlan(name: String) {
         val title = name.safeStudyProjectTitle()
         if (title.isBlank()) return
@@ -221,9 +248,19 @@ class StudyMapDetailViewModel(application: Application) : AndroidViewModel(appli
         }
     }
 
-    private fun publish(project: StudyProject, message: String? = null) {
-        val todaySession = _uiState.value.todaySession
-        val required = project.plan.blocks.filter(::isRequiredTask)
+    private fun publish(
+        project: StudyProject,
+        message: String? = null,
+        todaySession: TodaySessionState? = _uiState.value.todaySession,
+    ) {
+        val activeData = buildStudyMapData(
+            plan = project.plan,
+            preferences = project.preferences,
+            dailyMinutesOverride = project.dailyMinutesOverride,
+            dailyAvailableMinutesByDate = project.dailyAvailableMinutesByDate,
+            taskProgressById = project.taskProgressById,
+        )
+        val required = activeData.plan.blocks.filter(::isRequiredTask)
         val feasibility = feasibilityChecker.check(
             required,
             project.preferences,
@@ -235,7 +272,7 @@ class StudyMapDetailViewModel(application: Application) : AndroidViewModel(appli
             todaySession = todaySession,
             userMessage = message,
             suggestedDeadline = adjustmentService.suggestedDeadline(
-                project.plan.blocks,
+                activeData.plan.blocks,
                 project.preferences,
                 dailyMinutesOverride = project.dailyMinutesOverride,
             ),
@@ -246,7 +283,7 @@ class StudyMapDetailViewModel(application: Application) : AndroidViewModel(appli
 }
 
 private fun isRequiredTask(task: GeneratedStudyBlock) =
-    task.status != StudyTaskStatus.ExcludedByUser
+    countsTowardRequiredTime(task)
 
 internal fun deadlineAfterSelectedStudyDays(
     days: Int,

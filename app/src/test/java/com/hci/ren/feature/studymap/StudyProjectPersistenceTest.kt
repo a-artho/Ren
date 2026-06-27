@@ -98,6 +98,28 @@ class StudyProjectPersistenceTest {
         assertEquals(mapOf("2026-06-22" to 15), decoded.dailyAvailableMinutesByDate)
     }
 
+    @Test fun taskProgressPersistsSeparatelyFromSourcePlan() {
+        val project = newStudyProject(
+            plan(listOf(GeneratedStudyBlock(
+                id = "chapter",
+                title = "Chapter",
+                order = 1,
+                durationMinutes = 100,
+                instructions = "Study",
+                topicIds = listOf("topic"),
+            ))),
+            preferences(),
+            nowMillis = 100,
+        ).copy(
+            taskProgressById = mapOf("chapter" to StudyTaskProgress(completedMinutes = 50)),
+        )
+
+        val decoded = StudyProjectJsonCodec.decode(StudyProjectJsonCodec.encode(project))
+
+        assertEquals(100, decoded.plan.blocks.single().durationMinutes)
+        assertEquals(StudyTaskProgress(completedMinutes = 50), decoded.taskProgressById["chapter"])
+    }
+
     @Test fun generatedProjectKeepsCanonicalBlocksBeforePersistence() {
         val generated = newStudyProject(
             plan(

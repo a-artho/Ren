@@ -123,6 +123,8 @@ fun StudyMapScreen(
     preferences: PlanSetupSubmission?,
     modifier: Modifier = Modifier,
     dailyMinutesOverride: Int? = null,
+    dailyAvailableMinutesByDate: Map<String, Int> = emptyMap(),
+    taskProgressById: Map<String, StudyTaskProgress> = emptyMap(),
     acceptedTightPlan: Boolean = false,
     changeMessage: String? = null,
     suggestedDeadline: String? = null,
@@ -164,7 +166,13 @@ fun StudyMapScreen(
         return
     }
 
-    val data = buildStudyMapData(plan, preferences, dailyMinutesOverride)
+    val data = buildStudyMapData(
+        plan = plan,
+        preferences = preferences,
+        dailyMinutesOverride = dailyMinutesOverride,
+        dailyAvailableMinutesByDate = dailyAvailableMinutesByDate,
+        taskProgressById = taskProgressById,
+    )
 
     Scaffold(
         modifier = modifier.fillMaxSize(),

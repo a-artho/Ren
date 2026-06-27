@@ -20,6 +20,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.RestartAlt
 import androidx.compose.material.icons.filled.Timer
+import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
@@ -46,12 +47,15 @@ fun TodayScreen(
     session: TodaySessionState?,
     onAvailableTimeChanged: (date: String, minutes: Int?) -> Unit,
     onTaskAction: (date: String, taskId: String, action: TodaySessionTaskAction) -> Unit,
+    onWrapUpToday: (date: String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val data = buildStudyMapData(
         plan = project.plan,
         preferences = project.preferences,
         dailyMinutesOverride = project.dailyMinutesOverride,
+        dailyAvailableMinutesByDate = project.dailyAvailableMinutesByDate,
+        taskProgressById = project.taskProgressById,
     )
     val today = currentStudyCalendar(project.preferences).toStudyDate()
     val todaySchedule = data.schedule.days.firstOrNull { it.date == today }
@@ -108,6 +112,14 @@ fun TodayScreen(
         if (todayPlan.hasPendingChanges) {
             item {
                 PendingTodayChangesCard()
+            }
+        }
+        item {
+            Button(
+                onClick = { onWrapUpToday(today) },
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text(stringResource(R.string.wrap_up_today))
             }
         }
         if (

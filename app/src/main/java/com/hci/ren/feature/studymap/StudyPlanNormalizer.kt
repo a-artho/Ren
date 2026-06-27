@@ -3,6 +3,7 @@ package com.hci.ren.feature.studymap
 import com.hci.ren.feature.pdfupload.presentation.PlanSetupSubmission
 import com.hci.ren.feature.plangeneration.GeneratedStudyBlock
 import com.hci.ren.feature.plangeneration.GeneratedStudyPlan
+import com.hci.ren.feature.plangeneration.StudyTaskStatus
 import kotlin.math.ceil
 import kotlin.math.roundToInt
 
@@ -15,7 +16,7 @@ internal fun GeneratedStudyPlan.prepareForLocalScheduling(
         .map { block ->
             SplitGroup(
                 originalId = block.id,
-                blocks = if (countsTowardRequiredTime(block)) block.splitForCapacity(capacityMinutes) else listOf(block),
+                blocks = if (block.shouldSplitForLocalScheduling()) block.splitForCapacity(capacityMinutes) else listOf(block),
             )
         }
     val dependencyTargetByOriginalId = splitGroups.associate { group ->
@@ -45,6 +46,9 @@ private data class SplitGroup(
     val originalId: String,
     val blocks: List<GeneratedStudyBlock>,
 )
+
+private fun GeneratedStudyBlock.shouldSplitForLocalScheduling(): Boolean =
+    countsTowardRequiredTime(this) && status != StudyTaskStatus.Completed
 
 private fun GeneratedStudyBlock.splitForCapacity(capacityMinutes: Int): List<GeneratedStudyBlock> {
     val totalMinutes = durationMinutes.coerceAtLeast(1)
@@ -78,10 +82,14 @@ private fun GeneratedStudyBlock.splitForCapacity(capacityMinutes: Int): List<Gen
             effortMaxMinutes = scaledEffort(effortMaxMinutes, ratio).coerceAtLeast(partMinutes),
             splitAllowed = false,
             continuityGroup = continuity,
+            status = splitPartStatus(index),
             scheduledDate = null,
         )
     }
 }
+
+private fun GeneratedStudyBlock.splitPartStatus(index: Int): StudyTaskStatus =
+    if (status == StudyTaskStatus.InProgress && index > 0) StudyTaskStatus.NotStarted else status
 
 private fun balancedDurations(totalMinutes: Int, partCount: Int): List<Int> {
     val base = totalMinutes / partCount

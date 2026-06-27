@@ -14,32 +14,50 @@ class StudyProjectDatabaseMigrationTest {
         StudyProjectDatabase::class.java,
     )
 
-    @Test fun migrateFromVersionOneToThreeCreatesCurrentSchema() {
-        helper.createDatabase("study-projects-migration-1-3", 1).close()
+    @Test fun migrateFromVersionOneToFourCreatesCurrentSchema() {
+        helper.createDatabase("study-projects-migration-1-4", 1).close()
 
         val database = helper.runMigrationsAndValidate(
-            "study-projects-migration-1-3",
-            3,
+            "study-projects-migration-1-4",
+            4,
             true,
             DropLegacyStudyProjectsMigration,
             AddDailyAvailableMinutesMigration,
+            AddTaskProgressMigration,
         )
 
         assertTrue(database.hasColumn("active_study_project", "dailyAvailableMinutesJson"))
+        assertTrue(database.hasColumn("active_study_project", "taskProgressJson"))
         database.close()
     }
 
-    @Test fun migrateFromVersionTwoToThreeAddsDailyAvailabilityColumn() {
-        helper.createDatabase("study-projects-migration-2-3", 2).close()
+    @Test fun migrateFromVersionTwoToFourAddsActiveStateColumns() {
+        helper.createDatabase("study-projects-migration-2-4", 2).close()
 
         val database = helper.runMigrationsAndValidate(
-            "study-projects-migration-2-3",
-            3,
+            "study-projects-migration-2-4",
+            4,
             true,
             AddDailyAvailableMinutesMigration,
+            AddTaskProgressMigration,
         )
 
         assertTrue(database.hasColumn("active_study_project", "dailyAvailableMinutesJson"))
+        assertTrue(database.hasColumn("active_study_project", "taskProgressJson"))
+        database.close()
+    }
+
+    @Test fun migrateFromVersionThreeToFourAddsTaskProgressColumn() {
+        helper.createDatabase("study-projects-migration-3-4", 3).close()
+
+        val database = helper.runMigrationsAndValidate(
+            "study-projects-migration-3-4",
+            4,
+            true,
+            AddTaskProgressMigration,
+        )
+
+        assertTrue(database.hasColumn("active_study_project", "taskProgressJson"))
         database.close()
     }
 }

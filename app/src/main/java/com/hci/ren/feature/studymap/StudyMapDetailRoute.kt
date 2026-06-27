@@ -57,6 +57,8 @@ fun StudyMapDetailRoute(
             plan = project.plan,
             preferences = project.preferences,
             dailyMinutesOverride = project.dailyMinutesOverride,
+            dailyAvailableMinutesByDate = project.dailyAvailableMinutesByDate,
+            taskProgressById = project.taskProgressById,
             acceptedTightPlan = project.acceptedTightPlan,
             changeMessage = state.userMessage,
             suggestedDeadline = state.suggestedDeadline,
