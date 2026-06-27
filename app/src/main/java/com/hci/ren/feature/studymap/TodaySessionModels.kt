@@ -58,8 +58,20 @@ data class TodaySessionPlan(
     val completedMinutes: Int
         get() = doneTodayTasks.sumOf { it.durationMinutes.coerceAtLeast(0) }
 
+    val overflowMinutes: Int
+        get() = wontFitTodayTasks.sumOf { it.durationMinutes.coerceAtLeast(0) }
+
+    val movedLaterMinutes: Int
+        get() = movedLaterTasks.sumOf { it.durationMinutes.coerceAtLeast(0) }
+
+    val removedMinutes: Int
+        get() = removedFromPlanTasks.sumOf { it.durationMinutes.coerceAtLeast(0) }
+
     val remainingMinutes: Int
         get() = (availableMinutes - plannedMinutes).coerceAtLeast(0)
+
+    val overPlannedMinutes: Int
+        get() = (plannedMinutes - availableMinutes).coerceAtLeast(0)
 
     val hasPendingChanges: Boolean
         get() = hasAvailabilityOverride || hasTaskChanges

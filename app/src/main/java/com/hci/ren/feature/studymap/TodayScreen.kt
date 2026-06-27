@@ -20,6 +20,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.RestartAlt
 import androidx.compose.material.icons.filled.Timer
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -31,6 +32,10 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
@@ -39,6 +44,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.hci.ren.R
 import com.hci.ren.feature.plangeneration.GeneratedStudyBlock
+import com.hci.ren.feature.plangeneration.StudyTaskStatus
 import com.hci.ren.feature.plangeneration.StudyTaskType
 
 @Composable
@@ -58,8 +64,8 @@ fun TodayScreen(
         taskProgressById = project.taskProgressById,
     )
     val today = currentStudyCalendar(project.preferences).toStudyDate()
-    val todaySchedule = data.schedule.days.firstOrNull { it.date == today }
-    val baseAvailableMinutes = todaySchedule?.capacityMinutes ?: data.dailyMinutes
+    val baseAvailableMinutes = todayBaseAvailableMinutes(project, data, today)
+    val isTodayClosed = project.dailyAvailableMinutesByDate[today] == 0
     val todaySession = session?.takeIf { it.date == today }
     val availableMinutes = todaySession
         ?.availableMinutes
@@ -72,9 +78,22 @@ fun TodayScreen(
         session = todaySession,
         hasAvailabilityOverride = hasAvailabilityOverride,
     )
+    var showWrapUpDialog by remember(today, todayPlan) { mutableStateOf(false) }
+    val emptyState = todayPlan.emptyState(data, isTodayClosed)
     fun updateAvailableMinutes(minutes: Int) {
         val normalized = minutes.coerceIn(0, MaxTodaySessionMinutes)
         onAvailableTimeChanged(today, normalized.takeUnless { it == baseAvailableMinutes })
+    }
+
+    if (showWrapUpDialog) {
+        WrapUpTodayDialog(
+            todayPlan = todayPlan,
+            onDismiss = { showWrapUpDialog = false },
+            onConfirm = {
+                showWrapUpDialog = false
+                onWrapUpToday(today)
+            },
+        )
     }
 
     LazyColumn(
@@ -90,11 +109,7 @@ fun TodayScreen(
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         item {
-            TodayHeader(
-                plannedMinutes = todayPlan.plannedMinutes,
-                completedMinutes = todayPlan.completedMinutes,
-                availableMinutes = todayPlan.availableMinutes,
-            )
+            TodayBudgetCard(todayPlan, isTodayClosed)
         }
         item {
             AvailableTimeCard(
@@ -111,12 +126,12 @@ fun TodayScreen(
         }
         if (todayPlan.hasPendingChanges) {
             item {
-                PendingTodayChangesCard()
+                PendingTodayChangesCard(todayPlan.replanFeedbackMessage())
             }
         }
         item {
             Button(
-                onClick = { onWrapUpToday(today) },
+                onClick = { showWrapUpDialog = true },
                 modifier = Modifier.fillMaxWidth(),
             ) {
                 Text(stringResource(R.string.wrap_up_today))
@@ -131,7 +146,7 @@ fun TodayScreen(
             todayPlan.removedFromPlanTasks.isEmpty() &&
             todayPlan.pullInCandidates.isEmpty()
         ) {
-            item { EmptyTodayCard() }
+            item { EmptyTodayCard(emptyState) }
         } else {
             if (todayPlan.doTodayTasks.isNotEmpty()) {
                 item {
@@ -177,6 +192,23 @@ fun TodayScreen(
                             TodayTaskActionSpec(
                                 label = stringResource(R.string.remove_from_plan),
                                 onClick = { onTaskAction(today, task.id, TodaySessionTaskAction.RemoveFromPlan) },
+                            ),
+                        ),
+                    )
+                }
+            }
+            if (todayPlan.pullInCandidates.isNotEmpty()) {
+                item {
+                    TodaySectionTitle(stringResource(R.string.pull_ahead_suggestions))
+                }
+                items(todayPlan.pullInCandidates, key = { "pull-${it.id}" }) { task ->
+                    TodayTaskRow(
+                        task = task,
+                        supportingText = stringResource(R.string.pull_in_if_time_remains),
+                        actions = listOf(
+                            TodayTaskActionSpec(
+                                label = stringResource(R.string.pull_in),
+                                onClick = { onTaskAction(today, task.id, TodaySessionTaskAction.PullIn) },
                             ),
                         ),
                     )
@@ -237,7 +269,11 @@ fun TodayScreen(
                 items(todayPlan.movedLaterTasks, key = { "moved-${it.id}" }) { task ->
                     TodayTaskRow(
                         task = task,
-                        supportingText = stringResource(R.string.moved_later_message),
+                        supportingText = if (todayPlan.remainingMinutes > 0) {
+                            stringResource(R.string.moved_later_can_restore_message)
+                        } else {
+                            stringResource(R.string.moved_later_message)
+                        },
                         actions = listOf(
                             TodayTaskActionSpec(
                                 label = stringResource(R.string.restore),
@@ -268,20 +304,149 @@ fun TodayScreen(
                     )
                 }
             }
-            if (todayPlan.pullInCandidates.isNotEmpty()) {
-                item {
-                    TodaySectionTitle(stringResource(R.string.pull_ahead_suggestions))
+        }
+    }
+}
+
+@Composable
+private fun TodayBudgetCard(
+    todayPlan: TodaySessionPlan,
+    isTodayClosed: Boolean,
+) {
+    val pressureMinutes = maxOf(todayPlan.overPlannedMinutes, todayPlan.overflowMinutes)
+    val title = when {
+        isTodayClosed -> stringResource(R.string.today_time_closed)
+        pressureMinutes > 0 -> stringResource(
+            R.string.today_time_overflow,
+            formatTodayMinutes(pressureMinutes),
+        )
+        todayPlan.remainingMinutes > 0 -> stringResource(
+            R.string.today_time_free,
+            formatTodayMinutes(todayPlan.remainingMinutes),
+        )
+        else -> stringResource(R.string.today_time_exact)
+    }
+    val message = when {
+        isTodayClosed -> stringResource(R.string.today_time_closed_message)
+        pressureMinutes > 0 -> stringResource(R.string.today_time_overflow_message)
+        todayPlan.remainingMinutes > 0 -> stringResource(R.string.today_time_free_message)
+        else -> stringResource(R.string.today_time_exact_message)
+    }
+    val summary = when {
+        isTodayClosed -> stringResource(
+            R.string.today_budget_summary_closed,
+            formatTodayMinutes(todayPlan.availableMinutes),
+        )
+        pressureMinutes > 0 -> stringResource(
+            R.string.today_budget_summary_overflow,
+            formatTodayMinutes(todayPlan.availableMinutes),
+            formatTodayMinutes(todayPlan.plannedMinutes),
+            formatTodayMinutes(pressureMinutes),
+        )
+        todayPlan.remainingMinutes > 0 -> stringResource(
+            R.string.today_budget_summary_free,
+            formatTodayMinutes(todayPlan.availableMinutes),
+            formatTodayMinutes(todayPlan.plannedMinutes),
+            formatTodayMinutes(todayPlan.remainingMinutes),
+        )
+        else -> stringResource(
+            R.string.today_budget_summary_exact,
+            formatTodayMinutes(todayPlan.availableMinutes),
+            formatTodayMinutes(todayPlan.plannedMinutes),
+        )
+    }
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(18.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        border = CardDefaults.outlinedCardBorder(),
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Text(
+                text = stringResource(R.string.today),
+                style = MaterialTheme.typography.headlineSmall,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+            Text(
+                text = stringResource(R.string.today_time_budget_title),
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.primary,
+                fontWeight = FontWeight.SemiBold,
+            )
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+            Text(
+                text = message,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Text(
+                text = summary,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurface,
+                fontWeight = FontWeight.Medium,
+            )
+            Text(
+                text = stringResource(R.string.today_budget_method_note),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    TodayBudgetMetric(
+                        label = stringResource(R.string.available_metric_label),
+                        value = formatTodayMinutes(todayPlan.availableMinutes),
+                        modifier = Modifier.weight(1f),
+                    )
+                    TodayBudgetMetric(
+                        label = stringResource(R.string.planned_metric_label),
+                        value = formatTodayMinutes(todayPlan.plannedMinutes),
+                        modifier = Modifier.weight(1f),
+                    )
                 }
-                items(todayPlan.pullInCandidates, key = { "pull-${it.id}" }) { task ->
-                    TodayTaskRow(
-                        task = task,
-                        supportingText = stringResource(R.string.pull_in_if_time_remains),
-                        actions = listOf(
-                            TodayTaskActionSpec(
-                                label = stringResource(R.string.pull_in),
-                                onClick = { onTaskAction(today, task.id, TodaySessionTaskAction.PullIn) },
-                            ),
-                        ),
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    TodayBudgetMetric(
+                        label = stringResource(R.string.completed),
+                        value = formatTodayMinutes(todayPlan.completedMinutes),
+                        modifier = Modifier.weight(1f),
+                    )
+                    TodayBudgetMetric(
+                        label = if (pressureMinutes > 0) {
+                            stringResource(R.string.overflow_metric_label)
+                        } else {
+                            stringResource(R.string.remaining_metric_label)
+                        },
+                        value = formatTodayMinutes(maxOf(todayPlan.remainingMinutes, pressureMinutes)),
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    TodayBudgetMetric(
+                        label = stringResource(R.string.moving_later_metric_label),
+                        value = formatTodayMinutes(todayPlan.overflowMinutes + todayPlan.movedLaterMinutes),
+                        modifier = Modifier.weight(1f),
+                    )
+                    TodayBudgetMetric(
+                        label = stringResource(R.string.removed_metric_label),
+                        value = formatTodayMinutes(todayPlan.removedMinutes),
+                        modifier = Modifier.weight(1f),
                     )
                 }
             }
@@ -290,50 +455,14 @@ fun TodayScreen(
 }
 
 @Composable
-private fun TodayHeader(
-    plannedMinutes: Int,
-    completedMinutes: Int,
-    availableMinutes: Int,
-) {
-    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Text(
-            text = stringResource(R.string.today),
-            style = MaterialTheme.typography.headlineSmall,
-            fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.onBackground,
-        )
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            TodayMetric(
-                label = stringResource(R.string.available_metric_label),
-                value = formatTodayMinutes(availableMinutes),
-                modifier = Modifier.weight(1f),
-            )
-            TodayMetric(
-                label = stringResource(R.string.planned_metric_label),
-                value = formatTodayMinutes(plannedMinutes),
-                modifier = Modifier.weight(1f),
-            )
-            TodayMetric(
-                label = stringResource(R.string.completed),
-                value = formatTodayMinutes(completedMinutes),
-                modifier = Modifier.weight(1f),
-            )
-        }
-    }
-}
-
-@Composable
-private fun TodayMetric(
+private fun TodayBudgetMetric(
     label: String,
     value: String,
     modifier: Modifier = Modifier,
 ) {
     Column(
         modifier = modifier,
-        verticalArrangement = Arrangement.spacedBy(3.dp),
+        verticalArrangement = Arrangement.spacedBy(2.dp),
     ) {
         Text(
             text = label,
@@ -344,10 +473,11 @@ private fun TodayMetric(
         )
         Text(
             text = value,
-            style = MaterialTheme.typography.titleLarge,
+            style = MaterialTheme.typography.titleMedium,
             fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.onBackground,
+            color = MaterialTheme.colorScheme.onSurface,
             maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
         )
     }
 }
@@ -438,7 +568,7 @@ private fun AvailableTimeCard(
 }
 
 @Composable
-private fun PendingTodayChangesCard() {
+private fun PendingTodayChangesCard(message: String) {
     Surface(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(14.dp),
@@ -446,12 +576,20 @@ private fun PendingTodayChangesCard() {
         contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
     ) {
         Text(
-            text = stringResource(R.string.today_pending_changes_message),
+            text = message,
             modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
             style = MaterialTheme.typography.bodyMedium,
             fontWeight = FontWeight.Medium,
         )
     }
+}
+
+@Composable
+private fun TodaySessionPlan.replanFeedbackMessage(): String = when {
+    hasAvailabilityOverride && overflowMinutes > 0 -> stringResource(R.string.today_replanned_overflow_message)
+    hasAvailabilityOverride && remainingMinutes > 0 -> stringResource(R.string.today_replanned_extra_time_message)
+    hasAvailabilityOverride -> stringResource(R.string.today_replanned_message)
+    else -> stringResource(R.string.today_pending_changes_message)
 }
 
 @Composable
@@ -465,7 +603,19 @@ private fun TodaySectionTitle(title: String) {
 }
 
 @Composable
-private fun EmptyTodayCard() {
+private fun EmptyTodayCard(state: TodayEmptyState) {
+    val title = when (state) {
+        TodayEmptyState.Closed -> stringResource(R.string.today_closed_empty_title)
+        TodayEmptyState.NoAvailableTime -> stringResource(R.string.today_no_available_time_title)
+        TodayEmptyState.Complete -> stringResource(R.string.today_complete_empty_title)
+        TodayEmptyState.NoScheduledTasks -> stringResource(R.string.no_tasks_today)
+    }
+    val message = when (state) {
+        TodayEmptyState.Closed -> stringResource(R.string.today_closed_empty_message)
+        TodayEmptyState.NoAvailableTime -> stringResource(R.string.today_no_available_time_message)
+        TodayEmptyState.Complete -> stringResource(R.string.today_complete_empty_message)
+        TodayEmptyState.NoScheduledTasks -> stringResource(R.string.no_tasks_today_message)
+    }
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(18.dp),
@@ -477,12 +627,12 @@ private fun EmptyTodayCard() {
             verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
             Text(
-                text = stringResource(R.string.no_tasks_today),
+                text = title,
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold,
             )
             Text(
-                text = stringResource(R.string.no_tasks_today_message),
+                text = message,
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -543,6 +693,105 @@ private fun TodayTaskRow(
             }
         }
     }
+}
+
+@Composable
+private fun WrapUpTodayDialog(
+    todayPlan: TodaySessionPlan,
+    onDismiss: () -> Unit,
+    onConfirm: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.wrap_up_today_title)) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text(
+                    text = stringResource(R.string.wrap_up_today_message),
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                WrapUpSummaryRow(
+                    label = stringResource(R.string.completed),
+                    count = todayPlan.doneTodayTasks.size,
+                    minutes = todayPlan.completedMinutes,
+                )
+                WrapUpSummaryRow(
+                    label = stringResource(R.string.moving_later_metric_label),
+                    count = todayPlan.wontFitTodayTasks.size + todayPlan.movedLaterTasks.size,
+                    minutes = todayPlan.overflowMinutes + todayPlan.movedLaterMinutes,
+                )
+                WrapUpSummaryRow(
+                    label = stringResource(R.string.removed_metric_label),
+                    count = todayPlan.removedFromPlanTasks.size,
+                    minutes = todayPlan.removedMinutes,
+                )
+                Text(
+                    text = stringResource(R.string.wrap_up_today_closes_day),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        },
+        confirmButton = {
+            Button(onClick = onConfirm) {
+                Text(stringResource(R.string.wrap_up_today_confirm))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.cancel))
+            }
+        },
+    )
+}
+
+@Composable
+private fun WrapUpSummaryRow(
+    label: String,
+    count: Int,
+    minutes: Int,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.bodyMedium,
+            fontWeight = FontWeight.Medium,
+        )
+        Text(
+            text = stringResource(R.string.wrap_up_summary_value, count, formatTodayMinutes(minutes)),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
+private enum class TodayEmptyState {
+    Closed,
+    NoAvailableTime,
+    Complete,
+    NoScheduledTasks,
+}
+
+internal fun todayBaseAvailableMinutes(
+    project: StudyProject,
+    data: StudyMapData,
+    today: String,
+): Int = project.dailyAvailableMinutesByDate[today]
+    ?: data.schedule.days.firstOrNull { it.date == today }?.capacityMinutes
+    ?: data.dailyMinutes
+
+private fun TodaySessionPlan.emptyState(
+    data: StudyMapData,
+    isTodayClosed: Boolean,
+): TodayEmptyState = when {
+    isTodayClosed -> TodayEmptyState.Closed
+    availableMinutes == 0 -> TodayEmptyState.NoAvailableTime
+    data.activeTasks.isNotEmpty() && data.activeTasks.all { it.status == StudyTaskStatus.Completed } -> TodayEmptyState.Complete
+    else -> TodayEmptyState.NoScheduledTasks
 }
 
 private data class TodayTaskActionSpec(

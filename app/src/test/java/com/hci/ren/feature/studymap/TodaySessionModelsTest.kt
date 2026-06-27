@@ -34,6 +34,66 @@ class TodaySessionModelsTest {
         assertTrue(session.hasPendingChanges)
     }
 
+    @Test fun reducedTodayAvailabilityExposesOverflowMinutes() {
+        val tasks = listOf(
+            task("first", 30).copy(order = 1),
+            task("second", 30).copy(order = 2),
+            task("third", 30).copy(order = 3),
+        )
+        val data = dataFor(todayTasks = tasks, dailyMinutes = 90)
+
+        val session = TodaySessionPlanner().plan(
+            data = data,
+            date = "2026-06-22",
+            availableMinutes = 60,
+            hasAvailabilityOverride = true,
+        )
+
+        assertEquals(30, session.overflowMinutes)
+        assertEquals(0, session.overPlannedMinutes)
+        assertEquals(0, session.remainingMinutes)
+    }
+
+    @Test fun pulledInWorkCanExposeOverPlannedMinutes() {
+        val data = dataFor(
+            todayTasks = listOf(task("today", 30).copy(order = 1)),
+            futureTasks = listOf(task("future", 60).copy(order = 2)),
+            dailyMinutes = 30,
+        )
+        val state = TodaySessionState(date = "2026-06-22")
+            .applyTaskAction("future", TodaySessionTaskAction.PullIn)
+
+        val session = TodaySessionPlanner().plan(
+            data = data,
+            date = "2026-06-22",
+            availableMinutes = 30,
+            session = state,
+        )
+
+        assertEquals(90, session.plannedMinutes)
+        assertEquals(60, session.overPlannedMinutes)
+        assertEquals(0, session.remainingMinutes)
+    }
+
+    @Test fun closedTodayCapacityOverrideWinsWithoutScheduleRow() {
+        val data = dataFor(todayTasks = emptyList(), dailyMinutes = 60)
+            .copy(schedule = StudySchedule(days = emptyList(), unscheduledTasks = emptyList()))
+        val project = project(
+            data = data,
+            dailyAvailableMinutesByDate = mapOf("2026-06-22" to 0),
+        )
+
+        assertEquals(0, todayBaseAvailableMinutes(project, data, "2026-06-22"))
+        assertEquals(
+            60,
+            todayBaseAvailableMinutes(
+                project.copy(dailyAvailableMinutesByDate = emptyMap()),
+                data,
+                "2026-06-22",
+            ),
+        )
+    }
+
     @Test fun tasksThatDoNotFitAreNotPendingChangesWithoutAnOverride() {
         val tasks = listOf(task("long", 60).copy(order = 1))
         val data = dataFor(todayTasks = tasks, dailyMinutes = 30)
@@ -267,6 +327,30 @@ class TodaySessionModelsTest {
         assertEquals(emptyList<String>(), session.pullInCandidates.map { it.id })
     }
 
+    @Test fun extraTimeDoesNotSuggestRemovedTasks() {
+        val today = task("today", 30).copy(order = 1)
+        val removed = task("removed", 30).copy(order = 2)
+        val next = task("next", 30).copy(order = 3)
+        val data = dataFor(
+            todayTasks = listOf(today),
+            futureTasks = listOf(removed, next),
+            dailyMinutes = 30,
+        )
+        val state = TodaySessionState(date = "2026-06-22")
+            .applyTaskAction("removed", TodaySessionTaskAction.RemoveFromPlan)
+
+        val session = TodaySessionPlanner().plan(
+            data = data,
+            date = "2026-06-22",
+            availableMinutes = 60,
+            session = state,
+            hasAvailabilityOverride = true,
+        )
+
+        assertEquals(listOf("next"), session.pullInCandidates.map { it.id })
+        assertEquals(listOf("removed"), session.removedFromPlanTasks.map { it.id })
+    }
+
     private fun dataFor(
         todayTasks: List<GeneratedStudyBlock>,
         futureTasks: List<GeneratedStudyBlock> = emptyList(),
@@ -309,6 +393,20 @@ class TodaySessionModelsTest {
         blocks = tasks,
         totalEstimatedMinutes = tasks.sumOf { it.durationMinutes },
         projectName = "Plan",
+    )
+
+    private fun project(
+        data: StudyMapData,
+        dailyAvailableMinutesByDate: Map<String, Int> = emptyMap(),
+    ) = StudyProject(
+        id = "project",
+        title = "Plan",
+        createdAtMillis = 0L,
+        updatedAtMillis = 0L,
+        deadlineAtMillis = null,
+        plan = data.plan,
+        preferences = data.preferences,
+        dailyAvailableMinutesByDate = dailyAvailableMinutesByDate,
     )
 
     private fun submission(dailyMinutes: Int) = PlanSetupSubmission(
