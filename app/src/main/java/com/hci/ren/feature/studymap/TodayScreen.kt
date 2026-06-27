@@ -28,6 +28,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -44,6 +45,7 @@ fun TodayScreen(
     project: StudyProject,
     session: TodaySessionState?,
     onAvailableTimeChanged: (date: String, minutes: Int?) -> Unit,
+    onTaskAction: (date: String, taskId: String, action: TodaySessionTaskAction) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val data = buildStudyMapData(
@@ -54,15 +56,16 @@ fun TodayScreen(
     val today = currentStudyCalendar(project.preferences).toStudyDate()
     val todaySchedule = data.schedule.days.firstOrNull { it.date == today }
     val baseAvailableMinutes = todaySchedule?.capacityMinutes ?: data.dailyMinutes
-    val availableMinutes = session
-        ?.takeIf { it.date == today }
+    val todaySession = session?.takeIf { it.date == today }
+    val availableMinutes = todaySession
         ?.availableMinutes
         ?: baseAvailableMinutes
-    val hasAvailabilityOverride = session?.date == today && availableMinutes != baseAvailableMinutes
+    val hasAvailabilityOverride = todaySession?.availableMinutes != null && availableMinutes != baseAvailableMinutes
     val todayPlan = TodaySessionPlanner().plan(
         data = data,
         date = today,
         availableMinutes = availableMinutes,
+        session = todaySession,
         hasAvailabilityOverride = hasAvailabilityOverride,
     )
     fun updateAvailableMinutes(minutes: Int) {
@@ -109,7 +112,11 @@ fun TodayScreen(
         }
         if (
             todayPlan.doTodayTasks.isEmpty() &&
+            todayPlan.pulledInTasks.isEmpty() &&
+            todayPlan.doneTodayTasks.isEmpty() &&
             todayPlan.wontFitTodayTasks.isEmpty() &&
+            todayPlan.movedLaterTasks.isEmpty() &&
+            todayPlan.removedFromPlanTasks.isEmpty() &&
             todayPlan.pullInCandidates.isEmpty()
         ) {
             item { EmptyTodayCard() }
@@ -119,7 +126,75 @@ fun TodayScreen(
                     TodaySectionTitle(stringResource(R.string.today_tasks))
                 }
                 items(todayPlan.doTodayTasks, key = { "today-${it.id}" }) { task ->
-                    TodayTaskRow(task = task)
+                    TodayTaskRow(
+                        task = task,
+                        actions = listOf(
+                            TodayTaskActionSpec(
+                                label = stringResource(R.string.mark_done),
+                                onClick = { onTaskAction(today, task.id, TodaySessionTaskAction.MarkDone) },
+                            ),
+                            TodayTaskActionSpec(
+                                label = stringResource(R.string.move_later),
+                                onClick = { onTaskAction(today, task.id, TodaySessionTaskAction.MoveLater) },
+                            ),
+                            TodayTaskActionSpec(
+                                label = stringResource(R.string.remove_from_plan),
+                                onClick = { onTaskAction(today, task.id, TodaySessionTaskAction.RemoveFromPlan) },
+                            ),
+                        ),
+                    )
+                }
+            }
+            if (todayPlan.pulledInTasks.isNotEmpty()) {
+                item {
+                    TodaySectionTitle(stringResource(R.string.pulled_in_today))
+                }
+                items(todayPlan.pulledInTasks, key = { "pulled-${it.id}" }) { task ->
+                    TodayTaskRow(
+                        task = task,
+                        supportingText = stringResource(R.string.pulled_in_today_message),
+                        actions = listOf(
+                            TodayTaskActionSpec(
+                                label = stringResource(R.string.mark_done),
+                                onClick = { onTaskAction(today, task.id, TodaySessionTaskAction.MarkDone) },
+                            ),
+                            TodayTaskActionSpec(
+                                label = stringResource(R.string.undo),
+                                onClick = { onTaskAction(today, task.id, TodaySessionTaskAction.UndoPullIn) },
+                            ),
+                            TodayTaskActionSpec(
+                                label = stringResource(R.string.remove_from_plan),
+                                onClick = { onTaskAction(today, task.id, TodaySessionTaskAction.RemoveFromPlan) },
+                            ),
+                        ),
+                    )
+                }
+            }
+            if (todayPlan.doneTodayTasks.isNotEmpty()) {
+                item {
+                    TodaySectionTitle(stringResource(R.string.done_today))
+                }
+                items(todayPlan.doneTodayTasks, key = { "done-${it.id}" }) { task ->
+                    val isTemporaryDone = task.id in todaySession?.doneTodayTaskIds.orEmpty()
+                    val actions = if (isTemporaryDone) {
+                        listOf(
+                            TodayTaskActionSpec(
+                                label = stringResource(R.string.undo),
+                                onClick = { onTaskAction(today, task.id, TodaySessionTaskAction.UndoDone) },
+                            ),
+                        )
+                    } else {
+                        emptyList()
+                    }
+                    TodayTaskRow(
+                        task = task,
+                        supportingText = if (isTemporaryDone) {
+                            stringResource(R.string.done_today_message)
+                        } else {
+                            stringResource(R.string.already_done_today_message)
+                        },
+                        actions = actions,
+                    )
                 }
             }
             if (todayPlan.wontFitTodayTasks.isNotEmpty()) {
@@ -130,6 +205,54 @@ fun TodayScreen(
                     TodayTaskRow(
                         task = task,
                         supportingText = stringResource(R.string.move_later_at_wrap_up),
+                        actions = listOf(
+                            TodayTaskActionSpec(
+                                label = stringResource(R.string.move_later),
+                                onClick = { onTaskAction(today, task.id, TodaySessionTaskAction.MoveLater) },
+                            ),
+                            TodayTaskActionSpec(
+                                label = stringResource(R.string.remove_from_plan),
+                                onClick = { onTaskAction(today, task.id, TodaySessionTaskAction.RemoveFromPlan) },
+                            ),
+                        ),
+                    )
+                }
+            }
+            if (todayPlan.movedLaterTasks.isNotEmpty()) {
+                item {
+                    TodaySectionTitle(stringResource(R.string.moved_later))
+                }
+                items(todayPlan.movedLaterTasks, key = { "moved-${it.id}" }) { task ->
+                    TodayTaskRow(
+                        task = task,
+                        supportingText = stringResource(R.string.moved_later_message),
+                        actions = listOf(
+                            TodayTaskActionSpec(
+                                label = stringResource(R.string.restore),
+                                onClick = { onTaskAction(today, task.id, TodaySessionTaskAction.RestoreMovedLater) },
+                            ),
+                            TodayTaskActionSpec(
+                                label = stringResource(R.string.remove_from_plan),
+                                onClick = { onTaskAction(today, task.id, TodaySessionTaskAction.RemoveFromPlan) },
+                            ),
+                        ),
+                    )
+                }
+            }
+            if (todayPlan.removedFromPlanTasks.isNotEmpty()) {
+                item {
+                    TodaySectionTitle(stringResource(R.string.removed_from_plan))
+                }
+                items(todayPlan.removedFromPlanTasks, key = { "removed-${it.id}" }) { task ->
+                    TodayTaskRow(
+                        task = task,
+                        supportingText = stringResource(R.string.removed_from_plan_message),
+                        actions = listOf(
+                            TodayTaskActionSpec(
+                                label = stringResource(R.string.restore),
+                                onClick = { onTaskAction(today, task.id, TodaySessionTaskAction.RestoreRemoved) },
+                            ),
+                        ),
                     )
                 }
             }
@@ -141,6 +264,12 @@ fun TodayScreen(
                     TodayTaskRow(
                         task = task,
                         supportingText = stringResource(R.string.pull_in_if_time_remains),
+                        actions = listOf(
+                            TodayTaskActionSpec(
+                                label = stringResource(R.string.pull_in),
+                                onClick = { onTaskAction(today, task.id, TodaySessionTaskAction.PullIn) },
+                            ),
+                        ),
                     )
                 }
             }
@@ -353,6 +482,7 @@ private fun EmptyTodayCard() {
 private fun TodayTaskRow(
     task: GeneratedStudyBlock,
     supportingText: String? = null,
+    actions: List<TodayTaskActionSpec> = emptyList(),
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -386,9 +516,27 @@ private fun TodayTaskRow(
                     overflow = TextOverflow.Ellipsis,
                 )
             }
+            if (actions.isNotEmpty()) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    actions.forEach { action ->
+                        TextButton(onClick = action.onClick) {
+                            Text(action.label)
+                        }
+                    }
+                }
+            }
         }
     }
 }
+
+private data class TodayTaskActionSpec(
+    val label: String,
+    val onClick: () -> Unit,
+)
 
 @Composable
 private fun taskTypeLabel(type: StudyTaskType): String = when (type) {

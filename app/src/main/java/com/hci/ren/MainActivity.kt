@@ -226,6 +226,7 @@ class MainActivity : ComponentActivity() {
                                 project = project,
                                 session = studyMapState.todaySession,
                                 onAvailableTimeChanged = studyMapDetailViewModel::updateTodayAvailableTime,
+                                onTaskAction = studyMapDetailViewModel::updateTodayTaskAction,
                                 modifier = Modifier.padding(scaffoldPadding),
                             )
                         } ?: PlaceholderTabScreen(

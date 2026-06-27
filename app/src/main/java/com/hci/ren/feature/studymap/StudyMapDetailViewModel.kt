@@ -105,8 +105,28 @@ class StudyMapDetailViewModel(application: Application) : AndroidViewModel(appli
         if (date.toStudyCalendar() == null) return
         val normalized = minutes?.coerceIn(0, MaxTodaySessionMinutes)
         val current = _uiState.value
+        val session = current.todaySession
+            ?.takeIf { it.date == date }
+            ?: TodaySessionState(date = date)
+        val updatedSession = session.copy(availableMinutes = normalized)
         _uiState.value = current.copy(
-            todaySession = normalized?.let { TodaySessionState(date = date, availableMinutes = it) },
+            todaySession = updatedSession.takeUnless { it.isEmpty },
+        )
+    }
+
+    fun updateTodayTaskAction(
+        date: String,
+        taskId: String,
+        action: TodaySessionTaskAction,
+    ) {
+        if (date.toStudyCalendar() == null || taskId.isBlank()) return
+        val current = _uiState.value
+        val session = current.todaySession
+            ?.takeIf { it.date == date }
+            ?: TodaySessionState(date = date)
+        val updatedSession = session.applyTaskAction(taskId, action)
+        _uiState.value = current.copy(
+            todaySession = updatedSession.takeUnless { it.isEmpty },
         )
     }
 

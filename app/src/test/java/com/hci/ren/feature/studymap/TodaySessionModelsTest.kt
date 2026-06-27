@@ -77,9 +77,114 @@ class TodaySessionModelsTest {
             hasAvailabilityOverride = true,
         )
 
-        assertEquals(listOf("done"), session.doTodayTasks.map { it.id })
+        assertEquals(emptyList<String>(), session.doTodayTasks.map { it.id })
+        assertEquals(listOf("done"), session.doneTodayTasks.map { it.id })
         assertEquals(listOf("later"), session.wontFitTodayTasks.map { it.id })
         assertEquals(45, session.completedMinutes)
+    }
+
+    @Test fun sessionActionsCreateOrderedTemporaryBuckets() {
+        val todayTasks = listOf(
+            task("remove", 15).copy(order = 1),
+            task("done", 15).copy(order = 2),
+            task("move", 15).copy(order = 3),
+            task("keep", 15).copy(order = 4),
+        )
+        val futureTasks = listOf(
+            task("pull-first", 15).copy(order = 5),
+            task("pull-second", 15).copy(order = 6),
+        )
+        val data = dataFor(todayTasks = todayTasks, futureTasks = futureTasks, dailyMinutes = 90)
+        val state = TodaySessionState(
+            date = "2026-06-22",
+            movedLaterTaskIds = setOf("move"),
+            pulledInTaskIds = setOf("pull-second", "pull-first"),
+            doneTodayTaskIds = setOf("done"),
+            removedFromPlanTaskIds = setOf("remove"),
+        )
+
+        val session = TodaySessionPlanner().plan(
+            data = data,
+            date = "2026-06-22",
+            availableMinutes = 90,
+            session = state,
+        )
+
+        assertEquals(listOf("keep"), session.doTodayTasks.map { it.id })
+        assertEquals(listOf("pull-first", "pull-second"), session.pulledInTasks.map { it.id })
+        assertEquals(listOf("done"), session.doneTodayTasks.map { it.id })
+        assertEquals(listOf("move"), session.movedLaterTasks.map { it.id })
+        assertEquals(listOf("remove"), session.removedFromPlanTasks.map { it.id })
+        assertTrue(session.hasPendingChanges)
+    }
+
+    @Test fun donePulledTaskReturnsToPulledInWhenDoneIsUndone() {
+        val today = task("today", 30).copy(order = 1)
+        val future = task("future", 30).copy(order = 2)
+        val data = dataFor(
+            todayTasks = listOf(today),
+            futureTasks = listOf(future),
+            dailyMinutes = 60,
+        )
+        val state = TodaySessionState(date = "2026-06-22")
+            .applyTaskAction("future", TodaySessionTaskAction.PullIn)
+            .applyTaskAction("future", TodaySessionTaskAction.MarkDone)
+            .applyTaskAction("future", TodaySessionTaskAction.UndoDone)
+
+        val session = TodaySessionPlanner().plan(
+            data = data,
+            date = "2026-06-22",
+            availableMinutes = 60,
+            session = state,
+        )
+
+        assertEquals(listOf("future"), session.pulledInTasks.map { it.id })
+        assertEquals(emptyList<String>(), session.doneTodayTasks.map { it.id })
+    }
+
+    @Test fun staleSessionTaskIdsDoNotCreatePendingChanges() {
+        val data = dataFor(
+            todayTasks = listOf(task("today", 30).copy(order = 1)),
+            dailyMinutes = 30,
+        )
+        val state = TodaySessionState(
+            date = "2026-06-22",
+            movedLaterTaskIds = setOf("missing-moved"),
+            pulledInTaskIds = setOf("missing-pulled"),
+            doneTodayTaskIds = setOf("missing-done"),
+            removedFromPlanTaskIds = setOf("missing-removed"),
+        )
+
+        val session = TodaySessionPlanner().plan(
+            data = data,
+            date = "2026-06-22",
+            availableMinutes = 30,
+            session = state,
+        )
+
+        assertFalse(session.hasPendingChanges)
+    }
+
+    @Test fun alreadyCompletedTaskIdDoesNotCreateTemporaryDoneChange() {
+        val completed = task("done", 30).copy(
+            order = 1,
+            status = StudyTaskStatus.Completed,
+        )
+        val data = dataFor(todayTasks = listOf(completed), dailyMinutes = 30)
+        val state = TodaySessionState(
+            date = "2026-06-22",
+            doneTodayTaskIds = setOf("done"),
+        )
+
+        val session = TodaySessionPlanner().plan(
+            data = data,
+            date = "2026-06-22",
+            availableMinutes = 30,
+            session = state,
+        )
+
+        assertEquals(listOf("done"), session.doneTodayTasks.map { it.id })
+        assertFalse(session.hasPendingChanges)
     }
 
     @Test fun availableMinutesAreNormalizedBeforePlanningPullAheadCapacity() {
