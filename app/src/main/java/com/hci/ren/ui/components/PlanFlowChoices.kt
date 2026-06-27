@@ -183,9 +183,9 @@ fun PlanFlowCircleChoice(
     modifier: Modifier = Modifier,
 ) {
     val targetBorderColor = if (isSelected) {
-        MaterialTheme.colorScheme.primary
+        MaterialTheme.colorScheme.primary.copy(alpha = 0.86f)
     } else {
-        MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.82f)
+        MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.72f)
     }
     val targetTextColor = if (isSelected) {
         MaterialTheme.colorScheme.primary
@@ -193,7 +193,7 @@ fun PlanFlowCircleChoice(
         MaterialTheme.colorScheme.onSurfaceVariant
     }
     val targetBackgroundColor = if (isSelected) {
-        MaterialTheme.colorScheme.surface
+        MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.28f)
     } else {
         MaterialTheme.colorScheme.surface
     }
