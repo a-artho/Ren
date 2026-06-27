@@ -19,7 +19,7 @@ class StudyScheduleCalculator {
     fun calculate(
         tasks: List<GeneratedStudyBlock>,
         preferences: PlanSetupSubmission,
-        today: Calendar = Calendar.getInstance(),
+        today: Calendar = currentStudyCalendar(preferences),
         dailyMinutesOverride: Int? = null,
     ): StudySchedule {
         val capacity = (dailyMinutesOverride ?: preferences.dailyStudyMinutes).coerceAtLeast(0)
@@ -359,6 +359,20 @@ internal fun dayOnly(value: Calendar): Calendar = (value.clone() as Calendar).ap
     set(Calendar.SECOND, 0)
     set(Calendar.MILLISECOND, 0)
 }
+
+internal fun currentStudyCalendar(preferences: PlanSetupSubmission): Calendar =
+    Calendar.getInstance().asStudyCalendar(preferences)
+
+internal fun currentStudyCalendar(resetOffsetHours: Int): Calendar =
+    Calendar.getInstance().asStudyCalendar(resetOffsetHours)
+
+internal fun Calendar.asStudyCalendar(preferences: PlanSetupSubmission): Calendar =
+    asStudyCalendar(preferences.studyDayResetOffsetHours)
+
+internal fun Calendar.asStudyCalendar(resetOffsetHours: Int): Calendar =
+    (clone() as Calendar).apply {
+        add(Calendar.HOUR_OF_DAY, -resetOffsetHours.coerceIn(0, 23))
+    }
 
 internal val Calendar.studyDay: StudyDay get() = when (get(Calendar.DAY_OF_WEEK)) {
     Calendar.MONDAY -> StudyDay.Monday

@@ -248,6 +248,7 @@ fun StudyMapScreen(
             current = deadlineLabel(preferences),
             recommendedDaysBalanced = recommendedDaysBalanced,
             recommendedDaysIntensive = recommendedDaysIntensive,
+            resetOffsetHours = preferences.studyDayResetOffsetHours,
             onDismiss = { adjustment = null },
             onExtendDeadline = { days, intensive -> onExtendDeadline(days, intensive); adjustment = null },
             onCustomDeadline = { millis ->
@@ -680,6 +681,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.scheduleItems(
             StudyScheduleTimeline(
                 days = data.schedule.days,
                 documents = data.plan.sourceDocuments,
+                studyToday = currentStudyCalendar(data.preferences).toStudyDate(),
                 onOpenToday = onOpenToday,
                 modifier = Modifier.animateItem(),
             )
@@ -710,6 +712,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.topicItems(data: Stud
 private fun StudyScheduleTimeline(
     days: List<StudyScheduleDay>,
     documents: List<StudySourceDocument>,
+    studyToday: String,
     onOpenToday: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -721,6 +724,7 @@ private fun StudyScheduleTimeline(
             StudyDayMapCard(
                 day = day,
                 documents = documents,
+                studyToday = studyToday,
                 initiallyExpanded = index == 0,
                 isFirst = index == 0,
                 isLast = index == days.lastIndex,
@@ -734,13 +738,14 @@ private fun StudyScheduleTimeline(
 private fun StudyDayMapCard(
     day: StudyScheduleDay,
     documents: List<StudySourceDocument>,
+    studyToday: String,
     initiallyExpanded: Boolean,
     isFirst: Boolean,
     isLast: Boolean,
     onOpenToday: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val isToday = day.date == Calendar.getInstance().toStudyDate()
+    val isToday = day.date == studyToday
     val isCompleted = day.tasks.isNotEmpty() && day.tasks.all { it.status == StudyTaskStatus.Completed }
     var manuallyExpanded by remember(day.date) { mutableStateOf(if (isToday) false else initiallyExpanded) }
     val expanded = !isToday && manuallyExpanded
@@ -781,6 +786,7 @@ private fun StudyDayMapCard(
                 ) {
                     StudyDayCardHeader(
                         day = day,
+                        studyToday = studyToday,
                         isToday = isToday,
                         expanded = expanded,
                     )
@@ -975,6 +981,7 @@ private fun TaskBranchNode(
 @Composable
 private fun StudyDayCardHeader(
     day: StudyScheduleDay,
+    studyToday: String,
     isToday: Boolean,
     expanded: Boolean,
     modifier: Modifier = Modifier,
@@ -1003,7 +1010,7 @@ private fun StudyDayCardHeader(
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         StudyDayTitle(
-                            text = dateHeading(day.date),
+                            text = dateHeading(day.date, studyToday),
                             modifier = Modifier.weight(1f),
                         )
                         Spacer(Modifier.width(8.dp))
@@ -1023,7 +1030,7 @@ private fun StudyDayCardHeader(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     StudyDayTitle(
-                        text = dateHeading(day.date),
+                        text = dateHeading(day.date, studyToday),
                         modifier = Modifier.weight(1f),
                     )
                     Spacer(Modifier.width(8.dp))
@@ -1316,6 +1323,7 @@ private fun DeadlineSheet(
     current: String,
     recommendedDaysBalanced: Int,
     recommendedDaysIntensive: Int,
+    resetOffsetHours: Int,
     onDismiss: () -> Unit,
     onExtendDeadline: (studyDays: Int, intensive: Boolean) -> Unit,
     onCustomDeadline: (epochMillis: Long) -> Unit,
@@ -1346,7 +1354,11 @@ private fun DeadlineSheet(
         val selectableDates = remember {
             object : SelectableDates {
                 override fun isSelectableDate(utcTimeMillis: Long): Boolean =
-                    isSelectableDeadlineUtc(utcTimeMillis, System.currentTimeMillis())
+                    isSelectableDeadlineUtc(
+                        selectedMillis = utcTimeMillis,
+                        nowMillis = System.currentTimeMillis(),
+                        resetOffsetHours = resetOffsetHours,
+                    )
             }
         }
         val datePickerState = rememberDatePickerState(selectableDates = selectableDates)
@@ -1787,14 +1799,13 @@ private fun formatDate(date: String): String =
         ?: date
 
 @Composable
-private fun dateHeading(date: String): String {
+private fun dateHeading(date: String, studyToday: String): String {
     val value = date.toStudyCalendar() ?: return date
-    val today = Calendar.getInstance().toStudyDate()
-    val tomorrow = dayOnly(Calendar.getInstance()).apply {
+    val tomorrow = studyToday.toStudyCalendar()?.apply {
         add(Calendar.DAY_OF_MONTH, 1)
-    }.toStudyDate()
+    }?.toStudyDate()
     return when (date) {
-        today -> stringResource(R.string.today)
+        studyToday -> stringResource(R.string.today)
         tomorrow -> stringResource(R.string.tomorrow)
         else -> SimpleDateFormat("EEE, d MMM", Locale.getDefault()).format(value.time)
     }
@@ -1802,13 +1813,13 @@ private fun dateHeading(date: String): String {
 
 @Composable
 private fun deadlineLabel(preferences: PlanSetupSubmission): String =
-    deadlineDate(preferences, Calendar.getInstance())?.let {
+    deadlineDate(preferences, currentStudyCalendar(preferences))?.let {
         SimpleDateFormat("d MMMM", Locale.getDefault()).format(it.time)
     } ?: stringResource(R.string.not_scheduled)
 
 @Composable
 private fun relativeDeadlineLabel(preferences: PlanSetupSubmission): String =
-    relativeDeadlineLabel(preferences, Calendar.getInstance())
+    relativeDeadlineLabel(preferences, currentStudyCalendar(preferences))
 
 @Composable
 private fun relativeDeadlineLabel(preferences: PlanSetupSubmission, today: Calendar): String {

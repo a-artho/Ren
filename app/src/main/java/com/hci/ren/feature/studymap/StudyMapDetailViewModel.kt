@@ -81,7 +81,11 @@ class StudyMapDetailViewModel(application: Application) : AndroidViewModel(appli
 
     fun extendDeadline(studyDays: Int, intensive: Boolean) {
         val project = _uiState.value.project ?: return
-        val date = deadlineAfterSelectedStudyDays(studyDays, project.preferences.studyDays)
+        val date = deadlineAfterSelectedStudyDays(
+            studyDays,
+            project.preferences.studyDays,
+            resetOffsetHours = project.preferences.studyDayResetOffsetHours,
+        )
         val effectiveMinutes = if (intensive) (project.preferences.dailyStudyMinutes * 1.5).toInt() else null
         mutate("Deadline updated.") { current ->
             current.copy(
@@ -215,7 +219,8 @@ private fun isRequiredTask(task: GeneratedStudyBlock) =
 internal fun deadlineAfterSelectedStudyDays(
     days: Int,
     selectedDays: Set<com.hci.ren.feature.pdfupload.presentation.StudyDay>,
-    today: Calendar = Calendar.getInstance(),
+    resetOffsetHours: Int = 0,
+    today: Calendar = currentStudyCalendar(resetOffsetHours),
 ): String {
     val cursor = dayOnly(today)
     var counted = 0

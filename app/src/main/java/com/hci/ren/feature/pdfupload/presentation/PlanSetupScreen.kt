@@ -33,6 +33,9 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.SelectableDates
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -82,6 +85,7 @@ fun PlanSetupScreen(
     onCustomMinutesChanged: (String) -> Unit,
     onDayToggled: (StudyDay) -> Unit,
     onShortcutSelected: (StudyDayShortcut) -> Unit,
+    onStudyDayResetOffsetSelected: (Int) -> Unit,
     onNext: () -> Unit,
     onGeneratePlan: () -> Unit,
     modifier: Modifier = Modifier,
@@ -89,10 +93,14 @@ fun PlanSetupScreen(
     var isDatePickerOpen by rememberSaveable { mutableStateOf(false) }
     var isNavigationLocked by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
-    val selectableDates = remember {
+    val selectableDates = remember(state.studyDayResetOffsetHours) {
         object : SelectableDates {
             override fun isSelectableDate(utcTimeMillis: Long): Boolean =
-                isSelectableDeadlineUtc(utcTimeMillis, System.currentTimeMillis())
+                isSelectableDeadlineUtc(
+                    selectedMillis = utcTimeMillis,
+                    nowMillis = System.currentTimeMillis(),
+                    resetOffsetHours = state.studyDayResetOffsetHours,
+                )
         }
     }
     val datePickerState = rememberDatePickerState(selectableDates = selectableDates)
@@ -163,6 +171,7 @@ fun PlanSetupScreen(
                         state = state,
                         onDayToggled = onDayToggled,
                         onShortcutSelected = onShortcutSelected,
+                        onStudyDayResetOffsetSelected = onStudyDayResetOffsetSelected,
                     )
                 }
             }
@@ -346,9 +355,10 @@ private fun StudyDaysStep(
     state: PlanSetupUiState,
     onDayToggled: (StudyDay) -> Unit,
     onShortcutSelected: (StudyDayShortcut) -> Unit,
+    onStudyDayResetOffsetSelected: (Int) -> Unit,
 ) {
     StepIntro(
-        title = "Which days can you study?",
+        title = "When do you study?",
         subtitle = "Choose the days you usually have time. You can adjust this later.",
     )
 
@@ -356,6 +366,23 @@ private fun StudyDaysStep(
         state = state,
         onDayToggled = onDayToggled,
         onShortcutSelected = onShortcutSelected,
+    )
+
+    Spacer(Modifier.height(18.dp))
+
+    StudyDayResetOffsetSwitcher(
+        selectedOffsetHours = state.studyDayResetOffsetHours,
+        onSelected = onStudyDayResetOffsetSelected,
+    )
+
+    Spacer(Modifier.height(10.dp))
+
+    Text(
+        text = studyDayResetOffsetMessage(state.studyDayResetOffsetHours),
+        modifier = Modifier.fillMaxWidth(),
+        style = MaterialTheme.typography.bodyMedium,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        textAlign = androidx.compose.ui.text.style.TextAlign.Center,
     )
 }
 
@@ -445,6 +472,47 @@ private fun StudyRhythmCard(
         }
     }
 }
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun StudyDayResetOffsetSwitcher(
+    selectedOffsetHours: Int,
+    onSelected: (Int) -> Unit,
+) {
+    val options = listOf(0 to "Regular", 4 to "Night owl")
+    SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+        options.forEachIndexed { index, (offsetHours, label) ->
+            SegmentedButton(
+                selected = selectedOffsetHours == offsetHours,
+                onClick = { onSelected(offsetHours) },
+                modifier = Modifier.weight(1f),
+                shape = SegmentedButtonDefaults.itemShape(index = index, count = options.size),
+                colors = SegmentedButtonDefaults.colors(
+                    activeContainerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.10f),
+                    activeContentColor = MaterialTheme.colorScheme.primary,
+                    activeBorderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.42f),
+                    inactiveContainerColor = Color.Transparent,
+                    inactiveContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                    inactiveBorderColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.72f),
+                ),
+                icon = {},
+            ) {
+                Text(
+                    text = label,
+                    style = MaterialTheme.typography.labelLarge,
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                )
+            }
+        }
+    }
+}
+
+private fun studyDayResetOffsetMessage(offsetHours: Int): String =
+    if (offsetHours == 0) {
+        "12 AM means a new day. Brutal."
+    } else {
+        "Before 4 AM is still tonight."
+    }
 
 private fun selectedDaysLabel(count: Int): String =
     when (count) {
@@ -602,6 +670,7 @@ private fun PlanSetupGoalPreview() {
             onCustomMinutesChanged = {},
             onDayToggled = {},
             onShortcutSelected = {},
+            onStudyDayResetOffsetSelected = {},
             onNext = {},
             onGeneratePlan = {},
         )
@@ -626,6 +695,7 @@ private fun PlanSetupDaysPreview() {
             onCustomMinutesChanged = {},
             onDayToggled = {},
             onShortcutSelected = {},
+            onStudyDayResetOffsetSelected = {},
             onNext = {},
             onGeneratePlan = {},
         )

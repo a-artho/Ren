@@ -20,7 +20,7 @@ class PlanRealismCalculator {
     fun calculate(
         tasks: List<GeneratedStudyBlock>,
         preferences: PlanSetupSubmission,
-        today: Calendar = Calendar.getInstance(),
+        today: Calendar = currentStudyCalendar(preferences),
         dailyMinutesOverride: Int? = null,
         unscheduledTasks: List<GeneratedStudyBlock> = emptyList(),
     ): PlanRealism {

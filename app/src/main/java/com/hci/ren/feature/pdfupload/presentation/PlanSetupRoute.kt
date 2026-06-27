@@ -38,6 +38,7 @@ fun PlanSetupRoute(
         onCustomMinutesChanged = viewModel::updateCustomMinutes,
         onDayToggled = viewModel::toggleStudyDay,
         onShortcutSelected = viewModel::selectShortcut,
+        onStudyDayResetOffsetSelected = viewModel::updateStudyDayResetOffset,
         onNext = viewModel::goNext,
         onGeneratePlan = {
             viewModel.generatePlan()?.let(onGeneratePlan)

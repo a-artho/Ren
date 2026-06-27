@@ -14,6 +14,7 @@ data class PlanSetupUiState(
     val customHoursText: String = "",
     val customMinutesText: String = "",
     val selectedDays: Set<StudyDay> = emptySet(),
+    val studyDayResetOffsetHours: Int = 4,
     val generatedSubmission: PlanSetupSubmission? = null,
 ) {
     val canContinue: Boolean
@@ -109,6 +110,7 @@ data class PlanSetupUiState(
             deadlineDate = customDeadlineDate,
             dailyStudyMinutes = minutes,
             studyDays = selectedDays,
+            studyDayResetOffsetHours = studyDayResetOffsetHours.coerceIn(0, 23),
             planTitle = title,
         )
     }
@@ -117,7 +119,7 @@ data class PlanSetupUiState(
         nowMillis: Long,
         localTimeZone: TimeZone,
     ): Calendar? {
-        val today = dayOnly(nowMillis, localTimeZone)
+        val today = dayOnly(nowMillis, localTimeZone, studyDayResetOffsetHours)
         return when (selectedDeadline) {
             StudyDeadline.Tomorrow -> today.plusDays(1)
             StudyDeadline.InThreeDays -> today.plusDays(3)
@@ -133,7 +135,7 @@ data class PlanSetupUiState(
         nowMillis: Long,
         localTimeZone: TimeZone,
     ): Boolean {
-        val cursor = dayOnly(nowMillis, localTimeZone)
+        val cursor = dayOnly(nowMillis, localTimeZone, studyDayResetOffsetHours)
         while (cursor.before(deadline)) {
             if (cursor.studyDay in selectedDays) return true
             cursor.add(Calendar.DAY_OF_MONTH, 1)
@@ -149,6 +151,7 @@ data class PlanSetupSubmission(
     val deadlineDate: String?,
     val dailyStudyMinutes: Int,
     val studyDays: Set<StudyDay>,
+    val studyDayResetOffsetHours: Int = 4,
     val planTitle: String = "",
 )
 
@@ -215,8 +218,10 @@ fun daysForShortcut(shortcut: StudyDayShortcut): Set<StudyDay> = when (shortcut)
 private fun dayOnly(
     millis: Long,
     timeZone: TimeZone,
+    resetOffsetHours: Int = 0,
 ): Calendar = Calendar.getInstance(timeZone).apply {
     timeInMillis = millis
+    add(Calendar.HOUR_OF_DAY, -resetOffsetHours.coerceIn(0, 23))
     set(Calendar.HOUR_OF_DAY, 0)
     set(Calendar.MINUTE, 0)
     set(Calendar.SECOND, 0)

@@ -38,6 +38,7 @@ class PlanSetupScreenTest {
                     onCustomMinutesChanged = {},
                     onDayToggled = {},
                     onShortcutSelected = {},
+                    onStudyDayResetOffsetSelected = {},
                     onNext = {},
                     onGeneratePlan = {},
                 )
@@ -66,6 +67,7 @@ class PlanSetupScreenTest {
                     onCustomMinutesChanged = {},
                     onDayToggled = {},
                     onShortcutSelected = {},
+                    onStudyDayResetOffsetSelected = {},
                     onNext = {},
                     onGeneratePlan = {},
                 )
@@ -96,6 +98,7 @@ class PlanSetupScreenTest {
                     onCustomMinutesChanged = { customMinutes = it },
                     onDayToggled = {},
                     onShortcutSelected = {},
+                    onStudyDayResetOffsetSelected = {},
                     onNext = {},
                     onGeneratePlan = {},
                 )
@@ -142,6 +145,7 @@ class PlanSetupScreenTest {
                     onCustomMinutesChanged = {},
                     onDayToggled = {},
                     onShortcutSelected = { shortcut = it },
+                    onStudyDayResetOffsetSelected = {},
                     onNext = {},
                     onGeneratePlan = { generated = true },
                 )
@@ -175,6 +179,7 @@ class PlanSetupScreenTest {
                     onCustomMinutesChanged = {},
                     onDayToggled = {},
                     onShortcutSelected = {},
+                    onStudyDayResetOffsetSelected = {},
                     onNext = {},
                     onGeneratePlan = {},
                 )

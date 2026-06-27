@@ -177,8 +177,8 @@ internal fun newStudyProject(
     preferences: PlanSetupSubmission,
     nowMillis: Long = System.currentTimeMillis(),
 ): StudyProject {
-    val now = Calendar.getInstance().apply { timeInMillis = nowMillis }
-    val absoluteDeadline = deadlineDate(preferences, now)?.timeInMillis
+    val studyNow = Calendar.getInstance().apply { timeInMillis = nowMillis }.asStudyCalendar(preferences)
+    val absoluteDeadline = deadlineDate(preferences, studyNow)?.timeInMillis
     val persistedPreferences = preferences.copy(
         documentUris = emptyList(),
         deadline = StudyDeadline.ChooseDate,
@@ -352,6 +352,7 @@ private fun PlanSetupSubmission.toPersistedJson() = JSONObject()
     .put("deadlineDate", deadlineDate)
     .put("dailyStudyMinutes", dailyStudyMinutes)
     .put("studyDays", JSONArray(studyDays.map { it.name }))
+    .put("studyDayResetOffsetHours", studyDayResetOffsetHours)
 
 private fun JSONObject.toSubmission() = PlanSetupSubmission(
     documentUris = emptyList(),
@@ -361,6 +362,7 @@ private fun JSONObject.toSubmission() = PlanSetupSubmission(
     dailyStudyMinutes = optInt("dailyStudyMinutes", 60).coerceIn(1, 1_440),
     studyDays = getJSONArray("studyDays").strings().mapNotNull { runCatching { StudyDay.valueOf(it) }.getOrNull() }.toSet()
         .ifEmpty { StudyDay.entries.toSet() },
+    studyDayResetOffsetHours = optInt("studyDayResetOffsetHours", 4).coerceIn(0, 23),
     planTitle = optString("planTitle").takeUnless { it.isBlank() || it == "null" }.orEmpty(),
 )
 

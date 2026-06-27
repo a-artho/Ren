@@ -366,6 +366,7 @@ class PlanGenerationViewModel(application: Application) : AndroidViewModel(appli
             .put("deadlineDate", value.deadlineDate)
             .put("dailyStudyMinutes", value.dailyStudyMinutes)
             .put("studyDays", JSONArray(value.studyDays.map { it.name }))
+            .put("studyDayResetOffsetHours", value.studyDayResetOffsetHours)
         preferences.edit {
             putString(KEY_SUBMISSION, json.toString())
             putString(KEY_REQUEST_ID, id)
@@ -428,6 +429,7 @@ class PlanGenerationViewModel(application: Application) : AndroidViewModel(appli
                     add(com.hci.ren.feature.pdfupload.presentation.StudyDay.valueOf(days.getString(it)))
                 }
             },
+            studyDayResetOffsetHours = json.optInt("studyDayResetOffsetHours", 4).coerceIn(0, 23),
             planTitle = json.optString("planTitle").takeUnless { it.isBlank() || it == "null" }.orEmpty(),
         )
     }.onFailure {

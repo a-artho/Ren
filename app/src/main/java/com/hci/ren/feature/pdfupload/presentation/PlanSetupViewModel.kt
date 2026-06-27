@@ -58,7 +58,12 @@ class PlanSetupViewModel(
     }
 
     fun selectCustomDate(epochMillis: Long, nowMillis: Long = System.currentTimeMillis()) {
-        if (!isSelectableDeadlineUtc(epochMillis, nowMillis)) return
+        if (!isSelectableDeadlineUtc(
+                selectedMillis = epochMillis,
+                nowMillis = nowMillis,
+                resetOffsetHours = _uiState.value.studyDayResetOffsetHours,
+            )
+        ) return
         updateAndPersist { state ->
             state.copy(
                 selectedDeadline = StudyDeadline.ChooseDate,
@@ -97,6 +102,10 @@ class PlanSetupViewModel(
 
     fun selectShortcut(shortcut: StudyDayShortcut) {
         updateAndPersist { it.copy(selectedDays = daysForShortcut(shortcut)) }
+    }
+
+    fun updateStudyDayResetOffset(hours: Int) {
+        updateAndPersist { it.copy(studyDayResetOffsetHours = hours.coerceIn(0, 23)) }
     }
 
     fun goBack(): Boolean {
@@ -145,6 +154,7 @@ class PlanSetupViewModel(
         savedStateHandle[KEY_CUSTOM_HOURS] = state.customHoursText
         savedStateHandle[KEY_CUSTOM_MINUTES] = state.customMinutesText
         savedStateHandle[KEY_DAYS] = state.selectedDays.joinToString(",") { it.name }
+        savedStateHandle[KEY_STUDY_DAY_RESET_OFFSET] = state.studyDayResetOffsetHours
     }
 
     private fun setOrRemove(key: String, value: String?) {
@@ -177,6 +187,7 @@ class PlanSetupViewModel(
                 ?.mapNotNull { runCatching { StudyDay.valueOf(it) }.getOrNull() }
                 ?.toSet()
                 ?: emptySet(),
+            studyDayResetOffsetHours = savedStateHandle.get<Int>(KEY_STUDY_DAY_RESET_OFFSET) ?: 4,
         )
     }
 
@@ -191,6 +202,7 @@ class PlanSetupViewModel(
         const val KEY_CUSTOM_HOURS = "setup_custom_hours"
         const val KEY_CUSTOM_MINUTES = "setup_custom_minutes"
         const val KEY_DAYS = "setup_days"
+        const val KEY_STUDY_DAY_RESET_OFFSET = "setup_study_day_reset_offset"
 
         val isoDateFormat = SimpleDateFormat("yyyy-MM-dd", Locale.US)
         val displayDateFormat = SimpleDateFormat("d MMM", Locale.US)
@@ -206,6 +218,7 @@ internal fun isSelectableDeadlineUtc(
     selectedMillis: Long,
     nowMillis: Long,
     localTimeZone: TimeZone = TimeZone.getDefault(),
+    resetOffsetHours: Int = 0,
 ): Boolean {
     val utc = TimeZone.getTimeZone("UTC")
     val selectedUtcDay = Calendar.getInstance(utc).run {
@@ -218,6 +231,7 @@ internal fun isSelectableDeadlineUtc(
     }
     val localToday = Calendar.getInstance(localTimeZone).apply {
         timeInMillis = nowMillis
+        add(Calendar.HOUR_OF_DAY, -resetOffsetHours.coerceIn(0, 23))
     }
     val localTodayAsUtcDay = Calendar.getInstance(utc).run {
         clear()

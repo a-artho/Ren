@@ -48,7 +48,7 @@ class PlanAdjustmentService {
     fun suggestedDeadline(
         tasks: List<GeneratedStudyBlock>,
         preferences: PlanSetupSubmission,
-        today: Calendar = Calendar.getInstance(),
+        today: Calendar = currentStudyCalendar(preferences),
         dailyMinutesOverride: Int? = null,
     ): String? {
         val dailyMinutes = (dailyMinutesOverride ?: preferences.dailyStudyMinutes).coerceAtLeast(0)
@@ -106,7 +106,7 @@ internal fun buildStudyMapData(
     plan: GeneratedStudyPlan,
     preferences: PlanSetupSubmission,
     dailyMinutesOverride: Int? = null,
-    today: Calendar = Calendar.getInstance(),
+    today: Calendar = currentStudyCalendar(preferences),
 ): StudyMapData {
     val dailyMinutes = dailyMinutesOverride ?: preferences.dailyStudyMinutes
     val schedulingPreferences = preferences.copy(dailyStudyMinutes = dailyMinutes)

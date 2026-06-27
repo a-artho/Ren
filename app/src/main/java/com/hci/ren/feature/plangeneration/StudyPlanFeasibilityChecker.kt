@@ -2,6 +2,7 @@ package com.hci.ren.feature.plangeneration
 
 import com.hci.ren.feature.pdfupload.presentation.PlanSetupSubmission
 import com.hci.ren.feature.studymap.availableStudyDates
+import com.hci.ren.feature.studymap.currentStudyCalendar
 import java.util.Calendar
 import kotlin.math.ceil
 import kotlin.math.roundToInt
@@ -24,7 +25,7 @@ class StudyPlanFeasibilityChecker {
     fun check(
         tasks: List<GeneratedStudyBlock>,
         preferences: PlanSetupSubmission,
-        today: Calendar = Calendar.getInstance(),
+        today: Calendar = currentStudyCalendar(preferences),
         dailyMinutesOverride: Int? = null,
     ): FeasibilityResult {
         val required = requiredStudyMinutes(tasks)
