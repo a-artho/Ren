@@ -134,36 +134,41 @@ fun PlanFlowOptionRow(
                 }
             }
 
-            AnimatedVisibility(
-                visible = isSelected,
-                enter = fadeIn(renEnterSpec()) + scaleIn(renEnterSpec(), initialScale = 0.9f),
-                exit = fadeOut(renExitSpec()) + scaleOut(renExitSpec(), targetScale = 0.9f),
+            Box(
+                modifier = Modifier.size(28.dp),
+                contentAlignment = Alignment.Center,
             ) {
-                Surface(
-                    modifier = Modifier.size(28.dp),
-                    shape = CircleShape,
-                    color = MaterialTheme.colorScheme.primary,
+                if (icon != null) {
+                    Surface(
+                        modifier = Modifier.size(26.dp),
+                        shape = CircleShape,
+                        color = Color.Transparent,
+                        border = BorderStroke(
+                            1.5.dp,
+                            MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.82f),
+                        ),
+                    ) {}
+                }
+                androidx.compose.animation.AnimatedVisibility(
+                    visible = isSelected,
+                    enter = fadeIn(renEnterSpec()) + scaleIn(renEnterSpec(), initialScale = 0.9f),
+                    exit = fadeOut(renExitSpec()) + scaleOut(renExitSpec(), targetScale = 0.9f),
                 ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        Icon(
-                            imageVector = Icons.Default.Check,
-                            contentDescription = "Selected",
-                            tint = MaterialTheme.colorScheme.onPrimary,
-                            modifier = Modifier.size(19.dp),
-                        )
+                    Surface(
+                        modifier = Modifier.size(28.dp),
+                        shape = CircleShape,
+                        color = MaterialTheme.colorScheme.primary,
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                imageVector = Icons.Default.Check,
+                                contentDescription = "Selected",
+                                tint = MaterialTheme.colorScheme.onPrimary,
+                                modifier = Modifier.size(19.dp),
+                            )
+                        }
                     }
                 }
-            }
-            if (!isSelected && icon != null) {
-                Surface(
-                    modifier = Modifier.size(26.dp),
-                    shape = CircleShape,
-                    color = Color.Transparent,
-                    border = BorderStroke(
-                        1.5.dp,
-                        MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.82f),
-                    ),
-                ) {}
             }
         }
     }
@@ -183,12 +188,12 @@ fun PlanFlowCircleChoice(
         MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.82f)
     }
     val targetTextColor = if (isSelected) {
-        MaterialTheme.colorScheme.onPrimary
+        MaterialTheme.colorScheme.primary
     } else {
         MaterialTheme.colorScheme.onSurfaceVariant
     }
     val targetBackgroundColor = if (isSelected) {
-        MaterialTheme.colorScheme.primary
+        MaterialTheme.colorScheme.surface
     } else {
         MaterialTheme.colorScheme.surface
     }
