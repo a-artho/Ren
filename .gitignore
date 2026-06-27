@@ -29,5 +29,6 @@ tmp/
 # Backend local secrets/state
 backend/.env
 backend/data/
+backend/.venv_codex_backup/
 backend/*.log
 backend/*.zip
