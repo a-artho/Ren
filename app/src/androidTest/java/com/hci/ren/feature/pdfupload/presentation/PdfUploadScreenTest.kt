@@ -4,9 +4,9 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.junit4.createComposeRule
-import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performClick
 import com.hci.ren.ui.theme.RenTheme
 import org.junit.Rule
 import org.junit.Test
@@ -16,11 +16,11 @@ class PdfUploadScreenTest {
     val composeRule = createComposeRule()
 
     @Test
-    fun continueIsDisabledUntilPdfLoads() {
+    fun pickFileActionIsDisabledWhilePdfLoads() {
         composeRule.setContent {
             RenTheme {
                 PdfUploadScreen(
-                    state = PdfUploadUiState(),
+                    state = PdfUploadUiState(loadStatus = PdfLoadStatus.Loading),
                     onBack = {},
                     onPickPdf = {},
                     onAddMorePdf = {},
@@ -34,8 +34,9 @@ class PdfUploadScreenTest {
             }
         }
 
-        composeRule.onNodeWithTag("pdf-continue").assertIsNotEnabled()
+        composeRule.onNodeWithTag("pick-pdf").assertIsNotEnabled()
         composeRule.onNodeWithText("1 OF 5").assertIsDisplayed()
+        composeRule.onNodeWithText("Reading your files").assertIsDisplayed()
     }
 
     @Test
@@ -59,13 +60,14 @@ class PdfUploadScreenTest {
 
         composeRule.onNodeWithTag("pdf-file-card").assertIsDisplayed()
         composeRule.onNodeWithText("Lecture notes.pdf").assertIsDisplayed()
-        composeRule.onNodeWithText("4 pages • 1.5 MB").assertIsDisplayed()
+        composeRule.onNodeWithText("4 pages", substring = true).assertIsDisplayed()
+        composeRule.onNodeWithText("1.5 MB", substring = true).assertIsDisplayed()
         composeRule.onNodeWithTag("pdf-continue").assertIsEnabled()
-        composeRule.onNodeWithText("Next we'll customize how you want to study.").assertIsDisplayed()
+        composeRule.onNodeWithText("Add more").assertIsDisplayed()
     }
 
     @Test
-    fun thumbnailsIncludeEveryPage() {
+    fun previewDialogIncludesEveryPageThumbnail() {
         composeRule.setContent {
             RenTheme {
                 PdfUploadScreen(
@@ -83,6 +85,7 @@ class PdfUploadScreenTest {
             }
         }
 
+        composeRule.onNodeWithTag("pdf-file-card").performClick()
         composeRule.onNodeWithTag("pdf-thumbnail-0").assertIsDisplayed()
         composeRule.onNodeWithTag("pdf-thumbnail-1").assertIsDisplayed()
         composeRule.onNodeWithTag("pdf-thumbnail-2").assertIsDisplayed()

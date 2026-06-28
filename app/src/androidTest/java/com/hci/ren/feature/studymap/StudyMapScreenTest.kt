@@ -25,9 +25,9 @@ class StudyMapScreenTest {
     @Test fun generatedPlanShowsSummaryMapAndTopicView() {
         setScreen(scheduledPlan(), submission(StudyDeadline.InOneWeek, 60))
 
-        composeRule.onNodeWithText("Calculus").assertIsDisplayed()
+        composeRule.onNodeWithText("Calculus", substring = true, useUnmergedTree = true).assertIsDisplayed()
         composeRule.onNodeWithText("Map").assertIsDisplayed()
-        composeRule.onNodeWithText("Read limits").assertIsDisplayed()
+        composeRule.onNodeWithText("Read limits", substring = true).assertIsDisplayed()
         composeRule.onNodeWithText("Topics").performClick()
         composeRule.onNodeWithText("Limits").assertIsDisplayed()
     }
@@ -46,8 +46,8 @@ class StudyMapScreenTest {
     @Test fun emptyStudyMapShowsCreateProjectAction() {
         setScreen(null, null)
 
-        composeRule.onNodeWithText("No plan yet. Tragic, but fixable.").assertIsDisplayed()
-        composeRule.onNodeWithText("Create study plan").assertIsDisplayed()
+        composeRule.onNodeWithText("New exam? Deep breaths", substring = true).assertIsDisplayed()
+        composeRule.onNodeWithContentDescription("Start planning").assertIsDisplayed()
     }
 
     @Test fun studyPlanMenuShowsEditAndDeleteActions() {
@@ -60,7 +60,7 @@ class StudyMapScreenTest {
         composeRule.onNodeWithText("Edit plan").performClick()
         composeRule.onNodeWithText("Change deadline").assertIsDisplayed()
         composeRule.onNodeWithText("Available study time").assertIsDisplayed()
-        composeRule.onNodeWithText("Reduce scope").assertIsDisplayed()
+        composeRule.onNodeWithText("Choose material").assertIsDisplayed()
     }
 
     private fun setScreen(

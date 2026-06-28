@@ -50,6 +50,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
@@ -218,8 +219,8 @@ internal fun PdfFileCard(
     onMoveDown: () -> Boolean,
     modifier: Modifier = Modifier,
 ) {
-    var dragOffsetY by remember(document.uri) { mutableStateOf(0f) }
-    var cardHeightPx by remember(document.uri) { mutableStateOf(0f) }
+    var dragOffsetY by remember(document.uri) { mutableFloatStateOf(0f) }
+    var cardHeightPx by remember(document.uri) { mutableFloatStateOf(0f) }
     val spacingPx = with(LocalDensity.current) { 8.dp.toPx() }
     val fallbackMoveStepPx = with(LocalDensity.current) { 72.dp.toPx() }
     val moveStepPx = if (cardHeightPx > 0f) cardHeightPx + spacingPx else fallbackMoveStepPx

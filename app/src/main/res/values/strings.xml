@@ -2,7 +2,6 @@
     <string name="app_name">Ren</string>
     <string name="back">Back</string>
     <string name="ai_processing">Creating your plan</string>
-    <string name="processing_description">This usually takes 30–60 seconds.</string>
     <string name="uploading_document">Uploading documents</string>
     <string name="reading_material">Reading materials</string>
     <string name="identifying_topics">Finding key topics</string>

@@ -85,7 +85,7 @@ class MainActivity : ComponentActivity() {
                 }
 
                 LaunchedEffect(hasActiveStudyPlan, screen) {
-                    if (!hasActiveStudyPlan && screen in lockedPlanTabs) {
+                    if ((!hasActiveStudyPlan && screen in lockedPlanTabs) || (!TodayNavigationEnabled && screen == ScreenToday)) {
                         forward = false
                         screen = ScreenStudyMapDetail
                     }
@@ -107,6 +107,7 @@ class MainActivity : ComponentActivity() {
                                 hasActiveStudyPlan = hasActiveStudyPlan,
                                 onTabSelected = { tab ->
                                     if (!hasActiveStudyPlan && tab != 0) return@AppNavigationBar
+                                    if (!TodayNavigationEnabled && tab == TodayTabIndex) return@AppNavigationBar
                                     forward = tab >= selectedTab
                                     screen = when (tab) {
                                         0 -> ScreenStudyMapDetail
@@ -215,7 +216,7 @@ class MainActivity : ComponentActivity() {
                                 }
                             },
                             onOpenToday = {
-                                if (!transition.isRunning) {
+                                if (!transition.isRunning && TodayNavigationEnabled) {
                                     forward = true
                                     screen = ScreenToday
                                 }
@@ -283,10 +284,12 @@ private val tabs = listOf(
 
 private val tabScreens = setOf(ScreenStudyMapDetail, ScreenToday, ScreenProgress)
 private val lockedPlanTabs = setOf(ScreenToday, ScreenProgress)
+private const val TodayTabIndex = 1
+private const val TodayNavigationEnabled = false
 
 private fun tabIndexForScreen(screen: String): Int = when (screen) {
     ScreenStudyMapDetail -> 0
-    ScreenToday -> 1
+    ScreenToday -> TodayTabIndex
     ScreenProgress -> 2
     else -> 0
 }
@@ -326,7 +329,11 @@ private fun AppNavigationBar(
         tonalElevation = 0.dp,
     ) {
         tabs.forEachIndexed { index, tab ->
-            val enabled = index == 0 || hasActiveStudyPlan
+            val enabled = when (index) {
+                0 -> true
+                TodayTabIndex -> hasActiveStudyPlan && TodayNavigationEnabled
+                else -> hasActiveStudyPlan
+            }
             val selected = index == selectedTab
             NavigationBarItem(
                 selected = selected,

@@ -6,6 +6,9 @@ import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertIsOn
 import androidx.compose.ui.test.assertIsSelected
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithContentDescription
@@ -80,22 +83,23 @@ class PlanSetupScreenTest {
 
     @Test
     fun dailyTimeStepShowsCustomInput() {
-        var customHours = ""
-        var customMinutes = ""
+        var setupState by mutableStateOf(
+            PlanSetupUiState(
+                currentStep = PlanSetupStep.DailyTime,
+                selectedDailyTime = DailyStudyTime.Custom,
+            ),
+        )
         composeRule.setContent {
             RenTheme {
                 PlanSetupScreen(
-                    state = PlanSetupUiState(
-                        currentStep = PlanSetupStep.DailyTime,
-                        selectedDailyTime = DailyStudyTime.Custom,
-                    ),
+                    state = setupState,
                     onBack = {},
                     onPlanTitleChanged = {},
                     onDeadlineSelected = {},
                     onDateSelected = {},
                     onDailyTimeSelected = {},
-                    onCustomHoursChanged = { customHours = it },
-                    onCustomMinutesChanged = { customMinutes = it },
+                    onCustomHoursChanged = { setupState = setupState.copy(customHoursText = it) },
+                    onCustomMinutesChanged = { setupState = setupState.copy(customMinutesText = it) },
                     onDayToggled = {},
                     onShortcutSelected = {},
                     onStudyDayResetOffsetSelected = {},
@@ -112,8 +116,10 @@ class PlanSetupScreenTest {
         composeRule.onNodeWithTag("custom-hours").performTextInput("1")
         composeRule.onNodeWithTag("custom-minutes").performTextInput("30")
 
-        assertEquals("1", customHours)
-        assertEquals("30", customMinutes)
+        composeRule.runOnIdle {
+            assertEquals("1", setupState.customHoursText)
+            assertEquals("30", setupState.customMinutesText)
+        }
     }
 
     @Test
