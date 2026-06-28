@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import logging
 import os
@@ -25,6 +26,11 @@ from .models import (
 from .pdf_parser import PdfPageAnchor
 
 logger = logging.getLogger("ren")
+BACKEND_ROOT = Path(__file__).parents[1]
+SEMANTIC_EXTRACTION_PROMPT_VERSION = "2026-06-28-semantic-v2"
+SEMANTIC_EXTRACTION_SCHEMA_VERSION = "semantic-schema-v1"
+SEMANTIC_EXTRACTION_CACHE_VERSION = "semantic-cache-v1"
+CACHE_DISABLED_VALUES = {"0", "false", "no", "off"}
 
 
 @dataclass(frozen=True)
@@ -377,16 +383,120 @@ def gemini_concurrency() -> int:
     return max(1, min(value, 4))
 
 
+def default_semantic_cache_dir() -> Path:
+    configured = os.getenv("REN_EXTRACTION_CACHE_DIR")
+    if configured:
+        path = Path(configured)
+        return path if path.is_absolute() else BACKEND_ROOT / path
+    data_dir = Path(os.getenv("REN_DATA_DIR", "data"))
+    data_dir = data_dir if data_dir.is_absolute() else BACKEND_ROOT / data_dir
+    return data_dir / "extraction-cache"
+
+
+def semantic_cache_enabled() -> bool:
+    return os.getenv("REN_EXTRACTION_CACHE", "1").strip().lower() not in CACHE_DISABLED_VALUES
+
+
+def file_sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as source:
+        for chunk in iter(lambda: source.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def semantic_cache_key(pdf_sha256: str, model: str) -> str:
+    material = "|".join(
+        [
+            SEMANTIC_EXTRACTION_CACHE_VERSION,
+            SEMANTIC_EXTRACTION_PROMPT_VERSION,
+            SEMANTIC_EXTRACTION_SCHEMA_VERSION,
+            model,
+            pdf_sha256,
+        ]
+    )
+    return hashlib.sha256(material.encode("utf-8")).hexdigest()
+
+
+class SemanticExtractionCache:
+    def __init__(self, root: Path | None = None, enabled: bool | None = None):
+        self.root = root or default_semantic_cache_dir()
+        self.enabled = semantic_cache_enabled() if enabled is None else enabled
+        if self.enabled:
+            self.root.mkdir(parents=True, exist_ok=True)
+
+    def path_for(self, pdf_sha256: str, model: str) -> Path:
+        key = semantic_cache_key(pdf_sha256, model)
+        return self.root / key[:2] / f"{key}.json"
+
+    def get(self, document: SourceDocument, model: str, pdf_sha256: str) -> SemanticExtraction | None:
+        if not self.enabled:
+            return None
+        path = self.path_for(pdf_sha256, model)
+        if not path.exists():
+            return None
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            metadata = payload.get("metadata", {})
+            if metadata.get("cacheVersion") != SEMANTIC_EXTRACTION_CACHE_VERSION:
+                return None
+            if metadata.get("pdfSha256") != pdf_sha256:
+                return None
+            if metadata.get("model") != model:
+                return None
+            if metadata.get("promptVersion") != SEMANTIC_EXTRACTION_PROMPT_VERSION:
+                return None
+            if metadata.get("schemaVersion") != SEMANTIC_EXTRACTION_SCHEMA_VERSION:
+                return None
+            extraction = SemanticExtraction.model_validate(payload.get("extraction"))
+            logger.info("Semantic extraction cache hit for %s", document.filename)
+            return extraction
+        except Exception:
+            logger.warning("Ignoring unreadable semantic cache entry for %s", document.filename, exc_info=True)
+            return None
+
+    def put(self, document: SourceDocument, model: str, pdf_sha256: str, extraction: SemanticExtraction):
+        if not self.enabled:
+            return
+        path = self.path_for(pdf_sha256, model)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        payload = {
+            "metadata": {
+                "cacheVersion": SEMANTIC_EXTRACTION_CACHE_VERSION,
+                "promptVersion": SEMANTIC_EXTRACTION_PROMPT_VERSION,
+                "schemaVersion": SEMANTIC_EXTRACTION_SCHEMA_VERSION,
+                "model": model,
+                "pdfSha256": pdf_sha256,
+                "filename": document.filename,
+            },
+            "extraction": extraction.model_dump(mode="json"),
+        }
+        temporary = path.with_name(f"{path.name}.{os.getpid()}.{id(self)}.tmp")
+        try:
+            temporary.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+            temporary.replace(path)
+            logger.info("Semantic extraction cached for %s", document.filename)
+        except Exception:
+            temporary.unlink(missing_ok=True)
+            logger.warning("Could not write semantic cache entry for %s", document.filename, exc_info=True)
+
+
 class AIProvider(ABC):
     @abstractmethod
     async def create_plan(self, documents: list[SourceDocument], setup: Setup) -> GeneratedPlan: ...
 
 
 class GeminiProvider(AIProvider):
-    def __init__(self, api_key: str, model: str = "gemini-2.5-flash"):
+    def __init__(
+        self,
+        api_key: str,
+        model: str = "gemini-2.5-flash",
+        semantic_cache: SemanticExtractionCache | None = None,
+    ):
         from google import genai
         self.client = genai.Client(api_key=api_key)
         self.model = model
+        self.semantic_cache = semantic_cache or SemanticExtractionCache()
 
     async def create_plan(self, documents: list[SourceDocument], setup: Setup) -> GeneratedPlan:
         if os.getenv("REN_EXTRACTION_MODE", "semantic").strip().lower() == "legacy":
@@ -396,7 +506,7 @@ class GeminiProvider(AIProvider):
 
         async def extract_with_limit(index: int, document: SourceDocument) -> SemanticExtraction:
             async with semaphore:
-                return await self._extract_document_semantic(index, len(documents), document, setup)
+                return await self._extract_document_semantic(index, document)
 
         extractions = await asyncio.gather(
             *(extract_with_limit(index, document) for index, document in enumerate(documents, start=1))
@@ -406,11 +516,16 @@ class GeminiProvider(AIProvider):
     async def _extract_document_semantic(
         self,
         index: int,
-        total_documents: int,
         document: SourceDocument,
-        setup: Setup,
     ) -> SemanticExtraction:
         from google.genai import types
+
+        pdf_hash = file_sha256(document.path)
+        cache = getattr(self, "semantic_cache", None)
+        if cache is not None:
+            cached = cache.get(document, self.model, pdf_hash)
+            if cached is not None:
+                return cached
 
         uploaded = None
         try:
@@ -424,7 +539,7 @@ class GeminiProvider(AIProvider):
                 contents=[
                     format_document_context(index, document),
                     file_part,
-                    semantic_prompt(index, total_documents, document, setup),
+                    semantic_prompt(),
                 ],
                 config=types.GenerateContentConfig(
                     response_mime_type="application/json",
@@ -432,7 +547,10 @@ class GeminiProvider(AIProvider):
                     temperature=0.2,
                 ),
             )
-            return parse_semantic_response(response.text, document)
+            extraction = parse_semantic_response(response.text, document)
+            if cache is not None:
+                cache.put(document, self.model, pdf_hash, extraction)
+            return extraction
         finally:
             if uploaded is not None:
                 try:
@@ -531,32 +649,16 @@ class GeminiProvider(AIProvider):
             raise ValueError(f"Plan validation failed: {exc}") from exc
 
 
-def semantic_prompt(
-    index: int,
-    total_documents: int,
-    document: SourceDocument,
-    setup: Setup,
-) -> str:
-    document_id = document.source_id or f"doc{index}"
-    user_title = (setup.planTitle or "").strip()
-    learner_context = {
-        "goal": setup.goal,
-        "planTitle": setup.planTitle,
-    }
-    title_guidance = (
-        f'The user named the overall plan "{user_title}". Use a document title grounded in this lecture; do not force the overall title if it conflicts with the PDF. '
-        if user_title else
-        "Assign a concise document title grounded in this PDF. "
-    )
+def semantic_prompt() -> str:
     return (
         "You are a source-grounded curriculum segmentation engine, not a calendar scheduler. "
         "Extract a semantic study map for one lecture PDF. "
-        f"This is document {index} of {total_documents}; its final document id will be {document_id}, but do not output document ids. "
+        "Do not output document ids. "
         "Use only material in this PDF. Preserve the lecture's page/section order. "
         "Do not reorder material to balance difficulty or importance. "
         "Do not decide that any material is priority, skippable, optional, or excluded; the student decides that later. "
         "Do not output dates, day assignments, schedule advice, or study-day recommendations. "
-        f"{title_guidance}"
+        "Assign a concise document title grounded in this PDF. "
         "Return JSON matching the supplied semantic schema. "
         "Topics are local to this lecture and must have contiguous localTopicIndex values starting at 1. "
         "Blocks are local to this lecture and must have contiguous localBlockIndex values starting at 1. "
@@ -582,7 +684,6 @@ def semantic_prompt(
         "Use continuityLabel to keep adjacent blocks near each other when they form one concept; use an empty string otherwise. "
         "For prerequisiteLocalBlockIndexes, include only obvious earlier local block indexes; otherwise use an empty array. "
         "Use warnings only for extraction uncertainty, such as missing readable text, unclear page spans, or ambiguous source structure. "
-        f"Learner context: {json.dumps(learner_context, ensure_ascii=False)}"
     )
 
 

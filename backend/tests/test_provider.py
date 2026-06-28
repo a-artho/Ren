@@ -9,6 +9,7 @@ from app.provider import (
     GEMINI_SEMANTIC_SCHEMA,
     GeminiProvider,
     SemanticExtraction,
+    SemanticExtractionCache,
     SourceDocument,
     format_document_context,
     semantic_extractions_to_generated_plan,
@@ -196,6 +197,101 @@ def test_gemini_provider_uses_file_api_for_semantic_extraction(tmp_path, monkeyp
     assert provider.client.aio.models.config.response_schema == GEMINI_SEMANTIC_SCHEMA
     assert plan.blocks[0].id == "doc1-block-1"
     assert plan.blocks[0].durationMinutes == 25
+
+
+def test_gemini_provider_reuses_cached_semantic_extraction(tmp_path, monkeypatch):
+    pdf = tmp_path / "lecture.pdf"
+    pdf.write_bytes(b"%PDF-same-lecture")
+    semantic_response = {
+        "title": "Lecture",
+        "topics": [{"localTopicIndex": 1, "title": "Topic"}],
+        "blocks": [
+            {
+                "localBlockIndex": 1,
+                "title": "Block",
+                "topicIndexes": [1],
+                "startPage": 1,
+                "endPage": 2,
+                "sectionTitle": "Section",
+                "taskType": "CONCEPT",
+                "instructions": "Study the block.",
+                "completionCriteria": ["Explain the block."],
+                "effortMinMinutes": 15,
+                "effortLikelyMinutes": 25,
+                "effortMaxMinutes": 40,
+                "estimateConfidence": "HIGH",
+                "difficultyScore": 3,
+                "densityScore": 3,
+                "productionDemandScore": 3,
+                "splitAllowed": True,
+                "continuityLabel": "",
+                "prerequisiteLocalBlockIndexes": [],
+            }
+        ],
+        "warnings": [],
+    }
+
+    class Uploaded:
+        name = "files/test"
+        uri = "https://example.test/file"
+        mime_type = "application/pdf"
+
+    class FakeFiles:
+        def __init__(self):
+            self.upload_count = 0
+            self.delete_count = 0
+
+        async def upload(self, file):
+            self.upload_count += 1
+            return Uploaded()
+
+        async def delete(self, name):
+            self.delete_count += 1
+
+    class FakeModels:
+        def __init__(self):
+            self.calls = 0
+            self.contents = None
+
+        async def generate_content(self, model, contents, config):
+            self.calls += 1
+            self.contents = contents
+            return type("Response", (), {"text": json.dumps(semantic_response)})()
+
+    class FakeAio:
+        def __init__(self):
+            self.files = FakeFiles()
+            self.models = FakeModels()
+
+    class FakeClient:
+        def __init__(self):
+            self.aio = FakeAio()
+
+    monkeypatch.delenv("REN_EXTRACTION_MODE", raising=False)
+    provider = GeminiProvider.__new__(GeminiProvider)
+    provider.client = FakeClient()
+    provider.model = "test-model"
+    provider.semantic_cache = SemanticExtractionCache(tmp_path / "cache")
+
+    import asyncio
+
+    first = asyncio.run(provider.create_plan(
+        [SourceDocument(pdf, "Lecture 1.pdf", source_id="doc1", page_count=2)],
+        Setup(goal="PrepareForExam", planTitle="First plan", deadline="InOneWeek", dailyStudyMinutes=30, studyDays=["Monday"]),
+    ))
+    second = asyncio.run(provider.create_plan(
+        [SourceDocument(pdf, "Lecture 1.pdf", source_id="doc1", page_count=2)],
+        Setup(goal="PrepareForExam", planTitle="Second plan", deadline="InOneWeek", dailyStudyMinutes=45, studyDays=["Tuesday"]),
+    ))
+
+    assert provider.client.aio.files.upload_count == 1
+    assert provider.client.aio.files.delete_count == 1
+    assert provider.client.aio.models.calls == 1
+    assert "First plan" not in provider.client.aio.models.contents[-1]
+    assert first.title == "First plan"
+    assert second.title == "Second plan"
+    assert second.blocks[0].durationMinutes == 25
+    assert list((tmp_path / "cache").rglob("*.json"))
 
 
 class RecordingProvider(AIProvider):
