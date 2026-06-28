@@ -34,6 +34,13 @@ CACHE_DISABLED_VALUES = {"0", "false", "no", "off"}
 
 
 @dataclass(frozen=True)
+class PreparedGeminiFile:
+    name: str
+    uri: str
+    mime_type: str = "application/pdf"
+
+
+@dataclass(frozen=True)
 class SourceDocument:
     path: Path
     filename: str
@@ -44,6 +51,7 @@ class SourceDocument:
     page_anchors: list[PdfPageAnchor] = field(default_factory=list)
     anchors_truncated: bool = False
     parser_error: str | None = None
+    prepared_gemini_file: PreparedGeminiFile | None = None
 
 LEGACY_GEMINI_PLAN_SCHEMA = {
     "type": "object",
@@ -485,6 +493,13 @@ class AIProvider(ABC):
     @abstractmethod
     async def create_plan(self, documents: list[SourceDocument], setup: Setup) -> GeneratedPlan: ...
 
+    async def prepare_document(self, document: SourceDocument) -> PreparedGeminiFile | None:
+        del document
+        return None
+
+    async def delete_prepared_file(self, prepared_file: PreparedGeminiFile):
+        del prepared_file
+
 
 class GeminiProvider(AIProvider):
     def __init__(
@@ -497,6 +512,29 @@ class GeminiProvider(AIProvider):
         self.client = genai.Client(api_key=api_key)
         self.model = model
         self.semantic_cache = semantic_cache or SemanticExtractionCache()
+
+    async def prepare_document(self, document: SourceDocument) -> PreparedGeminiFile:
+        uploaded = None
+        try:
+            uploaded = await self.client.aio.files.upload(file=document.path)
+            return PreparedGeminiFile(
+                name=uploaded.name,
+                uri=uploaded.uri,
+                mime_type=uploaded.mime_type or "application/pdf",
+            )
+        except BaseException:
+            if uploaded is not None:
+                try:
+                    await self.client.aio.files.delete(name=uploaded.name)
+                except Exception:
+                    logger.warning("Could not delete abandoned Gemini file %s", uploaded.name, exc_info=True)
+            raise
+
+    async def delete_prepared_file(self, prepared_file: PreparedGeminiFile):
+        try:
+            await self.client.aio.files.delete(name=prepared_file.name)
+        except Exception:
+            logger.warning("Could not delete Gemini prepared file %s", prepared_file.name, exc_info=True)
 
     async def create_plan(self, documents: list[SourceDocument], setup: Setup) -> GeneratedPlan:
         if os.getenv("REN_EXTRACTION_MODE", "semantic").strip().lower() == "legacy":
@@ -527,36 +565,57 @@ class GeminiProvider(AIProvider):
             if cached is not None:
                 return cached
 
+        prepared_file = document.prepared_gemini_file
+        if prepared_file is not None:
+            try:
+                extraction = await self._generate_semantic_extraction(index, document, prepared_file)
+                if cache is not None:
+                    cache.put(document, self.model, pdf_hash, extraction)
+                return extraction
+            except Exception:
+                logger.warning(
+                    "Prepared Gemini file failed for %s; retrying with a fresh upload",
+                    document.filename,
+                    exc_info=True,
+                )
+
         uploaded = None
         try:
-            uploaded = await self.client.aio.files.upload(file=document.path)
-            file_part = types.Part.from_uri(
-                file_uri=uploaded.uri,
-                mime_type=uploaded.mime_type or "application/pdf",
-            )
-            response = await self.client.aio.models.generate_content(
-                model=self.model,
-                contents=[
-                    format_document_context(index, document),
-                    file_part,
-                    semantic_prompt(),
-                ],
-                config=types.GenerateContentConfig(
-                    response_mime_type="application/json",
-                    response_schema=GEMINI_SEMANTIC_SCHEMA,
-                    temperature=0.2,
-                ),
-            )
-            extraction = parse_semantic_response(response.text, document)
+            uploaded = await self.prepare_document(document)
+            extraction = await self._generate_semantic_extraction(index, document, uploaded)
             if cache is not None:
                 cache.put(document, self.model, pdf_hash, extraction)
             return extraction
         finally:
             if uploaded is not None:
-                try:
-                    await self.client.aio.files.delete(name=uploaded.name)
-                except Exception:
-                    logger.warning("Could not delete Gemini uploaded file %s", uploaded.name, exc_info=True)
+                await self.delete_prepared_file(uploaded)
+
+    async def _generate_semantic_extraction(
+        self,
+        index: int,
+        document: SourceDocument,
+        prepared_file: PreparedGeminiFile,
+    ) -> SemanticExtraction:
+        from google.genai import types
+
+        file_part = types.Part.from_uri(
+            file_uri=prepared_file.uri,
+            mime_type=prepared_file.mime_type or "application/pdf",
+        )
+        response = await self.client.aio.models.generate_content(
+            model=self.model,
+            contents=[
+                format_document_context(index, document),
+                file_part,
+                semantic_prompt(),
+            ],
+            config=types.GenerateContentConfig(
+                response_mime_type="application/json",
+                response_schema=GEMINI_SEMANTIC_SCHEMA,
+                temperature=0.2,
+            )
+        )
+        return parse_semantic_response(response.text, document)
 
     async def _create_plan_legacy(self, documents: list[SourceDocument], setup: Setup) -> GeneratedPlan:
         from google.genai import types

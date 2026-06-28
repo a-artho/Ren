@@ -27,6 +27,7 @@ class PdfUploadScreenTest {
                     onContinue = {},
                     onSelectPdf = {},
                     onRemovePdf = {},
+                    onMovePdf = { _, _ -> false },
                     onPageSelected = {},
                     onPageRequested = { _, _ -> },
                 )
@@ -49,6 +50,7 @@ class PdfUploadScreenTest {
                     onContinue = {},
                     onSelectPdf = {},
                     onRemovePdf = {},
+                    onMovePdf = { _, _ -> false },
                     onPageSelected = {},
                     onPageRequested = { _, _ -> },
                 )
@@ -74,6 +76,7 @@ class PdfUploadScreenTest {
                     onContinue = {},
                     onSelectPdf = {},
                     onRemovePdf = {},
+                    onMovePdf = { _, _ -> false },
                     onPageSelected = {},
                     onPageRequested = { _, _ -> },
                 )

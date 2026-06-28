@@ -139,6 +139,7 @@ class MainActivity : ComponentActivity() {
                         ScreenPdfUpload -> PdfUploadRoute(
                             openPickerOnStart = openPickerOnStart,
                             viewModel = pdfUploadViewModel,
+                            onDocumentsChanged = planGenerationViewModel::prepareDocuments,
                             onBack = {
                                 if (!transition.isRunning) {
                                     forward = false

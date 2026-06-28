@@ -18,6 +18,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 fun PdfUploadRoute(
     onBack: () -> Unit,
     onContinue: (List<String>) -> Unit,
+    onDocumentsChanged: (List<String>) -> Unit = {},
     openPickerOnStart: Boolean,
     viewModel: PdfUploadViewModel = viewModel(),
 ) {
@@ -71,6 +72,13 @@ fun PdfUploadRoute(
         }
     }
 
+    val documentUris = state.documentGroup?.documents?.map { it.uri }.orEmpty()
+    LaunchedEffect(state.documentGroup, documentUris) {
+        if (state.documentGroup != null) {
+            onDocumentsChanged(documentUris)
+        }
+    }
+
     PdfUploadScreen(
         state = state,
         onBack = onBack,
@@ -79,6 +87,7 @@ fun PdfUploadRoute(
         onContinue = { viewModel.documentReferences().let(onContinue) },
         onSelectPdf = viewModel::selectPdf,
         onRemovePdf = viewModel::removeDocument,
+        onMovePdf = viewModel::moveDocumentByUri,
         onPageSelected = viewModel::selectPage,
         onPageRequested = viewModel::requestPage,
     )

@@ -112,6 +112,34 @@ class PdfUploadUiStateTest {
     }
 
     @Test
+    fun naturalDocumentSortKeepsLectureNumbersInStudyOrder() {
+        val documents = listOf(
+            PdfDocumentUiModel("content://ren/lecture-10", "Lecture 10.pdf", 10, 1),
+            PdfDocumentUiModel("content://ren/lecture-2", "Lecture 2.pdf", 10, 1),
+            PdfDocumentUiModel("content://ren/lecture-1", "Lecture 1.pdf", 10, 1),
+        )
+
+        assertEquals(
+            listOf("Lecture 1.pdf", "Lecture 2.pdf", "Lecture 10.pdf"),
+            documents.sortedWith(naturalDocumentComparator()).map { it.fileName },
+        )
+    }
+
+    @Test
+    fun naturalDocumentSortUsesFirstNumberAcrossDifferentFilenamePrefixes() {
+        val documents = listOf(
+            PdfDocumentUiModel("content://ren/crypto", "10_Symmetric_cryptography.pdf", 10, 1),
+            PdfDocumentUiModel("content://ren/factoring", "Lesson 8. Factoring.pdf", 10, 1),
+            PdfDocumentUiModel("content://ren/lesson-9", "lesson 9 zzaasd.pdf", 10, 1),
+        )
+
+        assertEquals(
+            listOf("Lesson 8. Factoring.pdf", "lesson 9 zzaasd.pdf", "10_Symmetric_cryptography.pdf"),
+            documents.sortedWith(naturalDocumentComparator()).map { it.fileName },
+        )
+    }
+
+    @Test
     fun formattedDocumentDetailsIncludePagesAndSize() {
         val document = PdfDocumentUiModel(
             uri = "content://ren/document",

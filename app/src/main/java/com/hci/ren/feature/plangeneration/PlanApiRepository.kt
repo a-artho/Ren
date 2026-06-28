@@ -150,6 +150,18 @@ class PlanApiRepository(
         }
     }
 
+    fun deleteDocument(documentId: String) {
+        val connection = open("/documents/$documentId", "DELETE")
+        try {
+            val responseCode = connection.responseCode
+            val stream = if (responseCode in 200..299) connection.inputStream else connection.errorStream
+            stream?.bufferedReader()?.use { it.readText() }
+            if (responseCode !in 200..299 && responseCode != 404) throw PlanApiException(responseCode)
+        } finally {
+            connection.disconnect()
+        }
+    }
+
     private fun jsonRequest(path: String, method: String, body: JSONObject? = null): JSONObject {
         val connection = open(path, method)
         return try {

@@ -9,9 +9,11 @@ async def no_processing(_plan_id: str):
 
 
 def client(tmp_path, monkeypatch):
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
     monkeypatch.setattr(main, "STORE", Store(tmp_path / "ren.db"))
     monkeypatch.setattr(main, "UPLOADS", tmp_path / "uploads")
     monkeypatch.setattr(main, "process", no_processing)
+    monkeypatch.setattr(main, "provider", None)
     return TestClient(main.app)
 
 
@@ -117,6 +119,34 @@ def test_cancel_marks_plan_terminal_and_removes_document(tmp_path, monkeypatch):
         assert api.get(f"/plans/{plan_id}/status").json()["status"] == "CANCELED"
         assert main.STORE.document_path(document_id) is None
         assert api.post(f"/plans/{plan_id}/cancel").status_code == 200
+
+
+def test_delete_document_removes_prepared_gemini_file(tmp_path, monkeypatch):
+    class FakeProvider:
+        def __init__(self):
+            self.deleted = []
+
+        async def delete_prepared_file(self, prepared_file):
+            self.deleted.append(prepared_file.name)
+
+    with client(tmp_path, monkeypatch) as api:
+        uploaded = api.post("/documents", files={"file": ("lesson.pdf", b"%PDF-test", "application/pdf")})
+        document_id = uploaded.json()["documentId"]
+        fake = FakeProvider()
+        monkeypatch.setattr(main, "provider", fake)
+        main.STORE.set_document_prepared(
+            document_id,
+            name="files/prepared",
+            uri="https://example.test/prepared",
+            mime_type="application/pdf",
+        )
+
+        deleted = api.delete(f"/documents/{document_id}")
+
+        assert deleted.status_code == 200
+        assert deleted.json() == {"documentId": document_id, "deleted": True}
+        assert main.STORE.document_path(document_id) is None
+        assert fake.deleted == ["files/prepared"]
 
 
 def test_completed_plan_returns_title(tmp_path, monkeypatch):

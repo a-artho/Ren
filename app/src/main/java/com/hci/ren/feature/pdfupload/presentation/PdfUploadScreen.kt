@@ -9,6 +9,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -20,6 +21,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -28,6 +30,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
@@ -49,18 +52,24 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import androidx.compose.ui.zIndex
 import com.hci.ren.ui.components.PlanFlowIntro
 import com.hci.ren.ui.components.PlanFlowIntroTextGap
 import com.hci.ren.ui.components.PlanFlowPrimaryButton
@@ -71,6 +80,7 @@ import com.hci.ren.ui.motion.RenMotionDurationMillis
 import com.hci.ren.ui.motion.RenMotionEasing
 import com.hci.ren.ui.motion.isReducedMotionEnabled
 import com.hci.ren.ui.motion.renContentSpec
+import kotlin.math.roundToInt
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -82,6 +92,7 @@ fun PdfUploadScreen(
     onContinue: () -> Unit,
     onSelectPdf: (Int) -> Unit,
     onRemovePdf: (Int) -> Unit,
+    onMovePdf: (String, Int) -> Boolean,
     onPageSelected: (Int) -> Unit,
     onPageRequested: (PdfRenderKey, Int) -> Unit,
     modifier: Modifier = Modifier,
@@ -125,6 +136,7 @@ fun PdfUploadScreen(
                     state = state,
                     onSelectPdf = onSelectPdf,
                     onRemovePdf = onRemovePdf,
+                    onMovePdf = onMovePdf,
                     onAddMorePdf = onAddMorePdf,
                     onPreviewPdf = { index ->
                         onSelectPdf(index)
@@ -167,7 +179,7 @@ private fun PdfPickerHeader(
 ) {
     Column {
         PlanFlowIntro(
-            title = "Choose study materials",
+            title = "Order study materials",
             subtitle = "Add the notes or slides you want included.",
             titleFontWeight = FontWeight.SemiBold,
         )
@@ -196,11 +208,26 @@ private fun PdfPickerHeader(
 @Composable
 internal fun PdfFileCard(
     document: PdfDocumentUiModel,
+    orderNumber: Int,
+    canMoveUp: Boolean,
+    canMoveDown: Boolean,
     isSelected: Boolean,
     onSelect: () -> Unit,
     onRemove: () -> Unit,
+    onMoveUp: () -> Boolean,
+    onMoveDown: () -> Boolean,
     modifier: Modifier = Modifier,
 ) {
+    var dragOffsetY by remember(document.uri) { mutableStateOf(0f) }
+    var cardHeightPx by remember(document.uri) { mutableStateOf(0f) }
+    val spacingPx = with(LocalDensity.current) { 8.dp.toPx() }
+    val fallbackMoveStepPx = with(LocalDensity.current) { 72.dp.toPx() }
+    val moveStepPx = if (cardHeightPx > 0f) cardHeightPx + spacingPx else fallbackMoveStepPx
+    val canMoveUpState = rememberUpdatedState(canMoveUp)
+    val canMoveDownState = rememberUpdatedState(canMoveDown)
+    val onMoveUpState = rememberUpdatedState(onMoveUp)
+    val onMoveDownState = rememberUpdatedState(onMoveDown)
+    val moveStepPxState = rememberUpdatedState(moveStepPx)
     val containerColor by animateColorAsState(
         targetValue = if (isSelected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f)
             else MaterialTheme.colorScheme.surface,
@@ -209,7 +236,46 @@ internal fun PdfFileCard(
     )
     Card(
         onClick = onSelect,
-        modifier = modifier.fillMaxWidth().testTag("pdf-file-card"),
+        modifier = modifier
+            .fillMaxWidth()
+            .onGloballyPositioned { coordinates ->
+                cardHeightPx = coordinates.size.height.toFloat()
+            }
+            .offset { IntOffset(0, dragOffsetY.roundToInt()) }
+            .zIndex(if (dragOffsetY != 0f) 1f else 0f)
+            .pointerInput(document.uri) {
+                detectDragGesturesAfterLongPress(
+                    onDragEnd = { dragOffsetY = 0f },
+                    onDragCancel = { dragOffsetY = 0f },
+                    onDrag = { change, dragAmount ->
+                        change.consume()
+                        val stepPx = moveStepPxState.value
+                        dragOffsetY += dragAmount.y
+                        when {
+                            dragOffsetY <= -stepPx && canMoveUpState.value -> {
+                                if (onMoveUpState.value()) {
+                                    dragOffsetY += stepPx
+                                } else {
+                                    dragOffsetY = 0f
+                                }
+                            }
+                            dragOffsetY >= stepPx && canMoveDownState.value -> {
+                                if (onMoveDownState.value()) {
+                                    dragOffsetY -= stepPx
+                                } else {
+                                    dragOffsetY = 0f
+                                }
+                            }
+                            else -> {
+                                val minOffset = if (canMoveUpState.value) -stepPx else 0f
+                                val maxOffset = if (canMoveDownState.value) stepPx else 0f
+                                dragOffsetY = dragOffsetY.coerceIn(minOffset, maxOffset)
+                            }
+                        }
+                    },
+                )
+            }
+            .testTag("pdf-file-card"),
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(containerColor = containerColor),
         elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
@@ -218,6 +284,24 @@ internal fun PdfFileCard(
             modifier = Modifier.padding(start = 16.dp, end = 4.dp, top = 8.dp, bottom = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
+            Surface(
+                modifier = Modifier.size(32.dp),
+                shape = CircleShape,
+                color = MaterialTheme.colorScheme.primaryContainer,
+                contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+            ) {
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        text = orderNumber.toString(),
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                }
+            }
+            Spacer(Modifier.width(12.dp))
             Icon(
                 imageVector = Icons.Default.PictureAsPdf,
                 contentDescription = null,
@@ -253,6 +337,7 @@ private fun PdfFileListPane(
     state: PdfUploadUiState,
     onSelectPdf: (Int) -> Unit,
     onRemovePdf: (Int) -> Unit,
+    onMovePdf: (String, Int) -> Boolean,
     onAddMorePdf: () -> Unit,
     onPreviewPdf: (Int) -> Unit,
     modifier: Modifier = Modifier,
@@ -269,15 +354,23 @@ private fun PdfFileListPane(
                 verticalArrangement = Arrangement.spacedBy(8.dp),
                 contentPadding = PaddingValues(bottom = 8.dp),
             ) {
-                itemsIndexed(group.documents) { index, doc ->
+                itemsIndexed(
+                    items = group.documents,
+                    key = { _, doc -> doc.uri },
+                ) { index, doc ->
                     PdfFileCard(
                         document = doc,
+                        orderNumber = index + 1,
+                        canMoveUp = index > 0,
+                        canMoveDown = index < group.documents.lastIndex,
                         isSelected = false,
                         onSelect = {
                             onSelectPdf(index)
                             onPreviewPdf(index)
                         },
                         onRemove = { onRemovePdf(index) },
+                        onMoveUp = { onMovePdf(doc.uri, -1) },
+                        onMoveDown = { onMovePdf(doc.uri, 1) },
                     )
                 }
                 item {
@@ -568,6 +661,7 @@ private fun PdfUploadReadyPreview() {
             onContinue = {},
             onSelectPdf = {},
             onRemovePdf = {},
+            onMovePdf = { _, _ -> false },
             onPageSelected = {},
             onPageRequested = { _, _ -> },
         )

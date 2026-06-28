@@ -79,7 +79,7 @@ async def test_infrastructure_cancellation_preserves_pending_job(tmp_path, monke
 
 
 @pytest.mark.asyncio
-async def test_processing_orders_documents_by_numbered_filenames(tmp_path, monkeypatch):
+async def test_processing_preserves_requested_document_order(tmp_path, monkeypatch):
     store = Store(tmp_path / "ren.db")
     monkeypatch.setattr(main, "STORE", store)
     fake = FakeProvider()
@@ -94,5 +94,5 @@ async def test_processing_orders_documents_by_numbered_filenames(tmp_path, monke
 
     await main.process(plan_id)
 
-    assert [document.filename for document in fake.documents] == ["Lecture 1.pdf", "Lecture 5.pdf"]
+    assert [document.filename for document in fake.documents] == ["Lecture 5.pdf", "Lecture 1.pdf"]
 

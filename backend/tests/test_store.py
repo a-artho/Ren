@@ -69,6 +69,29 @@ def test_store_persists_document_filename(tmp_path: Path):
     assert document.filename == "Lecture 10.pdf"
 
 
+def test_store_persists_prepared_gemini_file(tmp_path: Path):
+    store = Store(tmp_path / "ren.db")
+    pdf = tmp_path / "doc.pdf"
+    pdf.write_bytes(b"%PDF-test")
+    document_id = store.add_document(pdf, filename="Lecture 1.pdf")
+
+    store.set_document_prepared(
+        document_id,
+        name="files/prepared",
+        uri="https://example.test/prepared",
+        mime_type="application/pdf",
+    )
+
+    document = store.documents_for_ids([document_id])[0]
+    prepared = store.document_prepared_file(document_id)
+    assert document.gemini_file_name == "files/prepared"
+    assert prepared.name == "files/prepared"
+    assert prepared.uri == "https://example.test/prepared"
+
+    store.clear_document_prepared(document_id, error="expired")
+    assert store.document_prepared_file(document_id) is None
+
+
 def test_store_finds_only_old_unclaimed_documents(tmp_path: Path):
     store = Store(tmp_path / "ren.db")
     old_pdf = tmp_path / "old.pdf"

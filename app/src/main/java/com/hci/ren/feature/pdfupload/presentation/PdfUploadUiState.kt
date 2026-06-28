@@ -73,6 +73,60 @@ fun <T> filterDuplicateDocuments(
 fun PdfDocumentUiModel.identityKey(): String =
     "${fileName.trim().lowercase(Locale.US)}|$sizeBytes|$pageCount"
 
+fun naturalDocumentComparator(): Comparator<PdfDocumentUiModel> = Comparator { left, right ->
+    compareFirstFilenameNumber(left.fileName, right.fileName)
+        .takeIf { it != 0 }
+        ?: compareNaturalSortParts(naturalSortParts(left.fileName), naturalSortParts(right.fileName))
+        .takeIf { it != 0 }
+        ?: left.fileName.lowercase(Locale.US).compareTo(right.fileName.lowercase(Locale.US)).takeIf { it != 0 }
+        ?: left.sizeBytes.compareTo(right.sizeBytes).takeIf { it != 0 }
+        ?: left.uri.compareTo(right.uri)
+}
+
+private fun compareFirstFilenameNumber(left: String, right: String): Int {
+    val leftNumber = firstFilenameNumber(left)
+    val rightNumber = firstFilenameNumber(right)
+    return if (leftNumber != null && rightNumber != null) {
+        leftNumber.compareTo(rightNumber)
+    } else {
+        0
+    }
+}
+
+private fun firstFilenameNumber(value: String): Long? =
+    Regex("\\d+").find(value)?.value?.toLongOrNull()
+
+private fun naturalSortParts(value: String): List<NaturalSortPart> =
+    Regex("\\d+|\\D+").findAll(value).map { match ->
+        val token = match.value
+        token.toLongOrNull()?.let { NaturalSortPart.Number(it) }
+            ?: NaturalSortPart.Text(token.lowercase(Locale.US))
+    }.toList()
+
+private fun compareNaturalSortParts(left: List<NaturalSortPart>, right: List<NaturalSortPart>): Int {
+    val max = maxOf(left.size, right.size)
+    repeat(max) { index ->
+        val leftPart = left.getOrNull(index) ?: return -1
+        val rightPart = right.getOrNull(index) ?: return 1
+        val compared = leftPart.compareTo(rightPart)
+        if (compared != 0) return compared
+    }
+    return 0
+}
+
+private sealed interface NaturalSortPart : Comparable<NaturalSortPart> {
+    data class Text(val value: String) : NaturalSortPart
+    data class Number(val value: Long) : NaturalSortPart
+
+    override fun compareTo(other: NaturalSortPart): Int = when {
+        this is Number && other is Number -> value.compareTo(other.value)
+        this is Text && other is Text -> value.compareTo(other.value)
+        this is Number && other is Text -> -1
+        this is Text && other is Number -> 1
+        else -> 0
+    }
+}
+
 sealed interface PdfLoadStatus {
     data object Idle : PdfLoadStatus
     data object Loading : PdfLoadStatus

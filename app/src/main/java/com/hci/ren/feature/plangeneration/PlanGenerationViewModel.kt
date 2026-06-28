@@ -35,6 +35,9 @@ class PlanGenerationViewModel(application: Application) : AndroidViewModel(appli
     private var requestId: String? = preferences.getString(KEY_REQUEST_ID, null)
     private var polling = false
     private var activeJob: Job? = null
+    private var preparationJob: Job? = null
+    private val preparedDocumentsLock = Any()
+    private var preparedDocuments: List<PreparedDocumentUpload> = restorePreparedDocuments()
     private var failurePhase = GenerationFailurePhase.UploadOrCreate
 
     // Visual progression tracking
@@ -68,23 +71,30 @@ class PlanGenerationViewModel(application: Application) : AndroidViewModel(appli
         activeJob = null
         visualProgressJob?.cancel()
         visualProgressJob = null
+        preparationJob?.cancel()
+        preparationJob = null
+        val preparedToDelete = clearPreparedDocuments()
         polling = false
         preferences.edit {
             remove(KEY_PLAN_ID)
             remove(KEY_SUBMISSION)
             remove(KEY_REQUEST_ID)
+            remove(KEY_PREPARED_DOCUMENTS)
         }
         backendStatus.value = PlanStatus.Uploading
         fetchedPlan = null
         _uiState.value = PlanGenerationUiState(status = PlanStatus.Uploading)
         submission = null
         requestId = null
+        if (cancelPlanId == null) {
+            deletePreparedDocuments(preparedToDelete)
+        }
         if (cancelPlanId != null) {
             viewModelScope.launch(Dispatchers.IO) {
                 runCatching { repository.cancelPlan(cancelPlanId) }
                     .onFailure { Log.w("PlanGeneration", "Failed to cancel plan $cancelPlanId", it) }
             }
-        } else if (recoveryRequest != null) {
+        } else if (recoveryRequest != null && preparedToDelete.isEmpty()) {
             val (recoverySubmission, recoveryRequestId) = recoveryRequest
             viewModelScope.launch(Dispatchers.IO) {
                 runCatching {
@@ -120,6 +130,73 @@ class PlanGenerationViewModel(application: Application) : AndroidViewModel(appli
         startPersistedRequest()
     }
 
+    fun prepareDocuments(documentUris: List<String>) {
+        val orderedUris = documentUris.distinct()
+        val removed: List<PreparedDocumentUpload>
+        val records: List<PreparedDocumentUpload>
+        synchronized(preparedDocumentsLock) {
+            val existingByUri = preparedDocuments.associateBy { it.uri }
+            removed = preparedDocuments.filterNot { it.uri in orderedUris }
+            records = orderedUris.map { uri ->
+                existingByUri[uri] ?: PreparedDocumentUpload(
+                    uri = uri,
+                    uploadRequestId = UUID.randomUUID().toString(),
+                )
+            }
+            preparedDocuments = records
+            persistPreparedDocumentsLocked()
+        }
+        deletePreparedDocuments(removed)
+        startPreparationJobIfNeeded()
+    }
+
+    private fun startPreparationJobIfNeeded() {
+        if (preparationJob?.isActive == true) return
+        preparationJob = viewModelScope.launch(Dispatchers.IO) {
+            var stoppedAfterFailure = false
+            try {
+                while (true) {
+                    val record = synchronized(preparedDocumentsLock) {
+                        preparedDocuments.firstOrNull { it.documentId == null }
+                    } ?: break
+                    val uploadedDocumentId = runCatching {
+                        repository.uploadDocument(record.uri.toUri(), record.uploadRequestId)
+                    }.onFailure {
+                        Log.w("PlanGeneration", "Failed preparing document upload", it)
+                    }.getOrNull()
+                    if (uploadedDocumentId == null) {
+                        stoppedAfterFailure = true
+                        break
+                    }
+
+                    val shouldKeep = synchronized(preparedDocumentsLock) {
+                        preparedDocuments.any { it.uri == record.uri && it.uploadRequestId == record.uploadRequestId }
+                    }
+                    if (!shouldKeep) {
+                        runCatching { repository.deleteDocument(uploadedDocumentId) }
+                            .onFailure { Log.w("PlanGeneration", "Failed deleting stale prepared document", it) }
+                        continue
+                    }
+                    synchronized(preparedDocumentsLock) {
+                        preparedDocuments = preparedDocuments.map {
+                            if (it.uri == record.uri && it.uploadRequestId == record.uploadRequestId) {
+                                it.copy(documentId = uploadedDocumentId)
+                            } else {
+                                it
+                            }
+                        }
+                        persistPreparedDocumentsLocked()
+                    }
+                }
+            } finally {
+                preparationJob = null
+                if (!stoppedAfterFailure && synchronized(preparedDocumentsLock) { preparedDocuments.any { it.documentId == null } }) {
+                    startPreparationJobIfNeeded()
+                }
+            }
+        }
+    }
+
     private fun startPersistedRequest() {
         val value = submission ?: return
         val persistedRequestId = requestId ?: return
@@ -136,10 +213,7 @@ class PlanGenerationViewModel(application: Application) : AndroidViewModel(appli
                 )
                 startVisualProgress()
                 val planId = withContext(Dispatchers.IO) {
-                    val documentIds = repository.uploadDocuments(
-                        value.documentUris.map { it.toUri() },
-                        persistedRequestId,
-                    ) { current, total ->
+                    val documentIds = preparedDocumentIdsFor(value) { current, total ->
                         _uiState.value = _uiState.value.copy(
                             uploadingDocumentIndex = current,
                             uploadingDocumentTotal = total,
@@ -187,7 +261,9 @@ class PlanGenerationViewModel(application: Application) : AndroidViewModel(appli
                         remove(KEY_PLAN_ID)
                         remove(KEY_SUBMISSION)
                         remove(KEY_REQUEST_ID)
+                        remove(KEY_PREPARED_DOCUMENTS)
                     }
+                    discardPreparedDocuments()
                     requestId = null
                     _uiState.value = _uiState.value.copy(
                         status = PlanStatus.Completed,
@@ -209,6 +285,9 @@ class PlanGenerationViewModel(application: Application) : AndroidViewModel(appli
         val retryRequestId = requestId?.let { existing ->
             requestIdForRetry(existing, failurePhase) { UUID.randomUUID().toString() }
         } ?: UUID.randomUUID().toString()
+        if (failurePhase == GenerationFailurePhase.BackendTerminal) {
+            clearPreparedDocumentIds()
+        }
         requestId = retryRequestId
         persistRequest(value, retryRequestId)
         preferences.edit { remove(KEY_PLAN_ID) }
@@ -262,7 +341,9 @@ class PlanGenerationViewModel(application: Application) : AndroidViewModel(appli
                             remove(KEY_PLAN_ID)
                             remove(KEY_SUBMISSION)
                             remove(KEY_REQUEST_ID)
+                            remove(KEY_PREPARED_DOCUMENTS)
                         }
+                        discardPreparedDocuments()
                         requestId = null
                         _uiState.value = _uiState.value.copy(
                             plan = plan,
@@ -348,10 +429,18 @@ class PlanGenerationViewModel(application: Application) : AndroidViewModel(appli
     private fun fail() {
         backendStatus.value = PlanStatus.Failed
         _uiState.value = _uiState.value.copy(status = PlanStatus.Failed, errorMessage = "We couldn’t create the plan. Try again.")
+        val preparedToDelete = if (failurePhase == GenerationFailurePhase.UploadOrCreate) {
+            clearPreparedDocuments()
+        } else {
+            discardPreparedDocuments()
+            emptyList()
+        }
+        deletePreparedDocuments(preparedToDelete)
         preferences.edit {
             remove(KEY_PLAN_ID)
             remove(KEY_SUBMISSION)
             remove(KEY_REQUEST_ID)
+            remove(KEY_PREPARED_DOCUMENTS)
         }
     }
 
@@ -371,6 +460,94 @@ class PlanGenerationViewModel(application: Application) : AndroidViewModel(appli
             putString(KEY_SUBMISSION, json.toString())
             putString(KEY_REQUEST_ID, id)
         }
+    }
+
+    private suspend fun preparedDocumentIdsFor(
+        value: PlanSetupSubmission,
+        onProgress: (current: Int, total: Int) -> Unit,
+    ): List<String> {
+        val currentUris = synchronized(preparedDocumentsLock) { preparedDocuments.map { it.uri } }
+        if (currentUris != value.documentUris) {
+            prepareDocuments(value.documentUris)
+        }
+        preparationJob?.join()
+        val total = value.documentUris.size
+        return value.documentUris.mapIndexed { index, uri ->
+            onProgress(index + 1, total)
+            val record = synchronized(preparedDocumentsLock) {
+                preparedDocuments.firstOrNull { it.uri == uri }
+                    ?: PreparedDocumentUpload(uri = uri, uploadRequestId = UUID.randomUUID().toString()).also { created ->
+                        preparedDocuments = preparedDocuments + created
+                        persistPreparedDocumentsLocked()
+                    }
+            }
+            record.documentId ?: repository.uploadDocument(uri.toUri(), record.uploadRequestId).also { uploadedId ->
+                synchronized(preparedDocumentsLock) {
+                    preparedDocuments = preparedDocuments.map {
+                        if (it.uri == uri && it.uploadRequestId == record.uploadRequestId) {
+                            it.copy(documentId = uploadedId)
+                        } else {
+                            it
+                        }
+                    }
+                    persistPreparedDocumentsLocked()
+                }
+            }
+        }
+    }
+
+    private fun clearPreparedDocuments(): List<PreparedDocumentUpload> {
+        preparationJob?.cancel()
+        preparationJob = null
+        return synchronized(preparedDocumentsLock) {
+            val current = preparedDocuments
+            preparedDocuments = emptyList()
+            persistPreparedDocumentsLocked()
+            current
+        }
+    }
+
+    private fun discardPreparedDocuments() {
+        preparationJob?.cancel()
+        preparationJob = null
+        synchronized(preparedDocumentsLock) {
+            preparedDocuments = emptyList()
+            persistPreparedDocumentsLocked()
+        }
+    }
+
+    private fun clearPreparedDocumentIds() {
+        synchronized(preparedDocumentsLock) {
+            preparedDocuments = preparedDocuments.map { it.copy(documentId = null) }
+            persistPreparedDocumentsLocked()
+        }
+    }
+
+    private fun deletePreparedDocuments(records: List<PreparedDocumentUpload>) {
+        if (records.none { it.documentId != null }) return
+        viewModelScope.launch(Dispatchers.IO) {
+            deletePreparedDocumentsBlocking(records)
+        }
+    }
+
+    private fun deletePreparedDocumentsBlocking(records: List<PreparedDocumentUpload>) {
+        records.mapNotNull { it.documentId }.distinct().forEach { documentId ->
+            runCatching { repository.deleteDocument(documentId) }
+                .onFailure { Log.w("PlanGeneration", "Failed deleting prepared document $documentId", it) }
+        }
+    }
+
+    private fun persistPreparedDocumentsLocked() {
+        val array = JSONArray()
+        preparedDocuments.forEach { record ->
+            array.put(
+                JSONObject()
+                    .put("uri", record.uri)
+                    .put("uploadRequestId", record.uploadRequestId)
+                    .put("documentId", record.documentId),
+            )
+        }
+        preferences.edit { putString(KEY_PREPARED_DOCUMENTS, array.toString()) }
     }
 
     private fun resolveProjectName(): String {
@@ -437,16 +614,41 @@ class PlanGenerationViewModel(application: Application) : AndroidViewModel(appli
         preferences.edit { clear() }
     }.getOrNull()
 
+    private fun restorePreparedDocuments(): List<PreparedDocumentUpload> = runCatching {
+        val raw = preferences.getString(KEY_PREPARED_DOCUMENTS, null) ?: return emptyList()
+        val array = JSONArray(raw)
+        buildList {
+            repeat(array.length()) { index ->
+                val item = array.getJSONObject(index)
+                val uri = item.optString("uri").takeIf { it.isNotBlank() } ?: return@repeat
+                val uploadRequestId = item.optString("uploadRequestId").takeIf { it.isNotBlank() }
+                    ?: UUID.randomUUID().toString()
+                val documentId = item.optString("documentId").takeUnless { it.isBlank() || it == "null" }
+                add(PreparedDocumentUpload(uri = uri, uploadRequestId = uploadRequestId, documentId = documentId))
+            }
+        }
+    }.onFailure {
+        Log.w("PlanGeneration", "Discarding invalid prepared document state", it)
+        preferences.edit { remove(KEY_PREPARED_DOCUMENTS) }
+    }.getOrDefault(emptyList())
+
     companion object {
         const val PREFERENCES = "plan_generation"
         const val KEY_PLAN_ID = "pending_plan_id"
         const val KEY_SUBMISSION = "pending_submission"
         const val KEY_REQUEST_ID = "pending_request_id"
+        const val KEY_PREPARED_DOCUMENTS = "prepared_documents"
         const val MAX_TRANSIENT_FAILURE_MILLIS = 5 * 60 * 1000L
         private val VISUAL_STEP_MINIMUM_DURATION = 2.seconds
         private val COMPLETION_SETTLE_DURATION = 650.milliseconds
     }
 }
+
+private data class PreparedDocumentUpload(
+    val uri: String,
+    val uploadRequestId: String,
+    val documentId: String? = null,
+)
 
 private fun GeneratedStudyPlan.withScheduledTotal() = copy(
     totalEstimatedMinutes = blocks.filterNot { it.status == StudyTaskStatus.ExcludedByUser }.sumOf { it.durationMinutes },

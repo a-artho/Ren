@@ -7,7 +7,11 @@ from uuid import uuid4
 from .models import CreatePlanRequest, GeneratedPlan, PlanStatus
 
 PlanRow = namedtuple("PlanRow", ["document_ids", "setup_json", "status", "result_json", "error"])
-DocumentRecord = namedtuple("DocumentRecord", ["id", "path", "filename"])
+DocumentRecord = namedtuple(
+    "DocumentRecord",
+    ["id", "path", "filename", "gemini_file_name", "gemini_file_uri", "gemini_mime_type"],
+)
+PreparedFileRecord = namedtuple("PreparedFileRecord", ["name", "uri", "mime_type"])
 
 
 class Store:
@@ -17,6 +21,7 @@ class Store:
         with self.connect() as db:
             db.executescript("""
             CREATE TABLE IF NOT EXISTS documents(id TEXT PRIMARY KEY, path TEXT NOT NULL, request_id TEXT, filename TEXT,
+              gemini_file_name TEXT, gemini_file_uri TEXT, gemini_mime_type TEXT, gemini_prepared_at TEXT, gemini_error TEXT,
               created_at TEXT DEFAULT CURRENT_TIMESTAMP);
             CREATE TABLE IF NOT EXISTS plans(id TEXT PRIMARY KEY, request_id TEXT UNIQUE NOT NULL, document_ids TEXT NOT NULL,
               setup_json TEXT NOT NULL, status TEXT NOT NULL, result_json TEXT, error TEXT, created_at TEXT DEFAULT CURRENT_TIMESTAMP);
@@ -26,6 +31,15 @@ class Store:
                 db.execute("ALTER TABLE documents ADD COLUMN request_id TEXT")
             if "filename" not in columns:
                 db.execute("ALTER TABLE documents ADD COLUMN filename TEXT")
+            for column in (
+                "gemini_file_name",
+                "gemini_file_uri",
+                "gemini_mime_type",
+                "gemini_prepared_at",
+                "gemini_error",
+            ):
+                if column not in columns:
+                    db.execute(f"ALTER TABLE documents ADD COLUMN {column} TEXT")
             db.execute(
                 "CREATE UNIQUE INDEX IF NOT EXISTS documents_request_id ON documents(request_id)"
             )
@@ -92,13 +106,47 @@ class Store:
         with self.connect() as db:
             for document_id in document_ids:
                 row = db.execute(
-                    "SELECT id,path,filename FROM documents WHERE id=?",
+                    """
+                    SELECT id,path,filename,gemini_file_name,gemini_file_uri,gemini_mime_type
+                    FROM documents WHERE id=?
+                    """,
                     (document_id,),
                 ).fetchone()
                 if row:
                     path = Path(row[1])
-                    documents.append(DocumentRecord(row[0], path, row[2] or path.name))
+                    documents.append(DocumentRecord(row[0], path, row[2] or path.name, row[3], row[4], row[5]))
         return documents
+    def document_prepared_file(self, document_id: str) -> PreparedFileRecord | None:
+        with self.connect() as db:
+            row = db.execute(
+                "SELECT gemini_file_name,gemini_file_uri,gemini_mime_type FROM documents WHERE id=?",
+                (document_id,),
+            ).fetchone()
+        if not row or not row[0] or not row[1]:
+            return None
+        return PreparedFileRecord(row[0], row[1], row[2] or "application/pdf")
+    def set_document_prepared(self, document_id: str, name: str, uri: str, mime_type: str):
+        with self.connect() as db:
+            db.execute(
+                """
+                UPDATE documents
+                SET gemini_file_name=?, gemini_file_uri=?, gemini_mime_type=?,
+                    gemini_prepared_at=CURRENT_TIMESTAMP, gemini_error=NULL
+                WHERE id=?
+                """,
+                (name, uri, mime_type, document_id),
+            )
+    def clear_document_prepared(self, document_id: str, error: str | None = None):
+        with self.connect() as db:
+            db.execute(
+                """
+                UPDATE documents
+                SET gemini_file_name=NULL, gemini_file_uri=NULL, gemini_mime_type=NULL,
+                    gemini_prepared_at=NULL, gemini_error=?
+                WHERE id=?
+                """,
+                (error, document_id),
+            )
     def delete_document(self, document_id: str) -> Path | None:
         path = self.document_path(document_id)
         with self.connect() as db: db.execute("DELETE FROM documents WHERE id=?", (document_id,))

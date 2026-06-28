@@ -30,6 +30,7 @@ class PdfUploadViewModel(
     private val loadingPages = mutableSetOf<PdfRenderKey>()
     private var documentLoadGeneration = 0L
     private var sessionId = savedStateHandle[KEY_SESSION_ID] ?: 0L
+    private var hasManualDocumentOrder = savedStateHandle[KEY_MANUAL_DOCUMENT_ORDER] ?: false
 
     private val _uiState = MutableStateFlow(PdfUploadUiState(sessionId = sessionId))
     val uiState: StateFlow<PdfUploadUiState> = _uiState.asStateFlow()
@@ -48,16 +49,18 @@ class PdfUploadViewModel(
             val result = withContext(Dispatchers.IO) { repository.loadDocuments(uriList) }
             if (loadGeneration != documentLoadGeneration) return@launch
             result.onSuccess { documents ->
-                if (documents.isEmpty()) {
+                val orderedDocuments = if (hasManualDocumentOrder) documents else documents.sortedWith(naturalDocumentComparator())
+                if (orderedDocuments.isEmpty()) {
                     _uiState.value = PdfUploadUiState(sessionId = sessionId)
                     return@onSuccess
                 }
-                val selectedPdfIndex = savedPdfIndex.coerceIn(0, documents.lastIndex)
+                val selectedPdfIndex = savedPdfIndex.coerceIn(0, orderedDocuments.lastIndex)
                 val selectedPageIndex = restoredPageIndex(
                     savedPageIndex,
-                    documents[selectedPdfIndex].pageCount,
+                    orderedDocuments[selectedPdfIndex].pageCount,
                 )
-                val group = DocumentGroup(documents = documents, selectedPdfIndex = selectedPdfIndex)
+                val group = DocumentGroup(documents = orderedDocuments, selectedPdfIndex = selectedPdfIndex)
+                saveUriList(orderedDocuments.map { it.uri.toUri() })
                 _uiState.value = PdfUploadUiState(
                     sessionId = sessionId,
                     documentGroup = group,
@@ -91,6 +94,8 @@ class PdfUploadViewModel(
             return
         }
         val loadGeneration = ++documentLoadGeneration
+        hasManualDocumentOrder = false
+        savedStateHandle[KEY_MANUAL_DOCUMENT_ORDER] = false
         pageCache.clear()
         loadingPages.clear()
         _uiState.value = PdfUploadUiState(sessionId = sessionId, loadStatus = PdfLoadStatus.Loading)
@@ -101,7 +106,7 @@ class PdfUploadViewModel(
             result
                 .onSuccess { documents ->
                     val documentFilter = filterDuplicateDocuments(documents, keyOf = PdfDocumentUiModel::identityKey)
-                    val uniqueDocuments = documentFilter.uniqueItems
+                    val uniqueDocuments = documentFilter.uniqueItems.sortedWith(naturalDocumentComparator())
                     val duplicateCount = uriFilter.duplicateCount + documentFilter.duplicateCount
                     saveUriList(uniqueDocuments.map { it.uri.toUri() })
                     savedStateHandle[KEY_SELECTED_PDF_INDEX] = 0
@@ -188,7 +193,16 @@ class PdfUploadViewModel(
                         if (uniqueDocs.isEmpty()) {
                             state.copy(loadStatus = PdfLoadStatus.Ready, noticeMessage = duplicateNoticeMessage(duplicateCount))
                         } else {
-                            val updated = group.copy(documents = group.documents + uniqueDocs)
+                            val selectedUri = group.documents.getOrNull(group.selectedPdfIndex)?.uri
+                            val sortedDocs = if (hasManualDocumentOrder) {
+                                group.documents + uniqueDocs.sortedWith(naturalDocumentComparator())
+                            } else {
+                                (group.documents + uniqueDocs).sortedWith(naturalDocumentComparator())
+                            }
+                            val selectedIndex = sortedDocs.indexOfFirst { it.uri == selectedUri }
+                                .takeIf { it >= 0 }
+                                ?: 0
+                            val updated = group.copy(documents = sortedDocs, selectedPdfIndex = selectedIndex)
                             state.copy(
                                 documentGroup = updated,
                                 loadStatus = PdfLoadStatus.Ready,
@@ -231,9 +245,58 @@ class PdfUploadViewModel(
         }
         updateSavedUriList()
         savedStateHandle[KEY_SELECTED_PDF_INDEX] = newSelected
+        if (newDocs.isEmpty()) {
+            hasManualDocumentOrder = false
+            savedStateHandle[KEY_MANUAL_DOCUMENT_ORDER] = false
+        }
         if (newDocs.isNotEmpty()) {
             requestPage(PdfRenderKey(newSelected, 0, PdfRenderKind.Preview), previewWidthPx)
         }
+    }
+
+    fun moveDocumentByUri(documentUri: String, offset: Int): Boolean {
+        val group = _uiState.value.documentGroup ?: return false
+        val index = group.documents.indexOfFirst { it.uri == documentUri }
+        return moveDocumentAtIndex(group, index, offset)
+    }
+
+    fun moveDocument(index: Int, offset: Int): Boolean {
+        val group = _uiState.value.documentGroup ?: return false
+        return moveDocumentAtIndex(group, index, offset)
+    }
+
+    private fun moveDocumentAtIndex(
+        group: DocumentGroup,
+        index: Int,
+        offset: Int,
+    ): Boolean {
+        val targetIndex = index + offset
+        if (index !in group.documents.indices || targetIndex !in group.documents.indices) return false
+        documentLoadGeneration++
+        pageCache.clear()
+        loadingPages.clear()
+        val movedDocs = group.documents.toMutableList().apply {
+            add(targetIndex, removeAt(index))
+        }
+        val newSelected = when (group.selectedPdfIndex) {
+            index -> targetIndex
+            targetIndex -> index
+            else -> group.selectedPdfIndex
+        }
+        hasManualDocumentOrder = true
+        savedStateHandle[KEY_MANUAL_DOCUMENT_ORDER] = true
+        _uiState.update { state ->
+            state.copy(
+                documentGroup = group.copy(documents = movedDocs, selectedPdfIndex = newSelected),
+                renderedPages = emptyMap(),
+                selectedPageIndex = 0,
+                noticeMessage = null,
+            )
+        }
+        updateSavedUriList()
+        savedStateHandle[KEY_SELECTED_PDF_INDEX] = newSelected
+        requestPage(PdfRenderKey(newSelected, 0, PdfRenderKind.Preview), previewWidthPx)
+        return true
     }
 
     fun selectPdf(documentIndex: Int) {
@@ -328,6 +391,8 @@ class PdfUploadViewModel(
         savedStateHandle.remove<String>(KEY_DOCUMENT_URI)
         savedStateHandle.remove<Int>(KEY_SELECTED_PDF_INDEX)
         savedStateHandle.remove<Int>(KEY_SELECTED_PAGE)
+        savedStateHandle.remove<Boolean>(KEY_MANUAL_DOCUMENT_ORDER)
+        hasManualDocumentOrder = false
         pageCache.clear()
         loadingPages.clear()
         _uiState.value = PdfUploadUiState(sessionId = sessionId)
@@ -366,5 +431,6 @@ class PdfUploadViewModel(
         const val KEY_DOCUMENT_URI_LIST = "pdf_document_uri_list"
         const val KEY_SELECTED_PDF_INDEX = "pdf_selected_pdf_index"
         const val KEY_SELECTED_PAGE = "pdf_selected_page"
+        const val KEY_MANUAL_DOCUMENT_ORDER = "pdf_manual_document_order"
     }
 }
