@@ -1,36 +1,54 @@
 package com.hci.ren.feature.plangeneration
 
-import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.*
-import androidx.compose.material3.*
-import androidx.activity.compose.BackHandler
+import androidx.compose.material.icons.filled.Error
+import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.scale
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.semantics
@@ -44,11 +62,30 @@ import com.hci.ren.ui.components.PlanFlowScaffold
 import com.hci.ren.ui.motion.RenEmphasizedDecelerateEasing
 import com.hci.ren.ui.motion.RenEmphasizedEasing
 import com.hci.ren.ui.motion.isReducedMotionEnabled
-import kotlin.math.abs
+import kotlin.math.PI
+import kotlin.math.cos
+import kotlin.math.max
+import kotlin.math.min
+import kotlin.math.sin
 
 @Composable
-fun PlanGenerationScreen(state: PlanGenerationUiState, onBack: () -> Unit, onRetry: () -> Unit) {
+fun PlanGenerationScreen(
+    state: PlanGenerationUiState,
+    onBack: () -> Unit,
+    onRetry: () -> Unit,
+) {
     var showCancelDialog by remember { mutableStateOf(false) }
+    val reducedMotion = isReducedMotionEnabled()
+    val isProcessing = state.status != PlanStatus.Failed
+    val activeStepIndex = activeStepIndex(state.status)
+    val topProgress by animateFloatAsState(
+        targetValue = generationProgress(state.status),
+        animationSpec = tween(
+            durationMillis = if (reducedMotion) 0 else 900,
+            easing = RenEmphasizedDecelerateEasing,
+        ),
+        label = "plan-generation-top-progress",
+    )
 
     BackHandler(enabled = true) {
         if (state.status == PlanStatus.Failed) {
@@ -68,11 +105,11 @@ fun PlanGenerationScreen(state: PlanGenerationUiState, onBack: () -> Unit, onRet
                     onClick = {
                         showCancelDialog = false
                         onBack()
-                    }
+                    },
                 ) {
                     Text(
                         stringResource(R.string.cancel_generation_confirm),
-                        color = MaterialTheme.colorScheme.error
+                        color = MaterialTheme.colorScheme.error,
                     )
                 }
             },
@@ -80,7 +117,7 @@ fun PlanGenerationScreen(state: PlanGenerationUiState, onBack: () -> Unit, onRet
                 TextButton(onClick = { showCancelDialog = false }) {
                     Text(stringResource(R.string.cancel_generation_dismiss))
                 }
-            }
+            },
         )
     }
 
@@ -92,22 +129,25 @@ fun PlanGenerationScreen(state: PlanGenerationUiState, onBack: () -> Unit, onRet
                 showCancelDialog = true
             }
         },
+        progress = if (isProcessing) topProgress else null,
+        stepLabel = if (isProcessing) "${activeStepIndex + 1} OF ${processingSteps.size}" else null,
     ) {
         Column(
-            modifier = Modifier
-                .fillMaxSize(),
+            modifier = Modifier.fillMaxSize(),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             if (state.status == PlanStatus.Failed) {
                 FailedContent(errorMessage = state.errorMessage, onRetry = onRetry)
             } else {
-                ProcessingContent(state = state)
+                ProcessingContent(
+                    state = state,
+                    activeStepIndex = activeStepIndex,
+                    reducedMotion = reducedMotion,
+                )
             }
         }
     }
 }
-
-// region â€” Failed state
 
 @Composable
 private fun FailedContent(errorMessage: String?, onRetry: () -> Unit) {
@@ -140,44 +180,29 @@ private fun FailedContent(errorMessage: String?, onRetry: () -> Unit) {
             containerColor = MaterialTheme.colorScheme.primary,
             contentColor = MaterialTheme.colorScheme.onPrimary,
         ),
-    ) { Text(stringResource(R.string.retry)) }
+    ) {
+        Text(stringResource(R.string.retry))
+    }
 }
 
-// endregion
-// region â€” Processing state
-
 @Composable
-private fun ProcessingContent(state: PlanGenerationUiState) {
-    val reducedMotion = isReducedMotionEnabled()
-    val currentIndex = if (state.status == PlanStatus.Completed) {
-        processingSteps.size
-    } else {
-        processingSteps.indexOfFirst { it.status == state.status }.coerceAtLeast(0)
-    }
-    val activeStepIndex = currentIndex.coerceAtMost(processingSteps.lastIndex)
-    val targetProgress = if (state.status == PlanStatus.Completed) 1f else (currentIndex + 1f) / processingSteps.size
-    val animatedProgress by animateFloatAsState(
-        targetValue = targetProgress,
-        animationSpec = tween(
-            durationMillis = if (reducedMotion) 0 else 900,
-            easing = RenEmphasizedDecelerateEasing,
-        ),
-        label = "plan generation progress",
-    )
-
+private fun ProcessingContent(
+    state: PlanGenerationUiState,
+    activeStepIndex: Int,
+    reducedMotion: Boolean,
+) {
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
-        val compact = maxHeight < 680.dp
-        val cardHeight = if (compact) 354.dp else 382.dp
-        val rowHeight = if (compact) 64.dp else 70.dp
-        val titleGap = if (compact) 8.dp else 10.dp
-        val progressGap = if (compact) 18.dp else 20.dp
-        val timelineGap = if (compact) 28.dp else 32.dp
+        val compact = maxHeight < 660.dp
+        val animationHeight = if (compact) 330.dp else 430.dp
+        val topGap = if (compact) 4.dp else 10.dp
+        val animationTopGap = if (compact) 34.dp else 54.dp
+        val statusTopGap = if (compact) 12.dp else 18.dp
+        val bottomGap = if (compact) 4.dp else 12.dp
 
         Column(
-            modifier = Modifier
-                .fillMaxSize(),
+            modifier = Modifier.fillMaxSize(),
         ) {
-            Spacer(Modifier.height(if (compact) 2.dp else 8.dp))
+            Spacer(Modifier.height(topGap))
 
             Text(
                 text = stringResource(R.string.ai_processing),
@@ -186,60 +211,64 @@ private fun ProcessingContent(state: PlanGenerationUiState) {
                 color = MaterialTheme.colorScheme.onBackground,
                 fontWeight = FontWeight.Bold,
             )
-            Spacer(Modifier.height(titleGap))
-            Text(
-                text = stringResource(R.string.processing_description),
-                modifier = Modifier.fillMaxWidth(),
-                style = MaterialTheme.typography.bodyLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                lineHeight = 24.sp,
-            )
-            Spacer(Modifier.height(progressGap))
 
-            LinearProgressIndicator(
-                progress = { animatedProgress },
+            Spacer(Modifier.height(animationTopGap))
+
+            Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(7.dp)
-                    .clip(RoundedCornerShape(999.dp))
-                    .semantics {
-                        stateDescription = if (state.status == PlanStatus.Completed) {
-                            "Processing completed"
-                        } else {
-                            "Processing step ${activeStepIndex + 1} of ${processingSteps.size}"
-                        }
-                    },
-                color = MaterialTheme.colorScheme.primary,
-                trackColor = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.8f),
-            )
-
-            Spacer(Modifier.height(if (compact) 12.dp else 20.dp))
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.End,
-                verticalAlignment = Alignment.CenterVertically,
+                    .weight(1f),
+                contentAlignment = Alignment.Center,
             ) {
-                Text(
-                    text = "Step ${activeStepIndex + 1} of ${processingSteps.size}",
-                    style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.primary,
-                    fontWeight = FontWeight.SemiBold,
+                RadiatingPlanAnimation(
+                    stepIndex = activeStepIndex,
+                    reducedMotion = reducedMotion,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(animationHeight),
                 )
             }
 
-            Spacer(Modifier.height(timelineGap))
+            Spacer(Modifier.height(statusTopGap))
 
-            ProcessingTimelineCard(
-                state = state,
-                currentIndex = currentIndex,
-                isCompleted = state.status == PlanStatus.Completed,
-                cardHeight = cardHeight,
-                rowHeight = rowHeight,
-                compact = compact,
-                reducedMotion = reducedMotion,
-            )
+            AnimatedContent(
+                targetState = activeStepIndex,
+                transitionSpec = {
+                    fadeIn(
+                        animationSpec = tween(
+                            durationMillis = if (reducedMotion) 0 else 260,
+                            easing = RenEmphasizedDecelerateEasing,
+                        ),
+                    ) togetherWith fadeOut(
+                        animationSpec = tween(
+                            durationMillis = if (reducedMotion) 0 else 140,
+                            easing = RenEmphasizedEasing,
+                        ),
+                    )
+                },
+                label = "plan-generation-current-step",
+                modifier = Modifier.fillMaxWidth(),
+            ) { targetIndex ->
+                val step = processingSteps[targetIndex]
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .semantics {
+                            stateDescription = "Processing step ${targetIndex + 1} of ${processingSteps.size}"
+                        },
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    Text(
+                        text = stepSubtitle(step),
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        lineHeight = 24.sp,
+                        textAlign = TextAlign.Center,
+                    )
+                }
+            }
 
-            Spacer(Modifier.weight(1f))
+            Spacer(Modifier.weight(0.45f))
 
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -257,272 +286,289 @@ private fun ProcessingContent(state: PlanGenerationUiState) {
                     text = stringResource(R.string.wait_tip_1),
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.72f),
+                    textAlign = TextAlign.Center,
                 )
             }
-            Spacer(Modifier.height(if (compact) 4.dp else 12.dp))
-        }
-    }
-}
-
-// endregion
-@Composable
-private fun ProcessingTimelineCard(
-    state: PlanGenerationUiState,
-    currentIndex: Int,
-    isCompleted: Boolean,
-    cardHeight: androidx.compose.ui.unit.Dp,
-    rowHeight: androidx.compose.ui.unit.Dp,
-    compact: Boolean,
-    reducedMotion: Boolean,
-) {
-    Surface(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(cardHeight),
-        shape = RoundedCornerShape(if (compact) 24.dp else 28.dp),
-        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.86f),
-        border = androidx.compose.foundation.BorderStroke(
-            1.dp,
-            MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.7f),
-        ),
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(
-                    start = 16.dp,
-                    top = if (compact) 16.dp else 20.dp,
-                    end = 16.dp,
-                    bottom = if (compact) 16.dp else 20.dp,
-                ),
-        ) {
-            processingSteps.forEachIndexed { index, step ->
-                val visual = when {
-                    isCompleted || index < currentIndex -> StepVisual.Complete
-                    index == currentIndex -> StepVisual.Current
-                    else -> StepVisual.Upcoming
-                }
-                ProcessingTimelineRow(
-                    label = stringResource(step.labelRes),
-                    subtitle = stepSubtitle(step, index, currentIndex, state),
-                    visual = visual,
-                    isFirst = index == 0,
-                    isLast = index == processingSteps.lastIndex,
-                    rowHeight = rowHeight,
-                    compact = compact,
-                    reducedMotion = reducedMotion,
-                )
-            }
+            Spacer(Modifier.height(bottomGap))
         }
     }
 }
 
 @Composable
-private fun ProcessingTimelineRow(
-    label: String,
-    subtitle: String?,
-    visual: StepVisual,
-    isFirst: Boolean,
-    isLast: Boolean,
-    rowHeight: androidx.compose.ui.unit.Dp,
-    compact: Boolean,
-    reducedMotion: Boolean,
-) {
-    val rowAlpha by animateFloatAsState(
-        targetValue = if (visual == StepVisual.Upcoming) 0.66f else 1f,
-        animationSpec = tween(
-            durationMillis = if (reducedMotion) 0 else 420,
-            easing = RenEmphasizedDecelerateEasing,
-        ),
-        label = "processing-row-alpha",
-    )
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(rowHeight),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        TimelineIndicator(
-            visual = visual,
-            isFirst = isFirst,
-            isLast = isLast,
-            compact = compact,
-            reducedMotion = reducedMotion,
-            modifier = Modifier
-                .width(if (compact) 38.dp else 42.dp)
-                .fillMaxHeight(),
-        )
-
-        Spacer(Modifier.width(12.dp))
-
-        Column(
-            modifier = Modifier
-                .weight(1f)
-                .fillMaxHeight(),
-            verticalArrangement = Arrangement.Center,
-        ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .weight(1f),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(
-                    text = label,
-                    modifier = Modifier.weight(1f),
-                    style = MaterialTheme.typography.titleMedium,
-                    color = if (visual == StepVisual.Upcoming) {
-                        MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = rowAlpha)
-                    } else {
-                        MaterialTheme.colorScheme.onSurface
-                    },
-                    fontWeight = FontWeight.SemiBold,
-                )
-                if (visual == StepVisual.Current) {
-                    ActiveStepSignal(reducedMotion = reducedMotion)
-                }
-            }
-            if (subtitle != null) {
-                Text(
-                    text = subtitle,
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.padding(bottom = 6.dp),
-                )
-            }
-            if (!isLast) {
-                HorizontalDivider(
-                    thickness = 1.dp,
-                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f),
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun TimelineIndicator(
-    visual: StepVisual,
-    isFirst: Boolean,
-    isLast: Boolean,
-    compact: Boolean,
+private fun RadiatingPlanAnimation(
+    stepIndex: Int,
     reducedMotion: Boolean,
     modifier: Modifier = Modifier,
 ) {
-    val green = MaterialTheme.colorScheme.primary
-    val muted = MaterialTheme.colorScheme.outline.copy(alpha = 0.58f)
-    val indicatorSize = if (compact) 24.dp else 26.dp
-    val upcomingSize = if (compact) 24.dp else 26.dp
-    val circleRadiusDp = indicatorSize / 2f
-    val upperLineColor by animateColorAsState(
-        targetValue = when (visual) {
-            StepVisual.Complete, StepVisual.Current -> green
-            StepVisual.Upcoming -> muted
-        },
-        animationSpec = tween(durationMillis = 560, easing = FastOutSlowInEasing),
-        label = "timeline-upper-line",
-    )
-    val lowerLineColor by animateColorAsState(
-        targetValue = when (visual) {
-            StepVisual.Complete -> green
-            StepVisual.Current, StepVisual.Upcoming -> muted
-        },
-        animationSpec = tween(durationMillis = 560, easing = FastOutSlowInEasing),
-        label = "timeline-lower-line",
-    )
-    val upperLineProgress by animateFloatAsState(
-        targetValue = if (visual == StepVisual.Upcoming) 0f else 1f,
-        animationSpec = tween(
-            durationMillis = if (reducedMotion) 0 else 820,
-            easing = RenEmphasizedDecelerateEasing,
+    val primary = MaterialTheme.colorScheme.primary
+    val muted = MaterialTheme.colorScheme.outlineVariant
+    val transition = rememberInfiniteTransition(label = "plan-radiating-animation")
+    val phaseAnimated by transition.animateFloat(
+        initialValue = 0f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 4600, easing = LinearEasing),
+            repeatMode = RepeatMode.Restart,
         ),
-        label = "timeline-upper-progress",
+        label = "radiating-wave-phase",
     )
-    val lowerLineProgress by animateFloatAsState(
-        targetValue = if (visual == StepVisual.Complete) 1f else 0f,
-        animationSpec = tween(
-            durationMillis = if (reducedMotion) 0 else 820,
-            easing = RenEmphasizedDecelerateEasing,
+    val breatheAnimated by transition.animateFloat(
+        initialValue = 0f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 3400, easing = RenEmphasizedEasing),
+            repeatMode = RepeatMode.Reverse,
         ),
-        label = "timeline-lower-progress",
+        label = "radiating-core-breathe",
     )
-    Box(
-        modifier = modifier,
-        contentAlignment = Alignment.Center,
-    ) {
-        Canvas(Modifier.fillMaxSize()) {
-            val centerX = size.width / 2f
-            val centerY = size.height / 2f
-            val circleRadius = circleRadiusDp.toPx()
-            if (!isFirst) {
-                val lineEndY = centerY - circleRadius
-                val trackEnd = Offset(centerX, lineEndY)
-                val activeEnd = Offset(centerX, lineEndY * upperLineProgress)
-                drawLine(
-                    color = muted.copy(alpha = 0.32f),
-                    start = Offset(centerX, 0f),
-                    end = trackEnd,
-                    strokeWidth = 2.dp.toPx(),
-                    cap = StrokeCap.Round,
-                )
-                drawLine(
-                    color = upperLineColor,
-                    start = Offset(centerX, 0f),
-                    end = activeEnd,
-                    strokeWidth = 2.dp.toPx(),
-                    cap = StrokeCap.Round,
-                )
-            }
-            if (!isLast) {
-                val lineStartY = centerY + circleRadius
-                val trackEndY = size.height
-                val activeEndY = lineStartY + (size.height - lineStartY) * lowerLineProgress
-                val start = Offset(centerX, lineStartY)
-                val trackEnd = Offset(centerX, trackEndY)
-                val activeEnd = Offset(centerX, activeEndY)
-                drawLine(
-                    color = muted.copy(alpha = 0.32f),
-                    start = start,
-                    end = trackEnd,
-                    strokeWidth = 2.dp.toPx(),
-                    cap = StrokeCap.Round,
-                )
-                drawLine(
-                    color = lowerLineColor,
-                    start = start,
-                    end = activeEnd,
-                    strokeWidth = 2.dp.toPx(),
-                    cap = StrokeCap.Round,
-                )
-            }
+    val scanAnimated by transition.animateFloat(
+        initialValue = 0f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 2800, easing = RenEmphasizedEasing),
+            repeatMode = RepeatMode.Reverse,
+        ),
+        label = "radiating-inner-motion",
+    )
+    val phase = if (reducedMotion) 0.18f else phaseAnimated
+    val breathe = if (reducedMotion) 0.55f else breatheAnimated
+    val scan = if (reducedMotion) 0.5f else scanAnimated
+
+    Canvas(modifier = modifier) {
+        val center = Offset(size.width / 2f, size.height / 2f)
+        val minDimension = min(size.width, size.height)
+        val maxDimension = max(size.width, size.height)
+        val coreRadius = minDimension * (0.126f + breathe * 0.01f)
+        val waveReach = maxDimension * 0.76f
+
+        repeat(7) { index ->
+            val progress = (phase + index * 0.143f) % 1f
+            val fade = (1f - progress) * (1f - progress)
+            val angle = -0.95f + index * 1.08f
+            val drift = maxDimension * (0.045f + index * 0.004f) * progress
+            val radius = coreRadius * 1.4f + waveReach * progress
+            val scaleX = 0.74f + (index % 4) * 0.11f
+            val scaleY = 0.46f + ((index + 2) % 4) * 0.09f
+            val waveCenter = Offset(
+                x = center.x + cos(angle).toFloat() * drift,
+                y = center.y + sin(angle).toFloat() * drift * 0.78f,
+            )
+            drawOval(
+                color = primary.copy(alpha = fade * 0.038f),
+                topLeft = Offset(waveCenter.x - radius * scaleX, waveCenter.y - radius * scaleY),
+                size = Size(radius * 2f * scaleX, radius * 2f * scaleY),
+            )
         }
 
-        when (visual) {
-            StepVisual.Complete -> CompletedCheckmark(
-                reducedMotion = reducedMotion,
-                modifier = Modifier.size(indicatorSize),
-            )
-            StepVisual.Current -> ActiveCurrentIndicator(
-                reducedMotion = reducedMotion,
-                modifier = Modifier.size(indicatorSize),
-            )
-            StepVisual.Upcoming -> Surface(
-                modifier = Modifier.size(upcomingSize),
-                shape = CircleShape,
-                color = Color.Transparent,
-                border = androidx.compose.foundation.BorderStroke(1.5.dp, muted),
-            ) {
-                Box(contentAlignment = Alignment.Center) {
-                    // Intentionally empty: upcoming steps use shape/status only, not numbers.
-                }
-            }
-        }
+        val ambientLean = if (reducedMotion) 0.35f else breathe
+        drawOval(
+            color = primary.copy(alpha = 0.012f + ambientLean * 0.014f),
+            topLeft = Offset(center.x - maxDimension * 0.62f, center.y - maxDimension * 0.38f),
+            size = Size(maxDimension * 1.24f, maxDimension * 0.76f),
+        )
+        drawOval(
+            color = primary.copy(alpha = 0.01f + ambientLean * 0.012f),
+            topLeft = Offset(center.x - maxDimension * 0.34f, center.y - maxDimension * 0.58f),
+            size = Size(maxDimension * 0.86f, maxDimension * 1.08f),
+        )
+        drawOval(
+            color = primary.copy(alpha = 0.028f + ambientLean * 0.028f),
+            topLeft = Offset(center.x - maxDimension * 0.42f, center.y - maxDimension * 0.27f),
+            size = Size(maxDimension * 0.84f, maxDimension * 0.54f),
+        )
+        drawOval(
+            color = primary.copy(alpha = 0.02f + ambientLean * 0.02f),
+            topLeft = Offset(center.x - maxDimension * 0.33f, center.y - maxDimension * 0.36f),
+            size = Size(maxDimension * 0.66f, maxDimension * 0.72f),
+        )
+
+        drawCircle(
+            color = primary.copy(alpha = 0.038f + breathe * 0.038f),
+            radius = coreRadius * 2.7f,
+            center = center,
+        )
+        drawCircle(
+            color = primary.copy(alpha = 0.105f + breathe * 0.035f),
+            radius = coreRadius * 1.48f,
+            center = center,
+        )
+        drawCircle(
+            color = primary.copy(alpha = 0.18f),
+            radius = coreRadius * 1.02f,
+            center = center,
+        )
+        drawCircle(
+            color = primary.copy(alpha = 0.36f),
+            radius = coreRadius * 1.46f,
+            center = center,
+            style = Stroke(width = 1.35.dp.toPx(), cap = StrokeCap.Round),
+        )
+        drawCircle(
+            color = primary.copy(alpha = 0.08f),
+            radius = coreRadius * 0.62f,
+            center = center,
+        )
+
+        drawPlanGlyph(
+            stepIndex = stepIndex,
+            center = center,
+            coreRadius = coreRadius * 1.08f,
+            primary = primary,
+            muted = muted,
+            motion = scan,
+        )
     }
 }
 
-// region â€” Step data
+private fun DrawScope.drawPlanGlyph(
+    stepIndex: Int,
+    center: Offset,
+    coreRadius: Float,
+    primary: Color,
+    muted: Color,
+    motion: Float,
+) {
+    when (stepIndex) {
+        0 -> drawDocumentStack(center, coreRadius, primary)
+        1 -> drawReadingLines(center, coreRadius, primary, muted, motion)
+        2 -> drawTopicNodes(center, coreRadius, primary, muted, motion)
+        3 -> drawStudyBlocks(center, coreRadius, primary)
+        else -> drawCalendarMark(center, coreRadius, primary, muted)
+    }
+}
 
-private enum class StepVisual { Complete, Current, Upcoming }
+private fun DrawScope.drawDocumentStack(center: Offset, radius: Float, color: Color) {
+    val pageWidth = radius * 0.94f
+    val pageHeight = radius * 1.1f
+    val corner = CornerRadius(7.dp.toPx(), 7.dp.toPx())
+    repeat(2) { index ->
+        val offset = (index - 0.5f) * 6.dp.toPx()
+        drawRoundRect(
+            color = color.copy(alpha = 0.14f + index * 0.18f),
+            topLeft = Offset(center.x - pageWidth / 2f + offset, center.y - pageHeight / 2f - offset),
+            size = Size(pageWidth, pageHeight),
+            cornerRadius = corner,
+        )
+        drawRoundRect(
+            color = color.copy(alpha = 0.42f + index * 0.16f),
+            topLeft = Offset(center.x - pageWidth / 2f + offset, center.y - pageHeight / 2f - offset),
+            size = Size(pageWidth, pageHeight),
+            cornerRadius = corner,
+            style = Stroke(width = 1.45.dp.toPx(), cap = StrokeCap.Round),
+        )
+    }
+}
+
+private fun DrawScope.drawReadingLines(
+    center: Offset,
+    radius: Float,
+    color: Color,
+    muted: Color,
+    motion: Float,
+) {
+    val width = radius * 1.24f
+    val startX = center.x - width / 2f
+    val startY = center.y - radius * 0.46f
+    repeat(4) { index ->
+        val y = startY + index * radius * 0.3f
+        val lineWidth = width * if (index == 3) 0.62f else 1f
+        drawLine(
+            color = muted.copy(alpha = 0.42f),
+            start = Offset(startX, y),
+            end = Offset(startX + lineWidth, y),
+            strokeWidth = 2.2.dp.toPx(),
+            cap = StrokeCap.Round,
+        )
+    }
+    val scanY = startY + motion * radius * 0.9f
+    drawLine(
+        color = color.copy(alpha = 0.86f),
+        start = Offset(startX + width * 0.08f, scanY),
+        end = Offset(startX + width * 0.92f, scanY),
+        strokeWidth = 2.6.dp.toPx(),
+        cap = StrokeCap.Round,
+    )
+}
+
+private fun DrawScope.drawTopicNodes(
+    center: Offset,
+    radius: Float,
+    color: Color,
+    muted: Color,
+    motion: Float,
+) {
+    val points = List(5) { index ->
+        val angle = -PI / 2.0 + index * (2.0 * PI / 5.0)
+        val distance = radius * (0.62f + if (index % 2 == 0) 0.1f else 0f)
+        Offset(
+            x = center.x + cos(angle).toFloat() * distance,
+            y = center.y + sin(angle).toFloat() * distance,
+        )
+    }
+    points.forEachIndexed { index, point ->
+        drawLine(
+            color = muted.copy(alpha = 0.34f),
+            start = center,
+            end = point,
+            strokeWidth = 1.35.dp.toPx(),
+            cap = StrokeCap.Round,
+        )
+        drawCircle(
+            color = color.copy(alpha = if (index == ((motion * points.size).toInt() % points.size)) 0.9f else 0.48f),
+            radius = if (index == ((motion * points.size).toInt() % points.size)) 4.6.dp.toPx() else 3.4.dp.toPx(),
+            center = point,
+        )
+    }
+    drawCircle(color = color, radius = 4.6.dp.toPx(), center = center)
+}
+
+private fun DrawScope.drawStudyBlocks(center: Offset, radius: Float, color: Color) {
+    val width = radius * 1.32f
+    val height = radius * 0.3f
+    val corner = CornerRadius(7.dp.toPx(), 7.dp.toPx())
+    repeat(3) { index ->
+        val y = center.y - height * 1.55f + index * height * 1.2f
+        drawRoundRect(
+            color = color.copy(alpha = 0.28f + index * 0.18f),
+            topLeft = Offset(center.x - width / 2f, y),
+            size = Size(width * (1f - index * 0.1f), height),
+            cornerRadius = corner,
+        )
+    }
+}
+
+private fun DrawScope.drawCalendarMark(center: Offset, radius: Float, color: Color, muted: Color) {
+    val width = radius * 1.24f
+    val height = radius * 1.0f
+    val topLeft = Offset(center.x - width / 2f, center.y - height / 2f)
+    val corner = CornerRadius(8.dp.toPx(), 8.dp.toPx())
+    drawRoundRect(
+        color = color.copy(alpha = 0.64f),
+        topLeft = topLeft,
+        size = Size(width, height),
+        cornerRadius = corner,
+        style = Stroke(width = 1.8.dp.toPx()),
+    )
+    drawLine(
+        color = color.copy(alpha = 0.74f),
+        start = Offset(topLeft.x, topLeft.y + height * 0.32f),
+        end = Offset(topLeft.x + width, topLeft.y + height * 0.32f),
+        strokeWidth = 1.4.dp.toPx(),
+        cap = StrokeCap.Round,
+    )
+    repeat(2) { row ->
+        repeat(3) { column ->
+            drawCircle(
+                color = if (row == 1 && column == 2) color else muted.copy(alpha = 0.48f),
+                radius = 2.4.dp.toPx(),
+                center = Offset(
+                    x = topLeft.x + width * (0.25f + column * 0.25f),
+                    y = topLeft.y + height * (0.54f + row * 0.22f),
+                ),
+            )
+        }
+    }
+}
 
 private data class Step(
     val status: PlanStatus,
@@ -538,160 +584,20 @@ private val processingSteps = listOf(
     Step(PlanStatus.Finalizing, R.string.finalizing_plan, R.string.step_subtitle_finalizing),
 )
 
-@Composable
-private fun stepSubtitle(
-    step: Step,
-    stepIndex: Int,
-    currentIndex: Int,
-    state: PlanGenerationUiState,
-): String? {
-    if (stepIndex != currentIndex) return null
-
-    return if (
-        step.status == PlanStatus.Uploading &&
-        state.uploadingDocumentIndex > 0 &&
-        state.uploadingDocumentTotal > 1
-    ) {
-        stringResource(
-            R.string.uploading_pdf_progress,
-            state.uploadingDocumentIndex,
-            state.uploadingDocumentTotal,
-        )
-    } else {
-        stringResource(step.subtitleRes)
-    }
+private fun activeStepIndex(status: PlanStatus): Int = when (status) {
+    PlanStatus.Uploading -> 0
+    PlanStatus.Analyzing -> 1
+    PlanStatus.IdentifyingTopics -> 2
+    PlanStatus.CreatingBlocks -> 3
+    PlanStatus.Finalizing, PlanStatus.Completed -> 4
+    PlanStatus.Failed -> 0
 }
 
-// endregion
-
-// region â€” ProcessingStep composable
-
-// region â€” Status indicator composables (Canvas-drawn, no emojis)
-
-@Composable
-private fun CompletedCheckmark(
-    reducedMotion: Boolean,
-    modifier: Modifier = Modifier,
-) {
-    val green = MaterialTheme.colorScheme.primary
-    val checkColor = MaterialTheme.colorScheme.onPrimary
-    var visible by remember { mutableStateOf(false) }
-    LaunchedEffect(Unit) { visible = true }
-    val scale by animateFloatAsState(
-        targetValue = if (visible || reducedMotion) 1f else 0.74f,
-        animationSpec = tween(
-            durationMillis = if (reducedMotion) 0 else 420,
-            easing = RenEmphasizedDecelerateEasing,
-        ),
-        label = "completed-check-scale",
-    )
-    val alpha by animateFloatAsState(
-        targetValue = if (visible || reducedMotion) 1f else 0f,
-        animationSpec = tween(
-            durationMillis = if (reducedMotion) 0 else 260,
-            easing = RenEmphasizedEasing,
-        ),
-        label = "completed-check-alpha",
-    )
-
-    Canvas(modifier = modifier.scale(scale).alpha(alpha)) {
-        val r = size.minDimension / 2f
-        drawCircle(color = green, radius = r)
-        val stroke = Stroke(width = 2.dp.toPx(), cap = StrokeCap.Round)
-        val cx = center.x
-        val cy = center.y
-        val path = androidx.compose.ui.graphics.Path().apply {
-            moveTo(cx - r * 0.30f, cy + r * 0.02f)
-            lineTo(cx - r * 0.05f, cy + r * 0.28f)
-            lineTo(cx + r * 0.35f, cy - r * 0.22f)
-        }
-        drawPath(path, color = checkColor, style = stroke)
-    }
+private fun generationProgress(status: PlanStatus): Float {
+    if (status == PlanStatus.Completed) return 1f
+    val index = activeStepIndex(status)
+    return (index + 1f) / processingSteps.size
 }
 
 @Composable
-private fun ActiveCurrentIndicator(
-    reducedMotion: Boolean,
-    modifier: Modifier = Modifier,
-) {
-    val green = MaterialTheme.colorScheme.primary
-    val pulse = if (reducedMotion) {
-        1f
-    } else {
-        val transition = rememberInfiniteTransition(label = "current-step-breathe")
-        val animatedPulse by transition.animateFloat(
-            initialValue = 0f,
-            targetValue = 1f,
-            animationSpec = infiniteRepeatable(
-                animation = tween(durationMillis = 1650, easing = RenEmphasizedEasing),
-                repeatMode = RepeatMode.Reverse,
-            ),
-            label = "current-step-pulse",
-        )
-        animatedPulse
-    }
-    Canvas(modifier) {
-        val baseRadius = size.minDimension / 2f - 3.dp.toPx()
-        val pulseRadius = baseRadius + (if (reducedMotion) 0f else pulse * 3.dp.toPx())
-        drawCircle(
-            color = green.copy(alpha = if (reducedMotion) 0.18f else 0.08f + pulse * 0.12f),
-            radius = pulseRadius,
-        )
-        drawCircle(
-            color = green,
-            radius = baseRadius,
-            style = Stroke(width = 2.dp.toPx()),
-        )
-        drawCircle(
-            color = green,
-            radius = 5.5.dp.toPx(),
-        )
-    }
-}
-
-@Composable
-private fun ActiveStepSignal(reducedMotion: Boolean) {
-    val color = MaterialTheme.colorScheme.primary
-    val phase = if (reducedMotion) {
-        0f
-    } else {
-        val transition = rememberInfiniteTransition(label = "active-step-signal")
-        val animatedPhase by transition.animateFloat(
-            initialValue = 0f,
-            targetValue = 1f,
-            animationSpec = infiniteRepeatable(
-                animation = tween(durationMillis = 1200, easing = LinearEasing),
-                repeatMode = RepeatMode.Restart,
-            ),
-            label = "active-step-signal-phase",
-        )
-        animatedPhase
-    }
-    Row(
-        horizontalArrangement = Arrangement.spacedBy(5.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        repeat(3) { index ->
-            val shiftedPhase = (phase + index * 0.22f) % 1f
-            val wave = 1f - abs(shiftedPhase * 2f - 1f)
-            val dotSize = if (reducedMotion) 5.dp else (4.5f + wave * 1.7f).dp
-            Surface(
-                modifier = Modifier
-                    .size(dotSize)
-                    .alpha(if (reducedMotion) 0.78f else 0.28f + wave * 0.58f),
-                shape = CircleShape,
-                color = color,
-            ) {}
-        }
-    }
-}
-
-// endregion
-
-// region â€” Connector line between steps
-
-// endregion
-
-// region â€” While you wait card
-
-// endregion
+private fun stepSubtitle(step: Step): String = stringResource(step.subtitleRes)

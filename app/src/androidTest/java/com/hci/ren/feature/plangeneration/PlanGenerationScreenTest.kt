@@ -21,7 +21,7 @@ class PlanGenerationScreenTest {
 
     private val context = InstrumentationRegistry.getInstrumentation().targetContext
 
-    @Test fun uploadRowIsActiveDuringUpload() {
+    @Test fun uploadSubtitleIsActiveDuringUpload() {
         composeRule.setContent {
             RenTheme {
                 PlanGenerationScreen(
@@ -36,16 +36,13 @@ class PlanGenerationScreenTest {
         val readingMaterialStr = context.getString(R.string.reading_material)
         val analyzingContentStr = context.getString(R.string.step_subtitle_analyzing)
 
-        // Uploading document should be displayed and show its active subtitle
-        composeRule.onNodeWithText(uploadingDocStr).assertIsDisplayed()
+        composeRule.onNodeWithText(uploadingDocStr).assertDoesNotExist()
         composeRule.onNodeWithText(sendingFileStr).assertIsDisplayed()
-
-        // Subsequent steps should be displayed but NOT their active subtitles
-        composeRule.onNodeWithText(readingMaterialStr).assertIsDisplayed()
+        composeRule.onNodeWithText(readingMaterialStr).assertDoesNotExist()
         composeRule.onNodeWithText(analyzingContentStr).assertDoesNotExist()
     }
 
-    @Test fun uploadRowShowsPdfCountProgressWhenUploadingMultipleDocuments() {
+    @Test fun uploadSubtitleDoesNotShowPdfCountProgress() {
         composeRule.setContent {
             RenTheme {
                 PlanGenerationScreen(
@@ -60,7 +57,8 @@ class PlanGenerationScreenTest {
             }
         }
 
-        composeRule.onNodeWithText(context.getString(R.string.uploading_pdf_progress, 2, 5)).assertIsDisplayed()
+        composeRule.onNodeWithText(context.getString(R.string.step_subtitle_uploading)).assertIsDisplayed()
+        composeRule.onNodeWithText("Uploading PDF 2 of 5").assertDoesNotExist()
     }
 
     @Test fun backendStageIsActiveAfterUploadCompletes() {
@@ -78,12 +76,9 @@ class PlanGenerationScreenTest {
         val identifyingTopicsStr = context.getString(R.string.identifying_topics)
         val analyzingContentStr = context.getString(R.string.step_subtitle_identifying)
 
-        // Uploading step is complete, so its label is visible but its active subtitle is hidden
-        composeRule.onNodeWithText(uploadingDocStr).assertIsDisplayed()
+        composeRule.onNodeWithText(uploadingDocStr).assertDoesNotExist()
         composeRule.onNodeWithText(sendingFileStr).assertDoesNotExist()
-
-        // IdentifyingTopics is active, so its label and active subtitle are visible
-        composeRule.onNodeWithText(identifyingTopicsStr).assertIsDisplayed()
+        composeRule.onNodeWithText(identifyingTopicsStr).assertDoesNotExist()
         composeRule.onNodeWithText(analyzingContentStr).assertIsDisplayed()
     }
 

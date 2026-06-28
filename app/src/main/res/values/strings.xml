@@ -1,17 +1,16 @@
 <resources>
     <string name="app_name">Ren</string>
     <string name="back">Back</string>
-    <string name="ai_processing">Creating plan</string>
+    <string name="ai_processing">Creating your plan</string>
     <string name="processing_description">This usually takes 30–60 seconds.</string>
-    <string name="uploading_document">Upload documents</string>
-    <string name="reading_material">Read materials</string>
-    <string name="identifying_topics">Find key topics</string>
-    <string name="creating_blocks">Create study blocks</string>
-    <string name="finalizing_plan">Finalize plan</string>
+    <string name="uploading_document">Uploading documents</string>
+    <string name="reading_material">Reading materials</string>
+    <string name="identifying_topics">Finding key topics</string>
+    <string name="creating_blocks">Building study blocks</string>
+    <string name="finalizing_plan">Finalizing plan</string>
     <string name="plan_generation_failed">We couldn’t create the plan. Try again.</string>
     <string name="retry">Retry</string>
     <string name="step_subtitle_uploading">Sending your files…</string>
-    <string name="uploading_pdf_progress">Uploading PDF %1$d of %2$d</string>
     <string name="step_subtitle_analyzing">Looking through your PDFs.</string>
     <string name="step_subtitle_identifying">Finding key topics across your PDFs.</string>
     <string name="step_subtitle_creating">Organizing work into study sessions.</string>
