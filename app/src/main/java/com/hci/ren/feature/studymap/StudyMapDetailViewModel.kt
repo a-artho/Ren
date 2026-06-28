@@ -25,6 +25,7 @@ data class StudyMapDetailUiState(
     val hasLoaded: Boolean = false,
     val project: StudyProject? = null,
     val todaySession: TodaySessionState? = null,
+    val todayWrapUpMessage: String? = null,
     val errorMessage: String? = null,
     val userMessage: String? = null,
     val suggestedDeadline: String? = null,
@@ -69,6 +70,10 @@ class StudyMapDetailViewModel(application: Application) : AndroidViewModel(appli
 
     fun consumeMessage() {
         _uiState.value = _uiState.value.copy(userMessage = null)
+    }
+
+    fun consumeTodayWrapUpMessage() {
+        _uiState.value = _uiState.value.copy(todayWrapUpMessage = null)
     }
 
     fun applyDeadline(date: String) {
@@ -141,8 +146,8 @@ class StudyMapDetailViewModel(application: Application) : AndroidViewModel(appli
         val updated = result.project.copy(updatedAtMillis = System.currentTimeMillis())
         publish(
             project = updated,
-            message = getApplication<Application>().getString(R.string.today_wrapped_up_message),
             todaySession = null,
+            todayWrapUpMessage = todayWrapUpMessage(result.summary),
         )
         viewModelScope.launch {
             writeMutex.withLock {
@@ -252,6 +257,7 @@ class StudyMapDetailViewModel(application: Application) : AndroidViewModel(appli
         project: StudyProject,
         message: String? = null,
         todaySession: TodaySessionState? = _uiState.value.todaySession,
+        todayWrapUpMessage: String? = null,
     ) {
         val activeData = buildStudyMapData(
             plan = project.plan,
@@ -270,6 +276,7 @@ class StudyMapDetailViewModel(application: Application) : AndroidViewModel(appli
             hasLoaded = true,
             project = project,
             todaySession = todaySession,
+            todayWrapUpMessage = todayWrapUpMessage,
             userMessage = message,
             suggestedDeadline = adjustmentService.suggestedDeadline(
                 activeData.plan.blocks,
@@ -279,6 +286,18 @@ class StudyMapDetailViewModel(application: Application) : AndroidViewModel(appli
             recommendedDaysBalanced = feasibility.recommendedDaysBalanced,
             recommendedDaysIntensive = feasibility.recommendedDaysIntensive,
         )
+    }
+
+    private fun todayWrapUpMessage(summary: TodayWrapUpSummary): String {
+        val savedChanges = summary.completedTasks > 0 || summary.removedTasks > 0
+        val movedForward = summary.movedForwardTasks > 0 || summary.movedForwardMinutes > 0
+        val app = getApplication<Application>()
+        return when {
+            savedChanges && movedForward -> app.getString(R.string.today_wrapped_up_saved_and_moved_message)
+            movedForward -> app.getString(R.string.today_wrapped_up_moved_message)
+            savedChanges -> app.getString(R.string.today_wrapped_up_saved_message)
+            else -> app.getString(R.string.today_wrapped_up_message)
+        }
     }
 }
 

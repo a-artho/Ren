@@ -56,6 +56,15 @@ class TodayWrapUpServiceTest {
         assertEquals(1, result.summary.removedTasks)
     }
 
+    @Test fun wrapUpSummarizesUnfinishedWorkMovingForward() {
+        val project = project(task("today", 30))
+
+        val result = TodayWrapUpService().wrapUp(project, "2026-06-22", null)!!
+
+        assertEquals(1, result.summary.movedForwardTasks)
+        assertEquals(30, result.summary.movedForwardMinutes)
+    }
+
     private fun project(vararg tasks: GeneratedStudyBlock) = StudyProject(
         id = "project",
         title = "Plan",

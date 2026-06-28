@@ -92,6 +92,9 @@ data class TodaySessionPlan(
             removedFromPlanTasks.isNotEmpty()
 }
 
+internal fun TodaySessionPlan.canWrapUpToday(isTodayClosed: Boolean): Boolean =
+    hasWrapUpWork && (!isTodayClosed || hasPendingChanges)
+
 class TodaySessionPlanner {
     fun plan(
         data: StudyMapData,

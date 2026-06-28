@@ -32,9 +32,11 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -55,6 +57,10 @@ fun TodayScreen(
     onTaskAction: (date: String, taskId: String, action: TodaySessionTaskAction) -> Unit,
     onWrapUpToday: (date: String) -> Unit,
     modifier: Modifier = Modifier,
+    wrapUpResultMessage: String? = null,
+    onConsumeWrapUpResult: () -> Unit = {},
+    changeMessage: String? = null,
+    onConsumeMessage: () -> Unit = {},
 ) {
     val data = buildStudyMapData(
         plan = project.plan,
@@ -79,8 +85,10 @@ fun TodayScreen(
         hasAvailabilityOverride = hasAvailabilityOverride,
     )
     var showWrapUpDialog by remember(today, todayPlan) { mutableStateOf(false) }
+    var visibleWrapUpResult by rememberSaveable(today) { mutableStateOf<String?>(null) }
+    var visibleNotice by rememberSaveable(today) { mutableStateOf<String?>(null) }
     val emptyState = todayPlan.emptyState(data, isTodayClosed)
-    val canWrapUpToday = !isTodayClosed && todayPlan.hasWrapUpWork
+    val canWrapUpToday = todayPlan.canWrapUpToday(isTodayClosed)
     val impactPreviewService = remember { TodayImpactPreviewService() }
     val impactPreview = if (canWrapUpToday) {
         impactPreviewService.preview(project, today, todaySession)
@@ -88,13 +96,27 @@ fun TodayScreen(
         null
     }
     val wrapUpButtonText = when {
-        isTodayClosed -> stringResource(R.string.today_wrapped_up_button)
         canWrapUpToday -> stringResource(R.string.wrap_up_today)
+        isTodayClosed -> stringResource(R.string.today_wrapped_up_button)
         else -> stringResource(R.string.nothing_to_wrap_up)
     }
     fun updateAvailableMinutes(minutes: Int) {
         val normalized = minutes.coerceIn(0, MaxTodaySessionMinutes)
         onAvailableTimeChanged(today, normalized.takeUnless { it == baseAvailableMinutes })
+    }
+
+    LaunchedEffect(wrapUpResultMessage) {
+        if (wrapUpResultMessage != null) {
+            visibleWrapUpResult = wrapUpResultMessage
+            onConsumeWrapUpResult()
+        }
+    }
+
+    LaunchedEffect(changeMessage) {
+        if (changeMessage != null) {
+            visibleNotice = changeMessage
+            onConsumeMessage()
+        }
     }
 
     if (showWrapUpDialog) {
@@ -123,6 +145,16 @@ fun TodayScreen(
     ) {
         item {
             TodayBudgetCard(todayPlan, isTodayClosed)
+        }
+        if (isTodayClosed && visibleWrapUpResult != null) {
+            item {
+                TodayWrapUpResultCard(message = visibleWrapUpResult.orEmpty())
+            }
+        }
+        if (visibleNotice != null) {
+            item {
+                TodayNoticeCard(message = visibleNotice.orEmpty())
+            }
         }
         item {
             AvailableTimeCard(
@@ -629,6 +661,53 @@ private fun TodayImpactPreview.message(): String = when (status) {
     TodayImpactStatus.WorkMovesForward -> stringResource(R.string.today_impact_moves_forward)
     TodayImpactStatus.Tight -> stringResource(R.string.today_impact_tight)
     TodayImpactStatus.DoesNotFit -> stringResource(R.string.today_impact_does_not_fit)
+}
+
+@Composable
+private fun TodayWrapUpResultCard(message: String) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(18.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            Text(
+                text = stringResource(R.string.today_wrap_up_result_title),
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onPrimaryContainer,
+            )
+            Text(
+                text = message,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onPrimaryContainer,
+            )
+            Text(
+                text = stringResource(R.string.wrap_up_source_material_message),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onPrimaryContainer,
+            )
+        }
+    }
+}
+
+@Composable
+private fun TodayNoticeCard(message: String) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(18.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+    ) {
+        Text(
+            text = message,
+            modifier = Modifier.padding(16.dp),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
 }
 
 @Composable

@@ -225,13 +225,13 @@ class MainActivity : ComponentActivity() {
                             TodayScreen(
                                 project = project,
                                 session = studyMapState.todaySession,
+                                wrapUpResultMessage = studyMapState.todayWrapUpMessage,
                                 onAvailableTimeChanged = studyMapDetailViewModel::updateTodayAvailableTime,
                                 onTaskAction = studyMapDetailViewModel::updateTodayTaskAction,
-                                onWrapUpToday = { date ->
-                                    studyMapDetailViewModel.wrapUpToday(date)
-                                    forward = false
-                                    screen = ScreenStudyMapDetail
-                                },
+                                onWrapUpToday = studyMapDetailViewModel::wrapUpToday,
+                                onConsumeWrapUpResult = studyMapDetailViewModel::consumeTodayWrapUpMessage,
+                                changeMessage = studyMapState.userMessage,
+                                onConsumeMessage = studyMapDetailViewModel::consumeMessage,
                                 modifier = Modifier.padding(scaffoldPadding),
                             )
                         } ?: PlaceholderTabScreen(

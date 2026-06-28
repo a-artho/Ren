@@ -5,6 +5,8 @@ import com.hci.ren.feature.plangeneration.GeneratedStudyBlock
 data class TodayWrapUpSummary(
     val completedTasks: Int,
     val removedTasks: Int,
+    val movedForwardTasks: Int,
+    val movedForwardMinutes: Int,
 )
 
 data class TodayWrapUpResult(
@@ -65,6 +67,8 @@ class TodayWrapUpService {
             summary = TodayWrapUpSummary(
                 completedTasks = completedCount,
                 removedTasks = removedCount,
+                movedForwardTasks = todayPlan.unfinishedWorkForwardTasks.size,
+                movedForwardMinutes = todayPlan.unfinishedWorkForwardMinutes,
             ),
         )
     }
