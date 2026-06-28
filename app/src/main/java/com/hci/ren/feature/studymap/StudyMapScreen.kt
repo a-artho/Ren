@@ -82,12 +82,15 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.semantics.heading
@@ -726,7 +729,7 @@ private fun StudyScheduleTimeline(
 ) {
     Column(
         modifier = modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(14.dp),
+        verticalArrangement = Arrangement.spacedBy(0.dp),
     ) {
         days.forEachIndexed { index, day ->
             StudyDayMapCard(
@@ -843,36 +846,41 @@ private fun DayTimelineMarker(
     isToday: Boolean,
     isCompleted: Boolean,
     expanded: Boolean,
+    modifier: Modifier = Modifier,
 ) {
     val activeColor = MaterialTheme.colorScheme.primary
     val mutedColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.72f)
     val nodeBorderColor = if (isToday) activeColor.copy(alpha = 0.72f) else mutedColor
     val dotSize = if (isToday) 13.dp else 10.dp
     val dotTop = 19.dp
-    val dotBottom = dotTop + dotSize
-    val railHeight = if (expanded) 48.dp else 88.dp
     Box(
-        modifier = Modifier
+        modifier = modifier
             .width(18.dp)
-            .height(railHeight),
+            .height(if (expanded) 58.dp else 88.dp),
         contentAlignment = Alignment.TopCenter,
     ) {
-        if (!isFirst) {
-            Surface(
-                modifier = Modifier
-                    .width(1.dp)
-                    .height(dotTop),
-                color = mutedColor,
-            ) {}
-        }
-        if (!isLast) {
-            Surface(
-                modifier = Modifier
-                    .padding(top = dotBottom)
-                    .width(1.dp)
-                    .height(railHeight - dotBottom),
-                color = mutedColor,
-            ) {}
+        Canvas(Modifier.fillMaxSize()) {
+            val centerX = size.width / 2f
+            val dotRadius = dotSize.toPx() / 2f
+            val dotCenterY = dotTop.toPx() + dotRadius
+            if (!isFirst) {
+                drawLine(
+                    color = mutedColor,
+                    start = Offset(centerX, 0f),
+                    end = Offset(centerX, dotCenterY - dotRadius),
+                    strokeWidth = 1.dp.toPx(),
+                    cap = StrokeCap.Round,
+                )
+            }
+            if (!isLast) {
+                drawLine(
+                    color = mutedColor,
+                    start = Offset(centerX, dotCenterY + dotRadius),
+                    end = Offset(centerX, size.height),
+                    strokeWidth = 1.dp.toPx(),
+                    cap = StrokeCap.Round,
+                )
+            }
         }
         Surface(
             modifier = Modifier
@@ -893,96 +901,102 @@ private fun TimelineTaskBranchRow(
     isLastBranch: Boolean,
     isLastDay: Boolean,
 ) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.Top,
-    ) {
-        TaskBranchNode(
-            status = task.status,
-            isFirstBranch = isFirstBranch,
-            isLastBranch = isLastBranch,
-            isLastDay = isLastDay,
-        )
-        TaskRowTextContent(
-            task = task,
-            source = source,
+    var rowHeightPx by remember { mutableIntStateOf(0) }
+    val rowHeight = with(LocalDensity.current) { rowHeightPx.toDp() }
+
+    Box(modifier = Modifier.fillMaxWidth()) {
+        if (rowHeightPx > 0) {
+            TaskBranchConnector(
+                isFirstBranch = isFirstBranch,
+                isLastBranch = isLastBranch,
+                isLastDay = isLastDay,
+                modifier = Modifier
+                    .width(54.dp)
+                    .height(rowHeight),
+            )
+        }
+
+        Row(
             modifier = Modifier
-                .weight(1f)
-                .padding(vertical = 7.dp),
-        )
-        if (task.status != StudyTaskStatus.NotStarted) {
-            Spacer(Modifier.width(10.dp))
-            Box(Modifier.padding(top = 7.dp)) {
-                StatusPill(statusLabel(task.status), statusContainer(task.status), statusContent(task.status))
+                .fillMaxWidth()
+                .onSizeChanged { rowHeightPx = it.height },
+            verticalAlignment = Alignment.Top,
+        ) {
+            Spacer(Modifier.width(54.dp))
+            TaskRowTextContent(
+                task = task,
+                source = source,
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(vertical = 7.dp),
+            )
+            if (task.status != StudyTaskStatus.NotStarted) {
+                Spacer(Modifier.width(10.dp))
+                Box(Modifier.padding(top = 7.dp)) {
+                    StatusPill(statusLabel(task.status), statusContainer(task.status), statusContent(task.status))
+                }
             }
         }
+
+        TaskBullet(
+            status = task.status,
+            modifier = Modifier.padding(start = 24.dp, top = 7.dp),
+        )
     }
 }
 
 @Composable
-private fun TaskBranchNode(
-    status: StudyTaskStatus,
+private fun TaskBranchConnector(
     isFirstBranch: Boolean,
     isLastBranch: Boolean,
     isLastDay: Boolean,
+    modifier: Modifier = Modifier,
 ) {
     val mutedColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.72f)
-    Box(
-        modifier = Modifier
-            .width(54.dp)
-            .height(54.dp),
-        contentAlignment = Alignment.TopStart,
-    ) {
-        Canvas(Modifier.fillMaxSize()) {
-            val branchX = 9.dp.toPx()
-            val nodeCenterX = 39.dp.toPx()
-            val nodeCenterY = 22.dp.toPx()
-            val exitY = size.height
-            if (isFirstBranch) {
-                drawLine(
-                    color = mutedColor,
-                    start = androidx.compose.ui.geometry.Offset(branchX, 0f),
-                    end = androidx.compose.ui.geometry.Offset(nodeCenterX, 0f),
-                    strokeWidth = 1.dp.toPx(),
-                    cap = StrokeCap.Round,
-                )
-            }
+    Canvas(modifier) {
+        val branchX = 9.dp.toPx()
+        val nodeCenterX = 39.dp.toPx()
+        val nodeCenterY = 22.dp.toPx()
+        val exitY = size.height
+        if (!isLastDay || !isLastBranch) {
             drawLine(
                 color = mutedColor,
-                start = androidx.compose.ui.geometry.Offset(nodeCenterX, 0f),
-                end = androidx.compose.ui.geometry.Offset(nodeCenterX, nodeCenterY),
+                start = Offset(branchX, 0f),
+                end = Offset(branchX, exitY),
                 strokeWidth = 1.dp.toPx(),
                 cap = StrokeCap.Round,
             )
-            if (!isLastBranch) {
-                drawLine(
-                    color = mutedColor,
-                    start = androidx.compose.ui.geometry.Offset(nodeCenterX, nodeCenterY),
-                    end = androidx.compose.ui.geometry.Offset(nodeCenterX, exitY),
-                    strokeWidth = 1.dp.toPx(),
-                    cap = StrokeCap.Round,
-                )
-            } else if (!isLastDay) {
-                drawLine(
-                    color = mutedColor,
-                    start = androidx.compose.ui.geometry.Offset(nodeCenterX, nodeCenterY),
-                    end = androidx.compose.ui.geometry.Offset(nodeCenterX, exitY),
-                    strokeWidth = 1.dp.toPx(),
-                    cap = StrokeCap.Round,
-                )
-                drawLine(
-                    color = mutedColor,
-                    start = androidx.compose.ui.geometry.Offset(nodeCenterX, exitY),
-                    end = androidx.compose.ui.geometry.Offset(branchX, exitY),
-                    strokeWidth = 1.dp.toPx(),
-                    cap = StrokeCap.Round,
-                )
-            }
+        } else {
+            drawLine(
+                color = mutedColor,
+                start = Offset(branchX, 0f),
+                end = Offset(branchX, nodeCenterY),
+                strokeWidth = 1.dp.toPx(),
+                cap = StrokeCap.Round,
+            )
         }
-        TaskBullet(
-            status = status,
-            modifier = Modifier.padding(start = 24.dp, top = 7.dp),
-        )
+
+        if (isFirstBranch) {
+            drawLine(
+                color = mutedColor,
+                start = Offset(branchX, nodeCenterY),
+                end = Offset(nodeCenterX, nodeCenterY),
+                strokeWidth = 1.dp.toPx(),
+                cap = StrokeCap.Round,
+            )
+        }
+
+        val childRailStart = if (isFirstBranch) nodeCenterY else 0f
+        val childRailEnd = if (isLastBranch) nodeCenterY else exitY
+        if (childRailStart < childRailEnd) {
+            drawLine(
+                color = mutedColor,
+                start = Offset(nodeCenterX, childRailStart),
+                end = Offset(nodeCenterX, childRailEnd),
+                strokeWidth = 1.dp.toPx(),
+                cap = StrokeCap.Round,
+            )
+        }
     }
 }
 
