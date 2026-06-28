@@ -104,8 +104,7 @@ private fun GeneratedStudyBlock.sourceTaskId(
     sourceTasksById: Map<String, GeneratedStudyBlock>,
 ): String? {
     if (id in sourceTasksById) return id
-    val splitSourceId = SplitPartIdRegex.matchEntire(id)?.groupValues?.get(1)
-    return splitSourceId?.takeIf { it in sourceTasksById }
+    val markerIndex = id.lastIndexOf(LocalSplitIdMarker)
+    if (markerIndex <= 0) return null
+    return id.substring(0, markerIndex).takeIf { it in sourceTasksById }
 }
-
-private val SplitPartIdRegex = Regex("(.+)_part\\d+")

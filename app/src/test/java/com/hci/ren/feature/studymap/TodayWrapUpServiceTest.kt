@@ -25,7 +25,7 @@ class TodayWrapUpServiceTest {
         )
         val session = TodaySessionState(
             date = "2026-06-22",
-            doneTodayTaskIds = setOf("chapter_part1"),
+            doneTodayTaskIds = setOf("chapter__ren_split__1"),
         )
 
         val result = TodayWrapUpService().wrapUp(project, "2026-06-22", session)!!
@@ -46,7 +46,7 @@ class TodayWrapUpServiceTest {
         )
         val session = TodaySessionState(
             date = "2026-06-22",
-            removedFromPlanTaskIds = setOf("chapter_part1"),
+            removedFromPlanTaskIds = setOf("chapter__ren_split__1"),
         )
 
         val result = TodayWrapUpService().wrapUp(project, "2026-06-22", session)!!
@@ -54,6 +54,27 @@ class TodayWrapUpServiceTest {
         assertEquals(50, result.project.taskProgressById["chapter"]?.removedMinutes)
         assertEquals(100, result.project.plan.blocks.single().durationMinutes)
         assertEquals(1, result.summary.removedTasks)
+    }
+
+    @Test fun wrapUpSplitPartWithCollidingLocalIdAddsProgressToSourceTask() {
+        val project = project(
+            task("chapter", 100).copy(
+                order = 1,
+                minimumUsefulMinutes = 20,
+                splitAllowed = true,
+            ),
+            task("chapter__ren_split__1", 30).copy(order = 2),
+        )
+        val session = TodaySessionState(
+            date = "2026-06-22",
+            doneTodayTaskIds = setOf("chapter__ren_split__1_2"),
+        )
+
+        val result = TodayWrapUpService().wrapUp(project, "2026-06-22", session)!!
+
+        assertEquals(50, result.project.taskProgressById["chapter"]?.completedMinutes)
+        assertEquals(null, result.project.taskProgressById["chapter__ren_split__1"]?.completedMinutes)
+        assertEquals(1, result.summary.completedTasks)
     }
 
     @Test fun wrapUpSummarizesUnfinishedWorkMovingForward() {

@@ -287,6 +287,56 @@ class TodaySessionModelsTest {
         assertEquals(30, session.plannedMinutes)
     }
 
+    @Test fun extraTimeSuggestsUnscheduledTasksInPlanOrder() {
+        val today = task("today", 30).copy(order = 1)
+        val unscheduled = task("unscheduled", 30).copy(
+            order = 2,
+            status = StudyTaskStatus.Unscheduled,
+        )
+        val data = dataFor(todayTasks = listOf(today), dailyMinutes = 30).copy(
+            plan = plan(listOf(today, unscheduled)),
+            schedule = StudySchedule(
+                days = listOf(StudyScheduleDay("2026-06-22", listOf(today), 30)),
+                unscheduledTasks = listOf(unscheduled),
+            ),
+        )
+
+        val session = TodaySessionPlanner().plan(
+            data = data,
+            date = "2026-06-22",
+            availableMinutes = 60,
+        )
+
+        assertEquals(listOf("unscheduled"), session.pullInCandidates.map { it.id })
+    }
+
+    @Test fun pulledUnscheduledTaskStaysInTodayPlan() {
+        val today = task("today", 30).copy(order = 1)
+        val unscheduled = task("unscheduled", 30).copy(
+            order = 2,
+            status = StudyTaskStatus.Unscheduled,
+        )
+        val data = dataFor(todayTasks = listOf(today), dailyMinutes = 30).copy(
+            plan = plan(listOf(today, unscheduled)),
+            schedule = StudySchedule(
+                days = listOf(StudyScheduleDay("2026-06-22", listOf(today), 30)),
+                unscheduledTasks = listOf(unscheduled),
+            ),
+        )
+        val state = TodaySessionState(date = "2026-06-22")
+            .applyTaskAction("unscheduled", TodaySessionTaskAction.PullIn)
+
+        val session = TodaySessionPlanner().plan(
+            data = data,
+            date = "2026-06-22",
+            availableMinutes = 60,
+            session = state,
+        )
+
+        assertEquals(listOf("unscheduled"), session.pulledInTasks.map { it.id })
+        assertEquals(emptyList<String>(), session.pullInCandidates.map { it.id })
+    }
+
     @Test fun pullAheadSuggestionsAloneDoNotCreateWrapUpWork() {
         val future = task("future", 30).copy(order = 1)
         val data = dataFor(

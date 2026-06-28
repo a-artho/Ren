@@ -236,9 +236,32 @@ class StudyMapModelsTest {
             today = monday,
         )
 
-        assertEquals(listOf("chapter_part1", "chapter_part2"), data.plan.blocks.map { it.id })
+        assertEquals(listOf("chapter__ren_split__1", "chapter__ren_split__2"), data.plan.blocks.map { it.id })
         assertEquals(listOf(50, 50), data.plan.blocks.map { it.durationMinutes })
-        assertEquals(listOf("chapter_part1", "chapter_part2"), data.schedule.days.flatMap { it.tasks }.map { it.id })
+        assertEquals(
+            listOf("chapter__ren_split__1", "chapter__ren_split__2"),
+            data.schedule.days.flatMap { it.tasks }.map { it.id },
+        )
+    }
+
+    @Test fun localSplitIdsDoNotCollideWithSourceTaskIds() {
+        val canonical = task("chapter", 100).copy(
+            order = 1,
+            minimumUsefulMinutes = 20,
+            splitAllowed = true,
+        )
+        val existingSource = task("chapter__ren_split__1", 30).copy(order = 2)
+        val data = buildStudyMapData(
+            plan(listOf(canonical, existingSource)),
+            submission(60, StudyDeadline.InThreeDays),
+            today = monday,
+        )
+
+        assertEquals(data.plan.blocks.size, data.plan.blocks.map { it.id }.toSet().size)
+        assertEquals(
+            listOf("chapter__ren_split__1_2", "chapter__ren_split__2", "chapter__ren_split__1"),
+            data.plan.blocks.map { it.id },
+        )
     }
 
     @Test fun activeProgressReducesRemainingWorkWithoutChangingSourceIdentity() {
@@ -306,7 +329,7 @@ class StudyMapModelsTest {
             today = monday,
         )
 
-        assertEquals(listOf("chapter_part1", "chapter_part2"), data.plan.blocks.map { it.id })
+        assertEquals(listOf("chapter__ren_split__1", "chapter__ren_split__2"), data.plan.blocks.map { it.id })
         assertEquals(listOf(StudyTaskStatus.InProgress, StudyTaskStatus.NotStarted), data.plan.blocks.map { it.status })
     }
 

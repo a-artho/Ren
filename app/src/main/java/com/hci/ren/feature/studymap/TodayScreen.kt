@@ -309,6 +309,23 @@ fun TodayScreen(
                     )
                 }
             }
+            if (todayPlan.removedFromPlanTasks.isNotEmpty()) {
+                item {
+                    TodaySectionTitle(stringResource(R.string.removed_from_plan))
+                }
+                items(todayPlan.removedFromPlanTasks, key = { "removed-${it.id}" }) { task ->
+                    TodayTaskRow(
+                        task = task,
+                        supportingText = stringResource(R.string.removed_from_plan_message),
+                        actions = listOf(
+                            TodayTaskActionSpec(
+                                label = stringResource(R.string.restore),
+                                onClick = { onTaskAction(today, task.id, TodaySessionTaskAction.RestoreRemoved) },
+                            ),
+                        ),
+                    )
+                }
+            }
             if (todayPlan.doneTodayTasks.isNotEmpty()) {
                 item {
                     TodaySectionTitle(stringResource(R.string.done_today))
@@ -333,23 +350,6 @@ fun TodayScreen(
                             stringResource(R.string.already_done_today_message)
                         },
                         actions = actions,
-                    )
-                }
-            }
-            if (todayPlan.removedFromPlanTasks.isNotEmpty()) {
-                item {
-                    TodaySectionTitle(stringResource(R.string.removed_from_plan))
-                }
-                items(todayPlan.removedFromPlanTasks, key = { "removed-${it.id}" }) { task ->
-                    TodayTaskRow(
-                        task = task,
-                        supportingText = stringResource(R.string.removed_from_plan_message),
-                        actions = listOf(
-                            TodayTaskActionSpec(
-                                label = stringResource(R.string.restore),
-                                onClick = { onTaskAction(today, task.id, TodaySessionTaskAction.RestoreRemoved) },
-                            ),
-                        ),
                     )
                 }
             }

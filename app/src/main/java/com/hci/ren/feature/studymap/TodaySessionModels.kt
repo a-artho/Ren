@@ -108,11 +108,14 @@ class TodaySessionPlanner {
         val todaySchedule = data.schedule.days.firstOrNull { it.date == date }
         val baseAvailableMinutes = todaySchedule?.capacityMinutes ?: data.dailyMinutes
         val committedTodayTasks = todaySchedule?.tasks.orEmpty().sortedBy { it.order }
-        val futureTasks = data.schedule.days.asSequence()
+        val scheduledForwardTasks = data.schedule.days.asSequence()
             .filter { it.date > date }
             .flatMap { it.tasks.asSequence() }
             .sortedBy { it.order }
             .toList()
+        val forwardTasks = (scheduledForwardTasks + data.schedule.unscheduledTasks)
+            .distinctBy { it.id }
+            .sortedBy { it.order }
         val activeTasksById = data.activeTasks.associateBy { it.id }
         val removedIds = activeSession?.removedFromPlanTaskIds.orEmpty()
         val doneIds = activeSession?.doneTodayTaskIds.orEmpty()
@@ -137,7 +140,7 @@ class TodaySessionPlanner {
         val doTodayTasks = committedCandidates.todayTasksWithin(normalizedAvailableMinutes)
         val doTodayIds = doTodayTasks.mapTo(mutableSetOf()) { it.id }
         val wontFitTodayTasks = committedCandidates.filterNot { it.id in doTodayIds }
-        val pulledInTasks = futureTasks
+        val pulledInTasks = forwardTasks
             .filter { it.id in pulledIds && it.id !in doneTodayIds && it.id !in removedIds }
         val removedFromPlanTasks = orderedByPlan(data.activeTasks, removedIds)
         val removedFromPlanTaskIds = removedFromPlanTasks.mapTo(mutableSetOf()) { it.id }
@@ -146,8 +149,8 @@ class TodaySessionPlanner {
         val remainingMinutes = (normalizedAvailableMinutes - plannedTasks.sumOf { it.durationMinutes.coerceAtLeast(0) })
             .coerceAtLeast(0)
         val pullInCandidates = if (remainingMinutes > 0) {
-            futureTasks.asSequence()
-                .filter { it.status == StudyTaskStatus.NotStarted }
+            forwardTasks.asSequence()
+                .filter { it.status in PullableForwardStatuses }
                 .filterNot { it.id in plannedIds }
                 .filterNot { it.id in removedIds }
                 .filter { task ->
@@ -275,4 +278,9 @@ private val TodayAnchorStatuses = setOf(
     StudyTaskStatus.Completed,
     StudyTaskStatus.InProgress,
     StudyTaskStatus.Locked,
+)
+private val PullableForwardStatuses = setOf(
+    StudyTaskStatus.NotStarted,
+    StudyTaskStatus.Unscheduled,
+    StudyTaskStatus.OverCapacity,
 )
