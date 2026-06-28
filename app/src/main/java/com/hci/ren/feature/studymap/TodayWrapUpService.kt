@@ -28,8 +28,7 @@ class TodayWrapUpService {
             taskProgressById = project.taskProgressById,
             today = date.toStudyCalendar() ?: return null,
         )
-        val todaySchedule = data.schedule.days.firstOrNull { it.date == date }
-        val baseAvailableMinutes = todaySchedule?.capacityMinutes ?: data.dailyMinutes
+        val baseAvailableMinutes = todayBaseAvailableMinutes(project, data, date)
         val availableMinutes = activeSession.availableMinutes ?: baseAvailableMinutes
         val todayPlan = TodaySessionPlanner().plan(
             data = data,

@@ -287,6 +287,37 @@ class TodaySessionModelsTest {
         assertEquals(30, session.plannedMinutes)
     }
 
+    @Test fun pullAheadSuggestionsAloneDoNotCreateWrapUpWork() {
+        val future = task("future", 30).copy(order = 1)
+        val data = dataFor(
+            todayTasks = emptyList(),
+            futureTasks = listOf(future),
+            dailyMinutes = 30,
+        )
+
+        val session = TodaySessionPlanner().plan(
+            data = data,
+            date = "2026-06-22",
+            availableMinutes = 30,
+        )
+
+        assertEquals(listOf("future"), session.pullInCandidates.map { it.id })
+        assertFalse(session.hasWrapUpWork)
+    }
+
+    @Test fun temporaryChangesCreateWrapUpWorkWithoutTodayTasks() {
+        val data = dataFor(todayTasks = emptyList(), dailyMinutes = 30)
+
+        val session = TodaySessionPlanner().plan(
+            data = data,
+            date = "2026-06-22",
+            availableMinutes = 15,
+            hasAvailabilityOverride = true,
+        )
+
+        assertTrue(session.hasWrapUpWork)
+    }
+
     @Test fun pullAheadSuggestionsDoNotSkipOrderedTasksThatDoNotFit() {
         val today = task("today", 30).copy(order = 1)
         val firstFuture = task("first-future", 90).copy(order = 2)

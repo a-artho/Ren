@@ -67,6 +67,12 @@ data class TodaySessionPlan(
     val removedMinutes: Int
         get() = removedFromPlanTasks.sumOf { it.durationMinutes.coerceAtLeast(0) }
 
+    val unfinishedWorkForwardTasks: List<GeneratedStudyBlock>
+        get() = doTodayTasks + pulledInTasks + wontFitTodayTasks + movedLaterTasks
+
+    val unfinishedWorkForwardMinutes: Int
+        get() = unfinishedWorkForwardTasks.sumOf { it.durationMinutes.coerceAtLeast(0) }
+
     val remainingMinutes: Int
         get() = (availableMinutes - plannedMinutes).coerceAtLeast(0)
 
@@ -75,6 +81,15 @@ data class TodaySessionPlan(
 
     val hasPendingChanges: Boolean
         get() = hasAvailabilityOverride || hasTaskChanges
+
+    val hasWrapUpWork: Boolean
+        get() = hasPendingChanges ||
+            doTodayTasks.isNotEmpty() ||
+            pulledInTasks.isNotEmpty() ||
+            doneTodayTasks.isNotEmpty() ||
+            wontFitTodayTasks.isNotEmpty() ||
+            movedLaterTasks.isNotEmpty() ||
+            removedFromPlanTasks.isNotEmpty()
 }
 
 class TodaySessionPlanner {
@@ -242,6 +257,14 @@ private fun orderedByPlan(
     tasks: List<GeneratedStudyBlock>,
     ids: List<String>,
 ): List<GeneratedStudyBlock> = orderedByPlan(tasks, ids.toSet())
+
+internal fun todayBaseAvailableMinutes(
+    project: StudyProject,
+    data: StudyMapData,
+    today: String,
+): Int = project.dailyAvailableMinutesByDate[today]
+    ?: data.schedule.days.firstOrNull { it.date == today }?.capacityMinutes
+    ?: data.dailyMinutes
 
 const val MaxTodaySessionMinutes = 1_440
 private const val MaxPullInCandidateCount = 3
