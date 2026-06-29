@@ -302,12 +302,13 @@ private fun RadiatingPlanAnimation(
 ) {
     val primary = MaterialTheme.colorScheme.primary
     val muted = MaterialTheme.colorScheme.outlineVariant
+    val profile = animationProfile(stepIndex)
     val transition = rememberInfiniteTransition(label = "plan-radiating-animation")
     val phaseAnimated by transition.animateFloat(
         initialValue = 0f,
         targetValue = 1f,
         animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 4600, easing = LinearEasing),
+            animation = tween(durationMillis = profile.waveDurationMillis, easing = LinearEasing),
             repeatMode = RepeatMode.Restart,
         ),
         label = "radiating-wave-phase",
@@ -316,7 +317,7 @@ private fun RadiatingPlanAnimation(
         initialValue = 0f,
         targetValue = 1f,
         animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 3400, easing = RenEmphasizedEasing),
+            animation = tween(durationMillis = profile.breatheDurationMillis, easing = RenEmphasizedEasing),
             repeatMode = RepeatMode.Reverse,
         ),
         label = "radiating-core-breathe",
@@ -325,7 +326,7 @@ private fun RadiatingPlanAnimation(
         initialValue = 0f,
         targetValue = 1f,
         animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 2800, easing = RenEmphasizedEasing),
+            animation = tween(durationMillis = profile.scanDurationMillis, easing = RenEmphasizedEasing),
             repeatMode = RepeatMode.Reverse,
         ),
         label = "radiating-inner-motion",
@@ -338,23 +339,23 @@ private fun RadiatingPlanAnimation(
         val center = Offset(size.width / 2f, size.height / 2f)
         val minDimension = min(size.width, size.height)
         val maxDimension = max(size.width, size.height)
-        val coreRadius = minDimension * (0.126f + breathe * 0.01f)
-        val waveReach = maxDimension * 0.76f
+        val coreRadius = minDimension * (profile.coreScale + breathe * 0.01f)
+        val waveReach = maxDimension * profile.waveReach
 
-        repeat(7) { index ->
-            val progress = (phase + index * 0.143f) % 1f
+        repeat(profile.waveCount) { index ->
+            val progress = (phase + index * profile.waveDelay) % 1f
             val fade = (1f - progress) * (1f - progress)
-            val angle = -0.95f + index * 1.08f
-            val drift = maxDimension * (0.045f + index * 0.004f) * progress
-            val radius = coreRadius * 1.4f + waveReach * progress
-            val scaleX = 0.74f + (index % 4) * 0.11f
-            val scaleY = 0.46f + ((index + 2) % 4) * 0.09f
+            val angle = profile.angleOffset + index * profile.angleStep
+            val drift = maxDimension * (profile.drift + index * 0.004f) * progress
+            val radius = coreRadius * profile.waveStart + waveReach * progress
+            val scaleX = profile.scaleXBase + (index % 4) * 0.11f
+            val scaleY = profile.scaleYBase + ((index + 2) % 4) * 0.09f
             val waveCenter = Offset(
                 x = center.x + cos(angle).toFloat() * drift,
                 y = center.y + sin(angle).toFloat() * drift * 0.78f,
             )
             drawOval(
-                color = primary.copy(alpha = fade * 0.038f),
+                color = primary.copy(alpha = fade * profile.waveAlpha),
                 topLeft = Offset(waveCenter.x - radius * scaleX, waveCenter.y - radius * scaleY),
                 size = Size(radius * 2f * scaleX, radius * 2f * scaleY),
             )
@@ -362,22 +363,22 @@ private fun RadiatingPlanAnimation(
 
         val ambientLean = if (reducedMotion) 0.35f else breathe
         drawOval(
-            color = primary.copy(alpha = 0.012f + ambientLean * 0.014f),
+            color = primary.copy(alpha = profile.ambientAlpha * 0.42f + ambientLean * 0.014f),
             topLeft = Offset(center.x - maxDimension * 0.62f, center.y - maxDimension * 0.38f),
             size = Size(maxDimension * 1.24f, maxDimension * 0.76f),
         )
         drawOval(
-            color = primary.copy(alpha = 0.01f + ambientLean * 0.012f),
+            color = primary.copy(alpha = profile.ambientAlpha * 0.36f + ambientLean * 0.012f),
             topLeft = Offset(center.x - maxDimension * 0.34f, center.y - maxDimension * 0.58f),
             size = Size(maxDimension * 0.86f, maxDimension * 1.08f),
         )
         drawOval(
-            color = primary.copy(alpha = 0.028f + ambientLean * 0.028f),
+            color = primary.copy(alpha = profile.ambientAlpha + ambientLean * 0.028f),
             topLeft = Offset(center.x - maxDimension * 0.42f, center.y - maxDimension * 0.27f),
             size = Size(maxDimension * 0.84f, maxDimension * 0.54f),
         )
         drawOval(
-            color = primary.copy(alpha = 0.02f + ambientLean * 0.02f),
+            color = primary.copy(alpha = profile.ambientAlpha * 0.72f + ambientLean * 0.02f),
             topLeft = Offset(center.x - maxDimension * 0.33f, center.y - maxDimension * 0.36f),
             size = Size(maxDimension * 0.66f, maxDimension * 0.72f),
         )
@@ -601,3 +602,109 @@ private fun generationProgress(status: PlanStatus): Float {
 
 @Composable
 private fun stepSubtitle(step: Step): String = stringResource(step.subtitleRes)
+
+private data class AnimationProfile(
+    val waveCount: Int,
+    val waveDelay: Float,
+    val waveReach: Float,
+    val waveStart: Float,
+    val waveAlpha: Float,
+    val ambientAlpha: Float,
+    val coreScale: Float,
+    val drift: Float,
+    val angleOffset: Float,
+    val angleStep: Float,
+    val scaleXBase: Float,
+    val scaleYBase: Float,
+    val waveDurationMillis: Int,
+    val breatheDurationMillis: Int,
+    val scanDurationMillis: Int,
+)
+
+private fun animationProfile(stepIndex: Int): AnimationProfile = when (stepIndex) {
+    0 -> AnimationProfile(
+        waveCount = 6,
+        waveDelay = 0.165f,
+        waveReach = 0.7f,
+        waveStart = 1.34f,
+        waveAlpha = 0.034f,
+        ambientAlpha = 0.024f,
+        coreScale = 0.124f,
+        drift = 0.04f,
+        angleOffset = -0.72f,
+        angleStep = 1.18f,
+        scaleXBase = 0.68f,
+        scaleYBase = 0.44f,
+        waveDurationMillis = 4400,
+        breatheDurationMillis = 3300,
+        scanDurationMillis = 2500,
+    )
+    1 -> AnimationProfile(
+        waveCount = 7,
+        waveDelay = 0.143f,
+        waveReach = 0.78f,
+        waveStart = 1.42f,
+        waveAlpha = 0.038f,
+        ambientAlpha = 0.028f,
+        coreScale = 0.126f,
+        drift = 0.045f,
+        angleOffset = -0.95f,
+        angleStep = 1.08f,
+        scaleXBase = 0.74f,
+        scaleYBase = 0.46f,
+        waveDurationMillis = 4600,
+        breatheDurationMillis = 3400,
+        scanDurationMillis = 2800,
+    )
+    2 -> AnimationProfile(
+        waveCount = 8,
+        waveDelay = 0.125f,
+        waveReach = 0.84f,
+        waveStart = 1.32f,
+        waveAlpha = 0.04f,
+        ambientAlpha = 0.03f,
+        coreScale = 0.122f,
+        drift = 0.052f,
+        angleOffset = -1.2f,
+        angleStep = 0.92f,
+        scaleXBase = 0.66f,
+        scaleYBase = 0.5f,
+        waveDurationMillis = 4100,
+        breatheDurationMillis = 3200,
+        scanDurationMillis = 2300,
+    )
+    3 -> AnimationProfile(
+        waveCount = 6,
+        waveDelay = 0.155f,
+        waveReach = 0.74f,
+        waveStart = 1.5f,
+        waveAlpha = 0.036f,
+        ambientAlpha = 0.026f,
+        coreScale = 0.132f,
+        drift = 0.034f,
+        angleOffset = -0.55f,
+        angleStep = 1.05f,
+        scaleXBase = 0.8f,
+        scaleYBase = 0.42f,
+        waveDurationMillis = 5000,
+        breatheDurationMillis = 3600,
+        scanDurationMillis = 3000,
+    )
+    else -> AnimationProfile(
+        waveCount = 5,
+        waveDelay = 0.18f,
+        waveReach = 0.66f,
+        waveStart = 1.58f,
+        waveAlpha = 0.032f,
+        ambientAlpha = 0.022f,
+        coreScale = 0.13f,
+        drift = 0.028f,
+        angleOffset = -0.42f,
+        angleStep = 1.24f,
+        scaleXBase = 0.72f,
+        scaleYBase = 0.48f,
+        waveDurationMillis = 5200,
+        breatheDurationMillis = 3700,
+        scanDurationMillis = 3200,
+    )
+}

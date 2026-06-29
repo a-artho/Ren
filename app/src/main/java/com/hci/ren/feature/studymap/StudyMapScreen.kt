@@ -101,6 +101,7 @@ import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.hci.ren.R
 import com.hci.ren.feature.pdfupload.presentation.PlanSetupSubmission
@@ -944,6 +945,9 @@ private fun TimelineTaskBranchRow(
 
         TaskBullet(
             status = task.status,
+            nodeSize = 10.dp,
+            completeIconSize = 12.dp,
+            borderWidth = 1.25.dp,
             modifier = Modifier.padding(start = 24.dp, top = 7.dp),
         )
     }
@@ -1220,7 +1224,13 @@ private fun TaskRowTextContent(
 }
 
 @Composable
-private fun TaskBullet(status: StudyTaskStatus, modifier: Modifier = Modifier) {
+private fun TaskBullet(
+    status: StudyTaskStatus,
+    modifier: Modifier = Modifier,
+    nodeSize: Dp = 14.dp,
+    completeIconSize: Dp = 16.dp,
+    borderWidth: Dp = 1.5.dp,
+) {
     val complete = status == StudyTaskStatus.Completed
     Box(modifier = modifier.size(30.dp), contentAlignment = Alignment.Center) {
         Box(contentAlignment = Alignment.Center) {
@@ -1228,16 +1238,16 @@ private fun TaskBullet(status: StudyTaskStatus, modifier: Modifier = Modifier) {
                 Icon(
                     Icons.Default.CheckCircle,
                     contentDescription = null,
-                    modifier = Modifier.size(16.dp),
+                    modifier = Modifier.size(completeIconSize),
                     tint = MaterialTheme.colorScheme.primary,
                 )
             } else {
                 Surface(
-                    modifier = Modifier.size(14.dp),
+                    modifier = Modifier.size(nodeSize),
                     shape = CircleShape,
                     color = Color.Transparent,
                     border = BorderStroke(
-                        width = 1.5.dp,
+                        width = borderWidth,
                         color = MaterialTheme.colorScheme.primary.copy(alpha = 0.72f),
                     ),
                 ) {}

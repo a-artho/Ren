@@ -1,7 +1,10 @@
 package com.hci.ren.feature.pdfupload.presentation
 
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -14,6 +17,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.selection.toggleable
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
@@ -51,22 +57,28 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
-import com.hci.ren.ui.components.PlanFlowCircleChoice
 import com.hci.ren.ui.components.PlanFlowIntro
 import com.hci.ren.ui.components.PlanFlowOptionRow
-import com.hci.ren.ui.components.PlanFlowPillChoice
 import com.hci.ren.ui.components.PlanFlowPrimaryButton
 import com.hci.ren.ui.components.PlanFlowScaffold
 import com.hci.ren.ui.components.PlanFlowSectionGap
 import com.hci.ren.ui.theme.RenTheme
 import com.hci.ren.ui.motion.RenFadeThroughDurationMillis
+import com.hci.ren.ui.motion.RenMotionDurationMillis
 import com.hci.ren.ui.motion.isReducedMotionEnabled
 import com.hci.ren.ui.motion.renFadeThroughTransform
 import kotlinx.coroutines.delay
@@ -359,7 +371,7 @@ private fun StudyDaysStep(
 ) {
     StepIntro(
         title = "When do you study?",
-        subtitle = "Choose the days you usually have time. You can adjust this later.",
+        subtitle = "Pick the days this plan can use.",
     )
 
     StudyRhythmCard(
@@ -402,72 +414,242 @@ private fun StudyRhythmCard(
         color = MaterialTheme.colorScheme.surface,
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
     ) {
-        Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 22.dp)) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                StudyDay.entries.forEach { day ->
-                    PlanFlowCircleChoice(
-                        label = day.shortLabel,
-                        contentDescription = day.label,
-                        isSelected = day in state.selectedDays,
-                        onClick = { onDayToggled(day) },
-                        modifier = Modifier.weight(1f),
-                    )
-                }
-            }
+        Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 20.dp)) {
+            StudyWeekPicker(
+                selectedDays = state.selectedDays,
+                onDayToggled = onDayToggled,
+            )
 
-            Spacer(Modifier.height(18.dp))
+            Spacer(Modifier.height(14.dp))
 
             Text(
                 text = selectedDaysLabel(selectedCount),
                 style = MaterialTheme.typography.bodyMedium,
                 color = selectedDaysLabelColor(selectedCount),
                 fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.fillMaxWidth(),
+                textAlign = TextAlign.Center,
             )
 
-            Spacer(Modifier.height(24.dp))
+            Spacer(Modifier.height(20.dp))
 
             HorizontalDivider(
                 color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.62f),
             )
 
-            Spacer(Modifier.height(22.dp))
+            Spacer(Modifier.height(18.dp))
 
-            Text(
-                text = "Quick select",
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                fontWeight = FontWeight.SemiBold,
+            QuickSelectRow(
+                selectedDays = state.selectedDays,
+                onShortcutSelected = onShortcutSelected,
             )
 
-            Spacer(Modifier.height(12.dp))
+            if (deadlineError != null) {
+                Spacer(Modifier.height(18.dp))
+                Text(
+                    text = deadlineError,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.fillMaxWidth(),
+                    textAlign = TextAlign.Center,
+                )
+            }
+        }
+    }
+}
 
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
-            ) {
-                StudyDayShortcut.entries.forEach { shortcut ->
-                    PlanFlowPillChoice(
-                        label = shortcut.label,
-                        isSelected = state.selectedDays == daysForShortcut(shortcut),
-                        onClick = { onShortcutSelected(shortcut) },
-                        modifier = Modifier.weight(1f),
+@Composable
+private fun StudyWeekPicker(
+    selectedDays: Set<StudyDay>,
+    onDayToggled: (StudyDay) -> Unit,
+) {
+    val days = StudyDay.entries
+    val primary = MaterialTheme.colorScheme.primary
+    val muted = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.46f)
+
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(52.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Canvas(Modifier.fillMaxSize()) {
+            val step = size.width / days.size
+            val centerY = size.height / 2f
+            val radius = 22.dp.toPx()
+            val firstCenter = step / 2f
+            val lastCenter = size.width - step / 2f
+
+            drawLine(
+                color = muted,
+                start = Offset(firstCenter + radius, centerY),
+                end = Offset(lastCenter - radius, centerY),
+                strokeWidth = 0.75.dp.toPx(),
+                cap = StrokeCap.Round,
+            )
+
+            days.dropLast(1).forEachIndexed { index, day ->
+                val nextDay = days[index + 1]
+                if (day in selectedDays && nextDay in selectedDays) {
+                    val startX = step * index + step / 2f + radius + 1.5.dp.toPx()
+                    val endX = step * (index + 1) + step / 2f - radius - 1.5.dp.toPx()
+                    drawLine(
+                        color = primary.copy(alpha = 0.72f),
+                        start = Offset(startX, centerY),
+                        end = Offset(endX, centerY),
+                        strokeWidth = 1.4.dp.toPx(),
+                        cap = StrokeCap.Round,
                     )
                 }
             }
+        }
 
-            Spacer(Modifier.height(22.dp))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(0.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            days.forEach { day ->
+                Box(
+                    modifier = Modifier.weight(1f),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    StudyWeekDayButton(
+                        day = day,
+                        isSelected = day in selectedDays,
+                        onClick = { onDayToggled(day) },
+                    )
+                }
+            }
+        }
+    }
+}
 
+@Composable
+private fun StudyWeekDayButton(
+    day: StudyDay,
+    isSelected: Boolean,
+    onClick: () -> Unit,
+) {
+    val targetBackground = if (isSelected) {
+        MaterialTheme.colorScheme.primary.copy(alpha = 0.07f)
+    } else {
+        MaterialTheme.colorScheme.surface
+    }
+    val targetBorder = if (isSelected) {
+        MaterialTheme.colorScheme.primary.copy(alpha = 0.9f)
+    } else {
+        MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.72f)
+    }
+    val targetText = if (isSelected) {
+        MaterialTheme.colorScheme.primary
+    } else {
+        MaterialTheme.colorScheme.onSurfaceVariant
+    }
+    val background by animateColorAsState(targetBackground, tween(RenMotionDurationMillis), label = "study-day-background")
+    val border by animateColorAsState(targetBorder, tween(RenMotionDurationMillis), label = "study-day-border")
+    val textColor by animateColorAsState(targetText, tween(RenMotionDurationMillis), label = "study-day-text")
+    val interactionSource = remember { MutableInteractionSource() }
+
+    Surface(
+        modifier = Modifier
+            .size(42.dp)
+            .toggleable(
+                value = isSelected,
+                role = Role.Checkbox,
+                interactionSource = interactionSource,
+                indication = null,
+                onValueChange = { onClick() },
+            )
+            .semantics {
+                contentDescription = day.label
+                selected = isSelected
+            },
+        shape = CircleShape,
+        color = background,
+        border = BorderStroke(1.dp, border),
+    ) {
+        Box(contentAlignment = Alignment.Center) {
             Text(
-                text = deadlineError ?: "Plans will be spread only across selected days.",
-                style = MaterialTheme.typography.bodyMedium,
-                color = if (deadlineError == null) {
-                    MaterialTheme.colorScheme.onSurfaceVariant
-                } else {
-                    MaterialTheme.colorScheme.error
-                },
+                text = day.shortLabel,
+                style = MaterialTheme.typography.labelMedium,
+                color = textColor,
+                fontWeight = FontWeight.Bold,
+                textAlign = TextAlign.Center,
+            )
+        }
+    }
+}
+
+@Composable
+private fun QuickSelectRow(
+    selectedDays: Set<StudyDay>,
+    onShortcutSelected: (StudyDayShortcut) -> Unit,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        StudyDayShortcut.entries.forEach { shortcut ->
+            QuickSelectChip(
+                label = shortcut.label,
+                isSelected = selectedDays == daysForShortcut(shortcut),
+                onClick = { onShortcutSelected(shortcut) },
+                modifier = Modifier.weight(1f),
+            )
+        }
+    }
+}
+
+@Composable
+private fun QuickSelectChip(
+    label: String,
+    isSelected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val targetBackground = if (isSelected) {
+        MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.16f)
+    } else {
+        Color.Transparent
+    }
+    val targetBorder = if (isSelected) {
+        MaterialTheme.colorScheme.primary.copy(alpha = 0.45f)
+    } else {
+        MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.42f)
+    }
+    val targetText = if (isSelected) {
+        MaterialTheme.colorScheme.primary
+    } else {
+        MaterialTheme.colorScheme.onSurfaceVariant
+    }
+    val background by animateColorAsState(targetBackground, tween(RenMotionDurationMillis), label = "quick-select-background")
+    val border by animateColorAsState(targetBorder, tween(RenMotionDurationMillis), label = "quick-select-border")
+    val textColor by animateColorAsState(targetText, tween(RenMotionDurationMillis), label = "quick-select-text")
+
+    Surface(
+        onClick = onClick,
+        modifier = modifier
+            .height(36.dp)
+            .semantics { selected = isSelected },
+        shape = CircleShape,
+        color = background,
+        border = BorderStroke(1.dp, border),
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = 6.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelMedium,
+                color = textColor,
+                fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Medium,
+                maxLines = 1,
+                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                textAlign = TextAlign.Center,
             )
         }
     }

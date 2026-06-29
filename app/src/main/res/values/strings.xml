@@ -45,7 +45,7 @@
     <string name="study_map_unavailable">This study plan is unavailable.</string>
     <string name="study_map_open_error">We couldn’t open this study plan.</string>
     <string name="study_map_save_error">We couldn’t save that change. Try again.</string>
-    <string name="schedule_view">Map</string>
+    <string name="schedule_view">Tree</string>
     <string name="topics_view">Topics</string>
     <string name="on_track">On track</string>
     <string name="plan_is_tight">Plan is tight</string>
