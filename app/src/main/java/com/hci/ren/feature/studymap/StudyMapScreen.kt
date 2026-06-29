@@ -88,6 +88,7 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
@@ -95,8 +96,11 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import com.hci.ren.R
 import com.hci.ren.feature.pdfupload.presentation.PlanSetupSubmission
@@ -110,7 +114,7 @@ import com.hci.ren.feature.plangeneration.StudyTaskStatus
 import com.hci.ren.feature.plangeneration.StudyTaskType
 import com.hci.ren.ui.components.PlanFlowCircleAction
 import com.hci.ren.ui.components.PlanLandingScaffold
-import kotlinx.coroutines.delay
+import com.hci.ren.ui.motion.isReducedMotionEnabled
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
@@ -1486,6 +1490,19 @@ private fun ContinueAnywayDialog(onDismiss: () -> Unit, onContinue: () -> Unit) 
 
 @Composable
 private fun EmptyStudyMap(onCreateProject: () -> Unit, snackbar: SnackbarHostState, modifier: Modifier) {
+    val reducedMotion = isReducedMotionEnabled()
+    val introTransition = rememberInfiniteTransition(label = "introLanding")
+    val introProgress by introTransition.animateFloat(
+        initialValue = 0f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 3600, easing = LinearEasing),
+            repeatMode = RepeatMode.Restart,
+        ),
+        label = "introLandingProgress",
+    )
+    val effectiveProgress = if (reducedMotion) 0.52f else introProgress
+
     PlanLandingScaffold(
         modifier = modifier,
     ) {
@@ -1493,7 +1510,9 @@ private fun EmptyStudyMap(onCreateProject: () -> Unit, snackbar: SnackbarHostSta
             Column(
                 modifier = Modifier.fillMaxSize(),
             ) {
-                AnimatedEmptyStudyMapHeader()
+                AnimatedEmptyStudyMapHeader(
+                    progress = effectiveProgress,
+                )
                 StudyPlanIntroContent(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -1501,6 +1520,8 @@ private fun EmptyStudyMap(onCreateProject: () -> Unit, snackbar: SnackbarHostSta
                     message = stringResource(R.string.study_plan_intro_message),
                     actionLabel = stringResource(R.string.start_planning),
                     onAction = onCreateProject,
+                    progress = effectiveProgress,
+                    reducedMotion = reducedMotion,
                 )
             }
             SnackbarHost(
@@ -1512,20 +1533,20 @@ private fun EmptyStudyMap(onCreateProject: () -> Unit, snackbar: SnackbarHostSta
 }
 
 @Composable
-private fun AnimatedEmptyStudyMapHeader() {
-    var dotCount by remember { mutableIntStateOf(1) }
-
-    LaunchedEffect(Unit) {
-        while (true) {
-            delay(450L)
-            dotCount = if (dotCount == 3) 1 else dotCount + 1
-        }
-    }
-
+private fun AnimatedEmptyStudyMapHeader(progress: Float) {
+    val baseColor = MaterialTheme.colorScheme.onBackground
+    val headerText = stringResource(R.string.empty_study_plan_header)
     Text(
-        text = stringResource(R.string.empty_study_plan_header) + ".".repeat(dotCount),
+        text = buildAnnotatedString {
+            append(headerText)
+            repeat(3) { index ->
+                withStyle(SpanStyle(color = baseColor.copy(alpha = headlineDotAlpha(progress, index)))) {
+                    append(".")
+                }
+            }
+        },
         style = MaterialTheme.typography.headlineSmall,
-        color = MaterialTheme.colorScheme.onBackground,
+        color = baseColor,
         fontWeight = FontWeight.Bold,
         maxLines = 1,
         overflow = TextOverflow.Ellipsis,
@@ -1537,8 +1558,12 @@ private fun StudyPlanIntroContent(
     message: String,
     actionLabel: String,
     onAction: () -> Unit,
+    progress: Float,
+    reducedMotion: Boolean,
     modifier: Modifier = Modifier,
 ) {
+    val actionScale = if (reducedMotion) 1f else introActionPulseScale(progress)
+
     Column(
         modifier = modifier,
         horizontalAlignment = Alignment.Start,
@@ -1550,6 +1575,8 @@ private fun StudyPlanIntroContent(
             style = MaterialTheme.typography.bodyLarge,
         )
         IntroActionGuide(
+            progress = progress,
+            reducedMotion = reducedMotion,
             modifier = Modifier
                 .fillMaxWidth()
                 .weight(1.15f)
@@ -1558,41 +1585,42 @@ private fun StudyPlanIntroContent(
         PlanFlowCircleAction(
             label = actionLabel,
             onClick = onAction,
-            modifier = Modifier.align(Alignment.End),
+            modifier = Modifier
+                .align(Alignment.End)
+                .graphicsLayer {
+                    scaleX = actionScale
+                    scaleY = actionScale
+                },
         )
     }
 }
 
 @Composable
 private fun IntroActionGuide(
+    progress: Float,
+    reducedMotion: Boolean,
     modifier: Modifier = Modifier,
 ) {
     val guideColor = MaterialTheme.colorScheme.primary
-    val transition = rememberInfiniteTransition(label = "introActionGuide")
-    val dashPhase by transition.animateFloat(
-        initialValue = 0f,
-        targetValue = 28f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 2600, easing = LinearEasing),
-            repeatMode = RepeatMode.Restart,
-        ),
-        label = "introActionGuideDash",
-    )
+    val dashPhase = if (reducedMotion) 0f else progress * 28f
 
     Canvas(modifier = modifier) {
         if (size.width <= 0f || size.height <= 0f) return@Canvas
 
-        val endX = size.width - 40.dp.toPx()
-        val endY = size.height - 8.dp.toPx()
+        val start = Offset(size.width * 0.58f, 12.dp.toPx())
+        val control1 = Offset(size.width * 0.9f, size.height * 0.08f)
+        val control2 = Offset(size.width * 0.72f, size.height * 0.68f)
+        val end = Offset(size.width - 40.dp.toPx(), size.height - 8.dp.toPx())
+        val easedProgress = easeOutCubic(progress)
         val path = Path().apply {
-            moveTo(size.width * 0.58f, 12.dp.toPx())
+            moveTo(start.x, start.y)
             cubicTo(
-                size.width * 0.9f,
-                size.height * 0.08f,
-                size.width * 0.72f,
-                size.height * 0.68f,
-                endX,
-                endY,
+                control1.x,
+                control1.y,
+                control2.x,
+                control2.y,
+                end.x,
+                end.y,
             )
         }
 
@@ -1608,12 +1636,78 @@ private fun IntroActionGuide(
                 ),
             ),
         )
-        drawCircle(
-            color = guideColor.copy(alpha = 0.52f),
-            radius = 3.dp.toPx(),
-            center = androidx.compose.ui.geometry.Offset(endX, endY),
-        )
+        val lead = cubicPoint(start, control1, control2, end, easedProgress)
+        if (!reducedMotion) {
+            val absorption = ((progress - 0.74f) / 0.22f).coerceIn(0f, 1f)
+            val dotAlpha = 1f - absorption
+            val dotRadius = 3.dp.toPx() * (1f - absorption * 0.82f)
+            drawCircle(
+                color = guideColor.copy(alpha = 0.08f * dotAlpha),
+                radius = 13.dp.toPx() * (1f - absorption * 0.55f),
+                center = lead,
+            )
+            drawCircle(
+                color = guideColor.copy(alpha = 0.18f * dotAlpha),
+                radius = 7.dp.toPx() * (1f - absorption * 0.5f),
+                center = lead,
+            )
+            if (dotAlpha > 0.04f) {
+                drawCircle(
+                    color = guideColor.copy(alpha = 0.62f * dotAlpha),
+                    radius = dotRadius,
+                    center = lead,
+                )
+            }
+        } else {
+            drawCircle(
+                color = guideColor.copy(alpha = 0.52f),
+                radius = 3.dp.toPx(),
+                center = end,
+            )
+        }
     }
+}
+
+private fun introActionPulseScale(progress: Float): Float {
+    val pulseProgress = ((progress - 0.78f) / 0.18f).coerceIn(0f, 1f)
+    val pulse = if (pulseProgress <= 0.5f) {
+        pulseProgress / 0.5f
+    } else {
+        (1f - pulseProgress) / 0.5f
+    }
+    return 1f + pulse.coerceIn(0f, 1f) * 0.055f
+}
+
+private fun headlineDotAlpha(progress: Float, index: Int): Float {
+    val revealStart = 0.05f + index * 0.12f
+    val reveal = ((progress - revealStart) / 0.1f).coerceIn(0f, 1f)
+    val absorptionFade = 1f - ((progress - 0.76f) / 0.18f).coerceIn(0f, 1f) * 0.72f
+    return 0.18f + reveal * absorptionFade * 0.82f
+}
+
+private fun easeOutCubic(progress: Float): Float {
+    val inverse = 1f - progress.coerceIn(0f, 1f)
+    return 1f - inverse * inverse * inverse
+}
+
+private fun cubicPoint(
+    start: Offset,
+    control1: Offset,
+    control2: Offset,
+    end: Offset,
+    progress: Float,
+): Offset {
+    val t = progress.coerceIn(0f, 1f)
+    val inverse = 1f - t
+    val x = inverse * inverse * inverse * start.x +
+        3f * inverse * inverse * t * control1.x +
+        3f * inverse * t * t * control2.x +
+        t * t * t * end.x
+    val y = inverse * inverse * inverse * start.y +
+        3f * inverse * inverse * t * control1.y +
+        3f * inverse * t * t * control2.y +
+        t * t * t * end.y
+    return Offset(x, y)
 }
 
 @Composable
