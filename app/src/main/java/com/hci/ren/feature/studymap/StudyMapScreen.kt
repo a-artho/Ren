@@ -16,7 +16,9 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
@@ -837,10 +839,19 @@ private fun StudyDayMapCard(
         }
 
         if (expanded) {
+            var previousSource: String? = null
             day.tasks.forEachIndexed { index, task ->
+                val sourceDocument = taskSourceDocumentLabel(task, documents)
+                if (sourceDocument != null && sourceDocument != previousSource) {
+                    TimelineSourceDivider(
+                        source = sourceDocument,
+                        continuesChildRail = index > 0,
+                    )
+                }
+                previousSource = sourceDocument
                 TimelineTaskBranchRow(
                     task = task,
-                    source = taskSourceLabel(task, documents),
+                    pageLabel = taskPageLabel(task),
                     isFirstBranch = index == 0,
                     isLastBranch = index == day.tasks.lastIndex,
                     isLastDay = isLast,
@@ -910,7 +921,7 @@ private fun DayTimelineMarker(
 @Composable
 private fun TimelineTaskBranchRow(
     task: GeneratedStudyBlock,
-    source: String?,
+    pageLabel: String?,
     isFirstBranch: Boolean,
     isLastBranch: Boolean,
     isLastDay: Boolean,
@@ -939,7 +950,7 @@ private fun TimelineTaskBranchRow(
             Spacer(Modifier.width(54.dp))
             TaskRowTextContent(
                 task = task,
-                source = source,
+                pageLabel = pageLabel,
                 modifier = Modifier
                     .weight(1f)
                     .padding(vertical = 7.dp),
@@ -958,6 +969,94 @@ private fun TimelineTaskBranchRow(
             completeIconSize = 12.dp,
             borderWidth = 1.25.dp,
             modifier = Modifier.padding(start = 24.dp, top = 7.dp),
+        )
+    }
+}
+
+@Composable
+private fun TimelineSourceDivider(
+    source: String,
+    continuesChildRail: Boolean,
+    modifier: Modifier = Modifier,
+) {
+    val mutedRail = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.72f)
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .height(30.dp),
+    ) {
+        Canvas(
+            modifier = Modifier
+                .width(54.dp)
+                .fillMaxHeight(),
+        ) {
+            val branchX = 9.dp.toPx()
+            val nodeCenterX = 39.dp.toPx()
+            drawLine(
+                color = mutedRail,
+                start = Offset(branchX, 0f),
+                end = Offset(branchX, size.height),
+                strokeWidth = 1.dp.toPx(),
+                cap = StrokeCap.Round,
+            )
+            if (continuesChildRail) {
+                drawLine(
+                    color = mutedRail,
+                    start = Offset(nodeCenterX, 0f),
+                    end = Offset(nodeCenterX, size.height),
+                    strokeWidth = 1.dp.toPx(),
+                    cap = StrokeCap.Round,
+                )
+            }
+        }
+        SourceDividerLabel(
+            text = source,
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(start = 54.dp, end = 10.dp)
+                .align(Alignment.CenterStart),
+        )
+    }
+}
+
+@Composable
+private fun SourceDividerLabel(
+    text: String,
+    modifier: Modifier = Modifier,
+) {
+    val lineColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.37f)
+    val labelColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.76f)
+    Row(
+        modifier = modifier,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        SourceDividerLine(color = lineColor)
+        Spacer(Modifier.width(8.dp))
+        Text(
+            text = text,
+            style = MaterialTheme.typography.labelSmall,
+            color = labelColor,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+        Spacer(Modifier.width(8.dp))
+        SourceDividerLine(color = lineColor)
+    }
+}
+
+@Composable
+private fun RowScope.SourceDividerLine(color: Color) {
+    Canvas(
+        modifier = Modifier
+            .weight(1f)
+            .height(1.dp),
+    ) {
+        drawLine(
+            color = color,
+            start = Offset.Zero,
+            end = Offset(size.width, 0f),
+            strokeWidth = 1.dp.toPx(),
+            cap = StrokeCap.Round,
         )
     }
 }
@@ -1223,25 +1322,60 @@ private fun MapTaskRowContent(
 @Composable
 private fun MaterialTaskRowContent(
     task: GeneratedStudyBlock,
-    sourceTitle: String?,
     meta: String,
+    connectBefore: Boolean,
+    connectAfter: Boolean,
 ) {
-    val showTaskTitle = shouldShowMaterialTaskTitle(task.title, sourceTitle)
-    Row(
+    var rowHeightPx by remember { mutableIntStateOf(0) }
+    val rowHeight = with(LocalDensity.current) { rowHeightPx.toDp() }
+    val connectorColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.48f)
+    Box(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = 5.dp),
-        verticalAlignment = Alignment.CenterVertically,
+            .onSizeChanged { rowHeightPx = it.height },
     ) {
-        TaskBullet(
-            status = task.status,
-            nodeSize = 10.dp,
-            completeIconSize = 12.dp,
-            borderWidth = 1.25.dp,
-        )
-        Spacer(Modifier.width(10.dp))
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-            if (showTaskTitle) {
+        if (rowHeightPx > 0 && (connectBefore || connectAfter)) {
+            Canvas(
+                modifier = Modifier
+                    .width(30.dp)
+                    .height(rowHeight),
+            ) {
+                val centerX = size.width / 2f
+                val centerY = size.height / 2f
+                if (connectBefore) {
+                    drawLine(
+                        color = connectorColor,
+                        start = Offset(centerX, 0f),
+                        end = Offset(centerX, centerY),
+                        strokeWidth = 1.dp.toPx(),
+                        cap = StrokeCap.Round,
+                    )
+                }
+                if (connectAfter) {
+                    drawLine(
+                        color = connectorColor,
+                        start = Offset(centerX, centerY),
+                        end = Offset(centerX, size.height),
+                        strokeWidth = 1.dp.toPx(),
+                        cap = StrokeCap.Round,
+                    )
+                }
+            }
+        }
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 5.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            TaskBullet(
+                status = task.status,
+                nodeSize = 10.dp,
+                completeIconSize = 12.dp,
+                borderWidth = 1.25.dp,
+            )
+            Spacer(Modifier.width(10.dp))
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
                 Text(
                     text = task.title,
                     style = MaterialTheme.typography.labelLarge,
@@ -1249,16 +1383,16 @@ private fun MaterialTaskRowContent(
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                 )
+                Text(
+                    text = meta,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.82f),
+                )
             }
-            Text(
-                text = meta,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.82f),
-            )
-        }
-        if (task.status != StudyTaskStatus.NotStarted) {
-            Spacer(Modifier.width(8.dp))
-            StatusPill(statusLabel(task.status), statusContainer(task.status), statusContent(task.status))
+            if (task.status != StudyTaskStatus.NotStarted) {
+                Spacer(Modifier.width(8.dp))
+                StatusPill(statusLabel(task.status), statusContainer(task.status), statusContent(task.status))
+            }
         }
     }
 }
@@ -1266,9 +1400,14 @@ private fun MaterialTaskRowContent(
 @Composable
 private fun TaskRowTextContent(
     task: GeneratedStudyBlock,
-    source: String?,
+    pageLabel: String?,
     modifier: Modifier = Modifier,
 ) {
+    val meta = listOfNotNull(
+        pageLabel,
+        formatMinutes(task.durationMinutes),
+        taskTypeLabel(task.taskType),
+    ).joinToString(" \u2022 ")
     Column(modifier, verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Text(
             text = task.title,
@@ -1278,19 +1417,10 @@ private fun TaskRowTextContent(
             overflow = TextOverflow.Ellipsis,
         )
         Text(
-            text = "${formatMinutes(task.durationMinutes)} \u2022 ${taskTypeLabel(task.taskType)}",
+            text = meta,
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
-        if (source != null) {
-            Text(
-                text = source,
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.82f),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-        }
     }
 }
 
@@ -1345,15 +1475,29 @@ private fun taskSourceLabel(task: GeneratedStudyBlock, documents: List<StudySour
     val ref = task.sourceRefs.firstOrNull() ?: return null
     val document = documents.firstOrNull { it.id == ref.documentId || it.uploadDocumentId == ref.documentId }
     val documentName = document?.filename?.shortDocumentName() ?: ref.sectionTitle
-    val pageLabel = when {
-        ref.startPage != null && ref.endPage != null && ref.endPage != ref.startPage -> stringResource(R.string.source_page_range, ref.startPage, ref.endPage)
-        ref.startPage != null -> stringResource(R.string.source_page, ref.startPage)
-        else -> null
-    }
+    val pageLabel = taskPageLabel(task)
     return when {
         documentName != null && pageLabel != null -> stringResource(R.string.source_with_page, documentName, pageLabel)
         documentName != null -> documentName
         pageLabel != null -> pageLabel
+        else -> null
+    }
+}
+
+private fun taskSourceDocumentLabel(task: GeneratedStudyBlock, documents: List<StudySourceDocument>): String? {
+    val ref = task.sourceRefs.firstOrNull() ?: return null
+    return documents
+        .firstOrNull { it.matchesSourceDocumentId(ref.documentId) }
+        ?.filename
+        ?.shortDocumentName()
+}
+
+@Composable
+private fun taskPageLabel(task: GeneratedStudyBlock): String? {
+    val ref = task.sourceRefs.firstOrNull() ?: return null
+    return when {
+        ref.startPage != null && ref.endPage != null && ref.endPage != ref.startPage -> stringResource(R.string.source_page_range, ref.startPage, ref.endPage)
+        ref.startPage != null -> stringResource(R.string.source_page, ref.startPage)
         else -> null
     }
 }
@@ -1423,28 +1567,19 @@ private fun MaterialSection(
             if (expanded) {
                 HorizontalDivider()
                 sourceGroups.forEachIndexed { groupIndex, sourceGroup ->
-                    if (sourceGroup.title != null) {
-                        Text(
-                            text = sourceGroup.title,
-                            modifier = Modifier.padding(
-                                start = 12.dp,
-                                top = if (groupIndex == 0) 14.dp else 22.dp,
-                                end = 12.dp,
-                                bottom = 0.dp,
-                            ),
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.76f),
-                            fontWeight = FontWeight.SemiBold,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
+                    if (groupIndex == 0) {
+                        Spacer(Modifier.height(8.dp))
+                    } else {
+                        Spacer(Modifier.height(6.dp))
                     }
-                    sourceGroup.tasks.forEach { task ->
+                    val connectsGroup = sourceGroup.tasks.size > 1
+                    sourceGroup.tasks.forEachIndexed { taskIndex, task ->
                         Box(Modifier.padding(horizontal = 12.dp)) {
                             MaterialTaskRowContent(
                                 task = task,
-                                sourceTitle = sourceGroup.title,
                                 meta = materialTaskMeta(task, group),
+                                connectBefore = connectsGroup && taskIndex > 0,
+                                connectAfter = connectsGroup && taskIndex < sourceGroup.tasks.lastIndex,
                             )
                         }
                     }
@@ -1461,7 +1596,6 @@ private data class MaterialGroup(
 )
 
 private data class MaterialSourceGroup(
-    val title: String?,
     val tasks: List<GeneratedStudyBlock>,
 )
 
@@ -1514,17 +1648,24 @@ private fun materialSourceGroups(group: MaterialGroup): List<MaterialSourceGroup
     var currentTasks = mutableListOf<GeneratedStudyBlock>()
     group.tasks.sortedBy { it.order }.forEach { task ->
         val sourceTitle = task.materialSourceRef(group)?.materialGroupDisplayTitle()
-        if (currentTasks.isEmpty() || sourceTitle == currentTitle) {
+        if (sourceTitle == null) {
+            if (currentTasks.isNotEmpty()) {
+                groups += MaterialSourceGroup(currentTasks)
+                currentTitle = null
+                currentTasks = mutableListOf()
+            }
+            groups += MaterialSourceGroup(listOf(task))
+        } else if (currentTasks.isEmpty() || sourceTitle == currentTitle) {
             currentTitle = sourceTitle
             currentTasks += task
         } else {
-            groups += MaterialSourceGroup(currentTitle, currentTasks)
+            groups += MaterialSourceGroup(currentTasks)
             currentTitle = sourceTitle
             currentTasks = mutableListOf(task)
         }
     }
     if (currentTasks.isNotEmpty()) {
-        groups += MaterialSourceGroup(currentTitle, currentTasks)
+        groups += MaterialSourceGroup(currentTasks)
     }
     return groups
 }
@@ -1552,14 +1693,6 @@ private fun materialTaskMeta(task: GeneratedStudyBlock, group: MaterialGroup): S
         taskTypeLabel(task.taskType),
     ).joinToString(" \u2022 ")
 }
-
-private fun shouldShowMaterialTaskTitle(taskTitle: String, sourceTitle: String?): Boolean {
-    if (sourceTitle.isNullOrBlank()) return true
-    return comparableMaterialTitle(taskTitle) != comparableMaterialTitle(sourceTitle)
-}
-
-private fun comparableMaterialTitle(value: String): String =
-    value.lowercase(Locale.ROOT).filter(Char::isLetterOrDigit)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable

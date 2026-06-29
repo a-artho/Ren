@@ -37,17 +37,17 @@ internal fun isRetryableStatusCode(code: Int): Boolean =
 data class StudyTopic(val id: String, val title: String, val order: Int)
 enum class StudyBlockDifficulty { Light, Standard, Heavy }
 enum class EstimateConfidence { Low, Medium, High }
-enum class StudyTaskType(val defaultMinimumMinutes: Int) {
-    Concept(20),
-    Practice(15),
-    Review(10),
-    MockTest(30),
-    Memorization(10),
-    Reading(15),
-    Summary(10),
-    MistakeReview(10),
-    Custom(10),
-    Quiz(10),
+enum class StudyTaskType {
+    Concept,
+    Practice,
+    Review,
+    MockTest,
+    Memorization,
+    Reading,
+    Summary,
+    MistakeReview,
+    Custom,
+    Quiz,
 }
 enum class StudyTaskStatus {
     NotStarted,

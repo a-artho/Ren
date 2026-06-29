@@ -1,3 +1,5 @@
+import hashlib
+
 from fastapi.testclient import TestClient
 
 from app import main
@@ -58,23 +60,66 @@ def test_document_upload_is_idempotent_by_request_id(tmp_path, monkeypatch):
         assert len(list(main.UPLOADS.glob("*.pdf"))) == 1
 
 
+def test_document_upload_rejects_missing_active_idempotent_document(tmp_path, monkeypatch):
+    with client(tmp_path, monkeypatch) as api:
+        first = api.post(
+            "/documents",
+            data={"requestId": "upload-request-1"},
+            files={"file": ("first.pdf", b"%PDF-first", "application/pdf")},
+        )
+        document_id = first.json()["documentId"]
+        api.post("/plans", json=setup(document_id))
+        path = main.STORE.document_path(document_id)
+        assert path is not None
+        path.unlink()
+
+        retry = api.post(
+            "/documents",
+            data={"requestId": "upload-request-1"},
+            files={"file": ("retry.pdf", b"%PDF-retry", "application/pdf")},
+        )
+
+        assert retry.status_code == 409
+        assert main.STORE.document_path(document_id) == path
+        assert list(main.UPLOADS.glob("*.pdf")) == []
+
+
 def test_document_upload_stores_original_filename(tmp_path, monkeypatch):
     with client(tmp_path, monkeypatch) as api:
+        body = b"%PDF-test"
         uploaded = api.post(
             "/documents",
-            files={"file": ("Lecture 05 - Factoring.pdf", b"%PDF-test", "application/pdf")},
+            files={"file": ("Lecture 05 - Factoring.pdf", body, "application/pdf")},
         )
 
         assert uploaded.status_code == 201
         document_id = uploaded.json()["documentId"]
         document = main.STORE.documents_for_ids([document_id])[0]
         assert document.filename == "Lecture 05 - Factoring.pdf"
+        assert document.pdf_sha256 == hashlib.sha256(body).hexdigest()
 
 
 def test_upload_rejects_wrong_type_and_invalid_pdf(tmp_path, monkeypatch):
     with client(tmp_path, monkeypatch) as api:
         assert api.post("/documents", files={"file": ("x.txt", b"hello", "text/plain")}).status_code == 415
         assert api.post("/documents", files={"file": ("x.pdf", b"hello", "application/pdf")}).status_code == 422
+
+
+def test_upload_rejects_invalid_request_id_length(tmp_path, monkeypatch):
+    with client(tmp_path, monkeypatch) as api:
+        empty = api.post(
+            "/documents",
+            data={"requestId": ""},
+            files={"file": ("x.pdf", b"%PDF-test", "application/pdf")},
+        )
+        too_long = api.post(
+            "/documents",
+            data={"requestId": "x" * 129},
+            files={"file": ("x.pdf", b"%PDF-test", "application/pdf")},
+        )
+
+        assert empty.status_code == 422
+        assert too_long.status_code == 422
 
 
 def test_unknown_resources_and_invalid_setup_are_rejected(tmp_path, monkeypatch):
@@ -119,6 +164,18 @@ def test_cancel_marks_plan_terminal_and_removes_document(tmp_path, monkeypatch):
         assert api.get(f"/plans/{plan_id}/status").json()["status"] == "CANCELED"
         assert main.STORE.document_path(document_id) is None
         assert api.post(f"/plans/{plan_id}/cancel").status_code == 200
+
+
+def test_delete_document_rejects_active_plan_document(tmp_path, monkeypatch):
+    with client(tmp_path, monkeypatch) as api:
+        uploaded = api.post("/documents", files={"file": ("lesson.pdf", b"%PDF-test", "application/pdf")})
+        document_id = uploaded.json()["documentId"]
+        api.post("/plans", json=setup(document_id))
+
+        deleted = api.delete(f"/documents/{document_id}")
+
+        assert deleted.status_code == 409
+        assert main.STORE.document_path(document_id) is not None
 
 
 def test_delete_document_removes_prepared_gemini_file(tmp_path, monkeypatch):

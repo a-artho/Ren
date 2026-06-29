@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-import json, sqlite3
+import json
+import sqlite3
 from collections import namedtuple
 from pathlib import Path
 from uuid import uuid4
@@ -9,7 +10,15 @@ from .models import CreatePlanRequest, GeneratedPlan, PlanStatus
 PlanRow = namedtuple("PlanRow", ["document_ids", "setup_json", "status", "result_json", "error"])
 DocumentRecord = namedtuple(
     "DocumentRecord",
-    ["id", "path", "filename", "gemini_file_name", "gemini_file_uri", "gemini_mime_type"],
+    [
+        "id",
+        "path",
+        "filename",
+        "gemini_file_name",
+        "gemini_file_uri",
+        "gemini_mime_type",
+        "pdf_sha256",
+    ],
 )
 PreparedFileRecord = namedtuple("PreparedFileRecord", ["name", "uri", "mime_type"])
 
@@ -21,6 +30,7 @@ class Store:
         with self.connect() as db:
             db.executescript("""
             CREATE TABLE IF NOT EXISTS documents(id TEXT PRIMARY KEY, path TEXT NOT NULL, request_id TEXT, filename TEXT,
+              pdf_sha256 TEXT,
               gemini_file_name TEXT, gemini_file_uri TEXT, gemini_mime_type TEXT, gemini_prepared_at TEXT, gemini_error TEXT,
               created_at TEXT DEFAULT CURRENT_TIMESTAMP);
             CREATE TABLE IF NOT EXISTS plans(id TEXT PRIMARY KEY, request_id TEXT UNIQUE NOT NULL, document_ids TEXT NOT NULL,
@@ -31,6 +41,8 @@ class Store:
                 db.execute("ALTER TABLE documents ADD COLUMN request_id TEXT")
             if "filename" not in columns:
                 db.execute("ALTER TABLE documents ADD COLUMN filename TEXT")
+            if "pdf_sha256" not in columns:
+                db.execute("ALTER TABLE documents ADD COLUMN pdf_sha256 TEXT")
             for column in (
                 "gemini_file_name",
                 "gemini_file_uri",
@@ -45,7 +57,11 @@ class Store:
             )
             self.migrate_plans_table(db)
 
-    def connect(self): return sqlite3.connect(self.db_path)
+    def connect(self):
+        db = sqlite3.connect(self.db_path, timeout=30)
+        db.execute("PRAGMA busy_timeout=30000")
+        db.execute("PRAGMA journal_mode=WAL")
+        return db
 
     def migrate_plans_table(self, db: sqlite3.Connection):
         plan_columns = {row[1] for row in db.execute("PRAGMA table_info(plans)")}
@@ -75,22 +91,30 @@ class Store:
         db.execute("DROP TABLE IF EXISTS plans")
         db.execute("ALTER TABLE plans_new RENAME TO plans")
 
-    def add_document(self, path: Path, request_id: str | None = None, filename: str | None = None) -> str:
+    def add_document(
+        self,
+        path: Path,
+        request_id: str | None = None,
+        filename: str | None = None,
+        pdf_sha256: str | None = None,
+    ) -> str:
         document_id = str(uuid4())
         stored_filename = filename or path.name
         with self.connect() as db:
             db.execute(
-                "INSERT OR IGNORE INTO documents(id,path,request_id,filename) VALUES(?,?,?,?)",
-                (document_id, str(path), request_id, stored_filename),
+                "INSERT OR IGNORE INTO documents(id,path,request_id,filename,pdf_sha256) VALUES(?,?,?,?,?)",
+                (document_id, str(path), request_id, stored_filename, pdf_sha256),
             )
             if request_id is None:
                 return document_id
             row = db.execute(
-                "SELECT id,path,filename FROM documents WHERE request_id=?",
+                "SELECT id,path,filename,pdf_sha256 FROM documents WHERE request_id=?",
                 (request_id,),
             ).fetchone()
             if row[2] is None and stored_filename:
                 db.execute("UPDATE documents SET filename=? WHERE id=?", (stored_filename, row[0]))
+            if row[3] is None and pdf_sha256:
+                db.execute("UPDATE documents SET pdf_sha256=? WHERE id=?", (pdf_sha256, row[0]))
         if row[1] != str(path):
             path.unlink(missing_ok=True)
         return row[0]
@@ -107,20 +131,30 @@ class Store:
             for document_id in document_ids:
                 row = db.execute(
                     """
-                    SELECT id,path,filename,gemini_file_name,gemini_file_uri,gemini_mime_type
+                    SELECT id,path,filename,gemini_file_name,gemini_file_uri,gemini_mime_type,pdf_sha256
                     FROM documents WHERE id=?
                     """,
                     (document_id,),
                 ).fetchone()
                 if row:
                     path = Path(row[1])
-                    documents.append(DocumentRecord(row[0], path, row[2] or path.name, row[3], row[4], row[5]))
+                    documents.append(DocumentRecord(row[0], path, row[2] or path.name, row[3], row[4], row[5], row[6]))
         return documents
-    def document_prepared_file(self, document_id: str) -> PreparedFileRecord | None:
+
+    def document_prepared_file(self, document_id: str, max_age_hours: int | None = 40) -> PreparedFileRecord | None:
+        age_filter = ""
+        parameters: tuple[object, ...] = (document_id,)
+        if max_age_hours is not None:
+            age_filter = "AND gemini_prepared_at > datetime('now', ?)"
+            parameters = (document_id, f"-{max_age_hours} hours")
         with self.connect() as db:
             row = db.execute(
-                "SELECT gemini_file_name,gemini_file_uri,gemini_mime_type FROM documents WHERE id=?",
-                (document_id,),
+                f"""
+                SELECT gemini_file_name,gemini_file_uri,gemini_mime_type
+                FROM documents
+                WHERE id=? {age_filter}
+                """,
+                parameters,
             ).fetchone()
         if not row or not row[0] or not row[1]:
             return None
@@ -151,6 +185,29 @@ class Store:
         path = self.document_path(document_id)
         with self.connect() as db: db.execute("DELETE FROM documents WHERE id=?", (document_id,))
         return path
+
+    def document_has_active_plan(self, document_id: str, exclude_plan_id: str | None = None) -> bool:
+        terminal = (PlanStatus.COMPLETED, PlanStatus.FAILED, PlanStatus.CANCELED)
+        parameters: list[object] = [document_id, *terminal]
+        plan_filter = ""
+        if exclude_plan_id is not None:
+            plan_filter = "AND id != ?"
+            parameters.append(exclude_plan_id)
+        with self.connect() as db:
+            row = db.execute(
+                f"""
+                SELECT 1
+                FROM plans
+                WHERE EXISTS (
+                    SELECT 1 FROM json_each(plans.document_ids) WHERE value=?
+                )
+                  AND status NOT IN (?,?,?)
+                  {plan_filter}
+                LIMIT 1
+                """,
+                tuple(parameters),
+            ).fetchone()
+        return row is not None
     def plan_id_for_request(self, request_id: str) -> str | None:
         with self.connect() as db:
             row = db.execute("SELECT id FROM plans WHERE request_id=?", (request_id,)).fetchone()

@@ -63,7 +63,10 @@ def normalize_plan(plan: GeneratedPlan, source_documents: list[SourceDocumentInf
     page_counts = {document.id: document.pageCount for document in source_documents}
     source_order = {document.id: document.order for document in source_documents}
     last_source_key: tuple[int, int, int] | None = None
-    extraction_warnings = []
+    extraction_warnings = [
+        warning.model_copy(update={"blockId": block_id_map.get(warning.blockId, warning.blockId)})
+        for warning in plan.extractionWarnings
+    ]
 
     blocks: list[StudyBlock] = []
     for index, block in enumerate(sorted(plan.blocks, key=lambda item: item.order), start=1):

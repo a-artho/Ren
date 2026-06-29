@@ -28,7 +28,16 @@ def test_plan_normalizes_minimum_useful_time_for_task_type():
         "instructions":"Read","topicIds":["t1"]}]})
 
     assert plan.blocks[0].durationMinutes == 30
-    assert plan.blocks[0].minimumUsefulMinutes == 20
+    assert plan.blocks[0].minimumUsefulMinutes == 10
+
+def test_custom_blocks_can_stay_below_study_floor():
+    plan = GeneratedPlan.model_validate({"topics":[{"id":"t1","title":"One","order":1}],
+      "blocks":[{"id":"b1","title":"Admin note","order":1,"durationMinutes":5,
+        "minimumUsefulMinutes":5,"taskType":"CUSTOM",
+        "instructions":"Check the note.","topicIds":["t1"]}]})
+
+    assert plan.blocks[0].durationMinutes == 5
+    assert plan.blocks[0].minimumUsefulMinutes == 5
 
 def test_create_plan_request_single_document():
     req = CreatePlanRequest(
@@ -63,6 +72,20 @@ def test_create_plan_request_too_many_document_ids_rejected():
             requestId="req-1",
             setup=Setup(goal="PrepareForExam", planTitle="HCI final", deadline="InOneWeek", dailyStudyMinutes=30, studyDays=["Monday"]),
         )
+
+def test_create_plan_request_rejects_duplicate_or_blank_document_ids():
+    setup = Setup(
+        goal="PrepareForExam",
+        planTitle="HCI final",
+        deadline="InOneWeek",
+        dailyStudyMinutes=30,
+        studyDays=["Monday"],
+    )
+
+    with pytest.raises(ValidationError, match="documentIds must be unique"):
+        CreatePlanRequest(documentIds=["doc-1", "doc-1"], requestId="req-1", setup=setup)
+    with pytest.raises(ValidationError, match="documentIds must be non-empty strings"):
+        CreatePlanRequest(documentIds=["doc-1", "  "], requestId="req-1", setup=setup)
 
 def test_setup_rejects_invalid_custom_deadline_date():
     with pytest.raises(ValidationError):

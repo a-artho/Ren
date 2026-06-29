@@ -1,4 +1,4 @@
-from app.models import GeneratedPlan, SourceDocumentInfo, SourceRef, StudyTaskStatus
+from app.models import ExtractionWarning, GeneratedPlan, SourceDocumentInfo, SourceRef, StudyTaskStatus
 from app.planner import build_master_plan, normalize_plan
 from app.provider import SourceDocument
 
@@ -72,6 +72,25 @@ def test_normalize_plan_drops_forward_dependencies_without_reordering_blocks():
     assert [block.id for block in plan.blocks] == ["block1", "block2"]
     assert plan.blocks[0].dependencies == []
     assert plan.blocks[1].dependencies == ["block1"]
+
+
+def test_normalize_plan_preserves_provider_warnings_and_remaps_block_ids():
+    raw = raw_plan([30])
+    raw.extractionWarnings = [
+        ExtractionWarning(
+            type="GLOBAL_EFFORT_CALIBRATION_WARNING",
+            message="Calibration had to ignore one adjustment.",
+            blockId="old-1",
+        )
+    ]
+
+    plan = normalize_plan(
+        raw,
+        [SourceDocumentInfo(id="doc1", filename="Lecture 1.pdf", order=1, pageCount=10)],
+    )
+
+    assert plan.extractionWarnings[0].type == "GLOBAL_EFFORT_CALIBRATION_WARNING"
+    assert plan.extractionWarnings[0].blockId == "block1"
 
 
 def test_normalize_plan_surfaces_source_order_conflicts():

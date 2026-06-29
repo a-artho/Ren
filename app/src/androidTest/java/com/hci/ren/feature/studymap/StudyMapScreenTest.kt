@@ -1,7 +1,9 @@
 package com.hci.ren.feature.studymap
 
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -30,9 +32,10 @@ class StudyMapScreenTest {
         composeRule.onNodeWithText("Read limits", substring = true).assertIsDisplayed()
         composeRule.onNodeWithText("Material").performClick()
         composeRule.onNodeWithText("Calculus notes").assertIsDisplayed()
-        composeRule.onNodeWithText("Functions and limits").assertIsDisplayed()
+        composeRule.onAllNodesWithText("Functions and limits").assertCountEquals(0)
+        composeRule.onNodeWithText("Practice limits", substring = true).assertIsDisplayed()
         composeRule.onNodeWithText("p. 2", substring = true).assertIsDisplayed()
-        composeRule.onNodeWithText("45 min", substring = true).assertIsDisplayed()
+        composeRule.onAllNodesWithText("45 min", substring = true).assertCountEquals(2)
     }
 
     @Test fun unrealisticPlanShowsInPlaceAdjustmentSheet() {

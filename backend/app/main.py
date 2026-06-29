@@ -1,6 +1,10 @@
 from __future__ import annotations
 
-import asyncio, json, logging, os
+import asyncio
+import hashlib
+import json
+import logging
+import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
@@ -21,22 +25,53 @@ provider: AIProvider | None = None
 logger = logging.getLogger("ren")
 TASKS: dict[str, asyncio.Task] = {}
 PREP_TASKS: dict[str, asyncio.Task] = {}
+PREPARE_UPLOAD_SEMAPHORE: asyncio.Semaphore | None = None
+PREPARE_UPLOAD_SEMAPHORE_LIMIT: int | None = None
+PREPARE_UPLOAD_SEMAPHORE_LOOP: asyncio.AbstractEventLoop | None = None
 
 
-def ordered_documents(document_ids: list[str]) -> list[SourceDocument]:
+def gemini_upload_concurrency() -> int:
+    try:
+        value = int(os.getenv("REN_GEMINI_UPLOAD_CONCURRENCY", "5"))
+    except ValueError:
+        value = 5
+    return max(1, min(value, 5))
+
+
+def prepare_upload_semaphore() -> asyncio.Semaphore:
+    global PREPARE_UPLOAD_SEMAPHORE, PREPARE_UPLOAD_SEMAPHORE_LIMIT, PREPARE_UPLOAD_SEMAPHORE_LOOP
+    limit = gemini_upload_concurrency()
+    loop = asyncio.get_running_loop()
+    if (
+        PREPARE_UPLOAD_SEMAPHORE is None
+        or PREPARE_UPLOAD_SEMAPHORE_LIMIT != limit
+        or PREPARE_UPLOAD_SEMAPHORE_LOOP is not loop
+    ):
+        PREPARE_UPLOAD_SEMAPHORE = asyncio.Semaphore(limit)
+        PREPARE_UPLOAD_SEMAPHORE_LIMIT = limit
+        PREPARE_UPLOAD_SEMAPHORE_LOOP = loop
+    return PREPARE_UPLOAD_SEMAPHORE
+
+
+async def ordered_documents(document_ids: list[str]) -> list[SourceDocument]:
     records = STORE.documents_for_ids(document_ids)
     documents: list[SourceDocument] = []
     for index, record in enumerate(records, start=1):
         if not record.path.exists():
             continue
-        metadata = parse_pdf_metadata(record.path)
+        metadata = await asyncio.to_thread(parse_pdf_metadata, record.path)
         prepared_file = None
-        if record.gemini_file_name and record.gemini_file_uri:
+        prepared = STORE.document_prepared_file(record.id)
+        if prepared is not None:
             prepared_file = PreparedGeminiFile(
-                name=record.gemini_file_name,
-                uri=record.gemini_file_uri,
-                mime_type=record.gemini_mime_type or "application/pdf",
+                name=prepared.name,
+                uri=prepared.uri,
+                mime_type=prepared.mime_type or "application/pdf",
             )
+
+        def clear_failed_prepared(error: str, document_id: str = record.id):
+            STORE.clear_document_prepared(document_id, error=error[:300])
+
         documents.append(
             SourceDocument(
                 path=record.path,
@@ -49,6 +84,8 @@ def ordered_documents(document_ids: list[str]) -> list[SourceDocument]:
                 anchors_truncated=metadata.anchors_truncated,
                 parser_error=metadata.parser_error,
                 prepared_gemini_file=prepared_file,
+                pdf_sha256=record.pdf_sha256,
+                on_prepared_file_failed=clear_failed_prepared,
             )
         )
     return documents
@@ -65,10 +102,18 @@ async def prepare_document(document_id: str, ai_provider: AIProvider):
     record = records[0]
     if not record.path.exists():
         return
-    document = SourceDocument(path=record.path, filename=record.filename, id=record.id)
+    document = SourceDocument(
+        path=record.path,
+        filename=record.filename,
+        id=record.id,
+        pdf_sha256=record.pdf_sha256,
+    )
+    if not ai_provider.should_prepare_document(document):
+        return
     prepared = None
     try:
-        prepared = await ai_provider.prepare_document(document)
+        async with prepare_upload_semaphore():
+            prepared = await ai_provider.prepare_document(document)
         if prepared is None:
             return
         if STORE.document_path(document_id) is None:
@@ -84,6 +129,15 @@ async def prepare_document(document_id: str, ai_provider: AIProvider):
         raise
     except Exception as exc:
         logger.warning("Gemini file preparation failed for document %s", document_id, exc_info=True)
+        if prepared is not None:
+            try:
+                await ai_provider.delete_prepared_file(prepared)
+            except Exception:
+                logger.warning(
+                    "Failed to delete prepared Gemini file after preparation failure for document %s",
+                    document_id,
+                    exc_info=True,
+                )
         STORE.clear_document_prepared(document_id, error=str(exc)[:300])
 
 
@@ -96,7 +150,12 @@ def schedule_document_preparation(document_id: str):
         return existing
     task = asyncio.create_task(prepare_document(document_id, ai_provider))
     PREP_TASKS[document_id] = task
-    task.add_done_callback(lambda completed, key=document_id: PREP_TASKS.pop(key, None))
+
+    def remove_completed(completed: asyncio.Task, key: str = document_id):
+        if PREP_TASKS.get(key) is completed:
+            PREP_TASKS.pop(key, None)
+
+    task.add_done_callback(remove_completed)
     return task
 
 
@@ -106,16 +165,19 @@ async def wait_for_document_preparation(document_ids: list[str]):
         await asyncio.gather(*tasks, return_exceptions=True)
 
 
-async def cleanup_document(document_id: str):
+async def cleanup_document(document_id: str, active_plan_id: str | None = None):
+    if STORE.document_has_active_plan(document_id, exclude_plan_id=active_plan_id):
+        return
     task = PREP_TASKS.pop(document_id, None)
     if task and not task.done():
+        task.cancel()
         try:
             await task
         except asyncio.CancelledError:
             logger.debug("Gemini preparation task cancelled for document %s", document_id)
         except Exception:
             logger.warning("Gemini preparation task failed during cleanup for document %s", document_id, exc_info=True)
-    prepared = STORE.document_prepared_file(document_id)
+    prepared = STORE.document_prepared_file(document_id, max_age_hours=None)
     path = STORE.delete_document(document_id)
     if prepared is not None and provider is not None:
         await provider.delete_prepared_file(
@@ -128,7 +190,12 @@ async def cleanup_document(document_id: str):
 def schedule(plan_id: str):
     task = asyncio.create_task(process(plan_id))
     TASKS[plan_id] = task
-    task.add_done_callback(lambda completed, key=plan_id: TASKS.pop(key, None))
+
+    def remove_completed(completed: asyncio.Task, key: str = plan_id):
+        if TASKS.get(key) is completed:
+            TASKS.pop(key, None)
+
+    task.add_done_callback(remove_completed)
     return task
 
 async def process(plan_id: str):
@@ -137,8 +204,9 @@ async def process(plan_id: str):
     document_ids = json.loads(row.document_ids)
     try:
         await wait_for_document_preparation(document_ids)
-        documents = ordered_documents(document_ids)
-        if not documents: raise ValueError("No documents available")
+        documents = await ordered_documents(document_ids)
+        if len(documents) != len(document_ids):
+            raise ValueError("One or more requested documents are missing")
         STORE.set_status(plan_id, PlanStatus.IDENTIFYING_TOPICS)
         if provider is None: raise RuntimeError("AI provider is not configured")
         result = None
@@ -164,7 +232,7 @@ async def process(plan_id: str):
         row = STORE.get(plan_id)
         if row and row.status in (PlanStatus.COMPLETED, PlanStatus.FAILED, PlanStatus.CANCELED):
             for did in json.loads(row.document_ids):
-                await cleanup_document(did)
+                await cleanup_document(did, active_plan_id=plan_id)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -178,7 +246,10 @@ async def lifespan(app: FastAPI):
     try:
         yield
     finally:
-        tasks = [task for task in TASKS.values() if not task.done()]
+        tasks = [
+            *[task for task in TASKS.values() if not task.done()],
+            *[task for task in PREP_TASKS.values() if not task.done()],
+        ]
         for task in tasks:
             task.cancel()
         if tasks:
@@ -192,6 +263,8 @@ async def upload_document(
     requestId: str | None = Form(default=None),
 ):
     if file.content_type != "application/pdf": raise HTTPException(415, "A PDF is required")
+    if requestId is not None and not 1 <= len(requestId) <= 128:
+        raise HTTPException(422, "Invalid requestId")
     if requestId:
         existing_id = STORE.document_id_for_request(requestId)
         if existing_id:
@@ -200,23 +273,33 @@ async def upload_document(
                 schedule_document_preparation(existing_id)
                 await file.close()
                 return {"documentId": existing_id}
+            if STORE.document_has_active_plan(existing_id):
+                await file.close()
+                raise HTTPException(409, "Document upload is used by an active plan")
             await cleanup_document(existing_id)
     UPLOADS.mkdir(parents=True, exist_ok=True)
     path = UPLOADS / f"upload-{os.urandom(12).hex()}.pdf"
     filename = Path((file.filename or "document.pdf").replace("\\", "/")).name or "document.pdf"
     size = 0
+    digest = hashlib.sha256()
     try:
         with path.open("wb") as output:
             while chunk := await file.read(1024 * 1024):
                 size += len(chunk)
                 if size > 25 * 1024 * 1024:
                     raise HTTPException(413, "PDF is too large")
+                digest.update(chunk)
                 output.write(chunk)
         with path.open("rb") as uploaded:
             header = uploaded.read(5)
         if size < 5 or header != b"%PDF-":
             raise HTTPException(422, "Invalid PDF")
-        document_id = STORE.add_document(path, request_id=requestId, filename=filename)
+        document_id = STORE.add_document(
+            path,
+            request_id=requestId,
+            filename=filename,
+            pdf_sha256=digest.hexdigest(),
+        )
         schedule_document_preparation(document_id)
         return {"documentId": document_id}
     except Exception:
@@ -243,6 +326,8 @@ async def delete_document(document_id: str):
     path = STORE.document_path(document_id)
     if path is None:
         raise HTTPException(404, "Document not found")
+    if STORE.document_has_active_plan(document_id):
+        raise HTTPException(409, "Document is used by an active plan")
     await cleanup_document(document_id)
     return {"documentId": document_id, "deleted": True}
 
@@ -264,8 +349,9 @@ async def cancel_plan(plan_id: str):
             await task
         except asyncio.CancelledError:
             logger.debug("Plan %s generation task cancelled", plan_id)
-    for did in document_ids:
-        await cleanup_document(did)
+    else:
+        for did in document_ids:
+            await cleanup_document(did, active_plan_id=plan_id)
     return {"planId": plan_id, "status": PlanStatus.CANCELED}
 
 @app.get("/plans/{plan_id}/status")

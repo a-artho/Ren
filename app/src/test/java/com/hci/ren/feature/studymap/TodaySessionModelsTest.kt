@@ -433,6 +433,32 @@ class TodaySessionModelsTest {
         assertEquals(emptyList<String>(), session.pullInCandidates.map { it.id })
     }
 
+    @Test fun stalePulledTaskWithUnfinishedDependencyIsPruned() {
+        val prerequisite = task("prerequisite", 30).copy(order = 1)
+        val dependent = task("dependent", 30).copy(
+            order = 2,
+            dependencies = listOf("prerequisite"),
+        )
+        val data = dataFor(
+            todayTasks = emptyList(),
+            futureTasks = listOf(prerequisite, dependent),
+            dailyMinutes = 60,
+        )
+        val state = TodaySessionState(date = "2026-06-22")
+            .applyTaskAction("dependent", TodaySessionTaskAction.PullIn)
+
+        val session = TodaySessionPlanner().plan(
+            data = data,
+            date = "2026-06-22",
+            availableMinutes = 60,
+            session = state,
+        )
+
+        assertEquals(emptyList<String>(), session.pulledInTasks.map { it.id })
+        assertEquals(listOf("prerequisite"), session.pullInCandidates.map { it.id })
+        assertFalse(session.hasPendingChanges)
+    }
+
     @Test fun extraTimeDoesNotSuggestRemovedTasks() {
         val today = task("today", 30).copy(order = 1)
         val removed = task("removed", 30).copy(order = 2)

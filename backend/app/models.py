@@ -56,8 +56,16 @@ class Setup(BaseModel):
 class CreatePlanRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     documentIds: list[str] = Field(min_length=1, max_length=10)
-    requestId: str
+    requestId: str = Field(min_length=1, max_length=128)
     setup: Setup
+
+    @model_validator(mode="after")
+    def validate_document_ids(self):
+        if any(not document_id.strip() for document_id in self.documentIds):
+            raise ValueError("documentIds must be non-empty strings")
+        if len(set(self.documentIds)) != len(self.documentIds):
+            raise ValueError("documentIds must be unique")
+        return self
 
 
 class Topic(BaseModel):
@@ -130,14 +138,14 @@ class StudyTaskStatus(StrEnum):
 
 
 TASK_TYPE_MINIMUMS = {
-    StudyTaskType.CONCEPT: 20,
+    StudyTaskType.CONCEPT: 10,
     StudyTaskType.PRACTICE: 10,
-    StudyTaskType.REVIEW: 5,
-    StudyTaskType.MOCK_TEST: 30,
-    StudyTaskType.MEMORIZATION: 5,
+    StudyTaskType.REVIEW: 10,
+    StudyTaskType.MOCK_TEST: 10,
+    StudyTaskType.MEMORIZATION: 10,
     StudyTaskType.READING: 10,
     StudyTaskType.SUMMARY: 10,
-    StudyTaskType.MISTAKE_REVIEW: 5,
+    StudyTaskType.MISTAKE_REVIEW: 10,
     StudyTaskType.QUIZ: 10,
     StudyTaskType.CUSTOM: 5,
 }

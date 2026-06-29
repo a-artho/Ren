@@ -142,6 +142,7 @@ class TodaySessionPlanner {
         val wontFitTodayTasks = committedCandidates.filterNot { it.id in doTodayIds }
         val pulledInTasks = forwardTasks
             .filter { it.id in pulledIds && it.id !in doneTodayIds && it.id !in removedIds }
+            .filter { task -> task.canPullForward(completedIds, doneTodayIds, activeTasksById) }
         val removedFromPlanTasks = orderedByPlan(data.activeTasks, removedIds)
         val removedFromPlanTaskIds = removedFromPlanTasks.mapTo(mutableSetOf()) { it.id }
         val plannedTasks = doTodayTasks + pulledInTasks + doneTodayTasks
@@ -150,16 +151,9 @@ class TodaySessionPlanner {
             .coerceAtLeast(0)
         val pullInCandidates = if (remainingMinutes > 0) {
             forwardTasks.asSequence()
-                .filter { it.status in PullableForwardStatuses }
                 .filterNot { it.id in plannedIds }
                 .filterNot { it.id in removedIds }
-                .filter { task ->
-                    task.dependencies.all { dependency ->
-                        dependency in completedIds ||
-                            dependency in doneTodayIds ||
-                            activeTasksById[dependency] == null
-                    }
-                }
+                .filter { task -> task.canPullForward(completedIds, doneTodayIds, activeTasksById) }
                 .pullCandidatesFor(remainingMinutes)
         } else {
             emptyList()
@@ -253,6 +247,17 @@ private fun Sequence<GeneratedStudyBlock>.pullCandidatesFor(remainingMinutes: In
     }
     return fittingPrefix.ifEmpty { candidates.take(1) }
 }
+
+private fun GeneratedStudyBlock.canPullForward(
+    completedIds: Set<String>,
+    doneTodayIds: Set<String>,
+    activeTasksById: Map<String, GeneratedStudyBlock>,
+): Boolean = status in PullableForwardStatuses &&
+    dependencies.all { dependency ->
+        dependency in completedIds ||
+            dependency in doneTodayIds ||
+            activeTasksById[dependency] == null
+    }
 
 private fun orderedByPlan(
     tasks: List<GeneratedStudyBlock>,

@@ -69,6 +69,17 @@ def test_store_persists_document_filename(tmp_path: Path):
     assert document.filename == "Lecture 10.pdf"
 
 
+def test_store_persists_document_hash(tmp_path: Path):
+    store = Store(tmp_path / "ren.db")
+    pdf = tmp_path / "random-upload.pdf"
+    pdf.write_bytes(b"%PDF-test")
+
+    document_id = store.add_document(pdf, filename="Lecture 10.pdf", pdf_sha256="hash-123")
+
+    document = store.documents_for_ids([document_id])[0]
+    assert document.pdf_sha256 == "hash-123"
+
+
 def test_store_persists_prepared_gemini_file(tmp_path: Path):
     store = Store(tmp_path / "ren.db")
     pdf = tmp_path / "doc.pdf"
@@ -90,6 +101,25 @@ def test_store_persists_prepared_gemini_file(tmp_path: Path):
 
     store.clear_document_prepared(document_id, error="expired")
     assert store.document_prepared_file(document_id) is None
+
+
+def test_store_ignores_expired_prepared_gemini_file_but_can_cleanup_it(tmp_path: Path):
+    store = Store(tmp_path / "ren.db")
+    pdf = tmp_path / "doc.pdf"
+    pdf.write_bytes(b"%PDF-test")
+    document_id = store.add_document(pdf, filename="Lecture 1.pdf")
+
+    store.set_document_prepared(
+        document_id,
+        name="files/prepared",
+        uri="https://example.test/prepared",
+        mime_type="application/pdf",
+    )
+    with store.connect() as db:
+        db.execute("UPDATE documents SET gemini_prepared_at='2000-01-01 00:00:00' WHERE id=?", (document_id,))
+
+    assert store.document_prepared_file(document_id) is None
+    assert store.document_prepared_file(document_id, max_age_hours=None).name == "files/prepared"
 
 
 def test_store_finds_only_old_unclaimed_documents(tmp_path: Path):
@@ -122,6 +152,31 @@ def test_create_plan_with_multiple_documents(tmp_path: Path):
     assert created
     row = store.get(plan_id)
     assert json.loads(row.document_ids) == [d1, d2]
+
+
+def test_store_detects_documents_used_by_active_plans(tmp_path: Path):
+    store = Store(tmp_path / "ren.db")
+    pdf = tmp_path / "a.pdf"
+    pdf.write_bytes(b"%PDF-a")
+    document_id = store.add_document(pdf)
+    plan_id, _ = store.create_plan(request("active-plan", document_id=document_id))
+
+    assert store.document_has_active_plan(document_id) is True
+    assert store.document_has_active_plan(document_id, exclude_plan_id=plan_id) is False
+
+    store.set_status(plan_id, PlanStatus.COMPLETED, generated_plan())
+    assert store.document_has_active_plan(document_id) is False
+
+
+def test_store_configures_sqlite_busy_timeout_and_wal(tmp_path: Path):
+    store = Store(tmp_path / "ren.db")
+
+    with store.connect() as db:
+        busy_timeout = db.execute("PRAGMA busy_timeout").fetchone()[0]
+        journal_mode = db.execute("PRAGMA journal_mode").fetchone()[0]
+
+    assert busy_timeout == 30000
+    assert journal_mode.lower() == "wal"
 
 
 def test_abandoned_ignores_multi_doc_plan(tmp_path: Path):
