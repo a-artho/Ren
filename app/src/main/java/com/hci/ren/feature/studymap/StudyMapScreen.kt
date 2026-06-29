@@ -840,6 +840,9 @@ private fun StudyDayMapCard(
                     isLastDay = isLast,
                 )
             }
+            if (!isLast) {
+                TimelineDayGap()
+            }
         }
     }
 }
@@ -1005,6 +1008,25 @@ private fun TaskBranchConnector(
                 cap = StrokeCap.Round,
             )
         }
+    }
+}
+
+@Composable
+private fun TimelineDayGap(height: Dp = 16.dp) {
+    val mutedColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.72f)
+    Canvas(
+        modifier = Modifier
+            .width(54.dp)
+            .height(height),
+    ) {
+        val branchX = 9.dp.toPx()
+        drawLine(
+            color = mutedColor,
+            start = Offset(branchX, 0f),
+            end = Offset(branchX, size.height),
+            strokeWidth = 1.dp.toPx(),
+            cap = StrokeCap.Round,
+        )
     }
 }
 
