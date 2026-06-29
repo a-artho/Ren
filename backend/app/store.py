@@ -55,41 +55,12 @@ class Store:
             db.execute(
                 "CREATE UNIQUE INDEX IF NOT EXISTS documents_request_id ON documents(request_id)"
             )
-            self.migrate_plans_table(db)
 
     def connect(self):
         db = sqlite3.connect(self.db_path, timeout=30)
         db.execute("PRAGMA busy_timeout=30000")
         db.execute("PRAGMA journal_mode=WAL")
         return db
-
-    def migrate_plans_table(self, db: sqlite3.Connection):
-        plan_columns = {row[1] for row in db.execute("PRAGMA table_info(plans)")}
-        if "document_id" not in plan_columns and "document_ids" in plan_columns:
-            return
-
-        db.execute("""
-            CREATE TABLE IF NOT EXISTS plans_new(
-              id TEXT PRIMARY KEY,
-              request_id TEXT UNIQUE NOT NULL,
-              document_ids TEXT NOT NULL,
-              setup_json TEXT NOT NULL,
-              status TEXT NOT NULL,
-              result_json TEXT,
-              error TEXT,
-              created_at TEXT DEFAULT CURRENT_TIMESTAMP
-            )
-        """)
-        if "document_id" in plan_columns:
-            document_ids_expr = "COALESCE(document_ids, json_array(document_id))" if "document_ids" in plan_columns else "json_array(document_id)"
-            db.execute(f"""
-                INSERT OR IGNORE INTO plans_new(id,request_id,document_ids,setup_json,status,result_json,error,created_at)
-                SELECT id, request_id, {document_ids_expr},
-                       setup_json, status, result_json, error, created_at
-                FROM plans
-            """)
-        db.execute("DROP TABLE IF EXISTS plans")
-        db.execute("ALTER TABLE plans_new RENAME TO plans")
 
     def add_document(
         self,

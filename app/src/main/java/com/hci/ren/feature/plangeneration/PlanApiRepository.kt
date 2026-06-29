@@ -4,11 +4,17 @@ import android.content.ContentResolver
 import android.net.Uri
 import android.provider.OpenableColumns
 import com.hci.ren.feature.pdfupload.presentation.PlanSetupSubmission
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import org.json.JSONArray
 import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
 import java.io.IOException
+import java.util.concurrent.atomic.AtomicInteger
 import java.util.UUID
 
 class PlanApiRepository(
@@ -46,16 +52,26 @@ class PlanApiRepository(
         }
     }
 
-    fun uploadDocuments(
+    suspend fun uploadDocuments(
         uris: List<Uri>,
         requestId: String,
         onProgress: (current: Int, total: Int) -> Unit = { _, _ -> },
-    ): List<String> {
+    ): List<String> = coroutineScope {
         val total = uris.size
-        return uris.mapIndexed { index, uri ->
-            onProgress(index + 1, total)
-            uploadDocument(uri, "${requestId}-${index}")
+        val completed = AtomicInteger(0)
+        val semaphore = Semaphore(MaxConcurrentDocumentUploads)
+        uris.mapIndexed { index, uri ->
+            async {
+                val documentId = semaphore.withPermit {
+                    uploadDocument(uri, "${requestId}-${index}")
+                }
+                onProgress(completed.incrementAndGet(), total)
+                index to documentId
+            }
         }
+            .awaitAll()
+            .sortedBy { it.first }
+            .map { it.second }
     }
 
     fun createPlan(documentIds: List<String>, submission: PlanSetupSubmission, requestId: String): String {
@@ -197,6 +213,7 @@ internal class PlanApiException(
 
 private fun JSONArray.objects() = (0 until length()).map { getJSONObject(it) }
 private fun JSONArray.strings() = (0 until length()).map { getString(it) }
+private const val MaxConcurrentDocumentUploads = 5
 private fun ContentResolver.displayName(uri: Uri): String {
     return query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
         val columnIndex = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)

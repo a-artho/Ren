@@ -11,8 +11,6 @@ import androidx.room.Query
 import androidx.room.Room
 import androidx.room.RoomDatabase
 import androidx.room.Transaction
-import androidx.room.migration.Migration
-import androidx.sqlite.db.SupportSQLiteDatabase
 import com.hci.ren.feature.pdfupload.presentation.PlanSetupSubmission
 import com.hci.ren.feature.pdfupload.presentation.StudyDay
 import com.hci.ren.feature.pdfupload.presentation.StudyDeadline
@@ -105,53 +103,10 @@ abstract class StudyProjectDatabase : RoomDatabase() {
                 StudyProjectDatabase::class.java,
                 "ren-study-projects.db",
             )
-                .addMigrations(
-                    DropLegacyStudyProjectsMigration,
-                    AddDailyAvailableMinutesMigration,
-                    AddTaskProgressMigration,
-                )
+                .fallbackToDestructiveMigration(true)
                 .build()
                 .also { instance = it }
         }
-    }
-}
-
-internal val DropLegacyStudyProjectsMigration = object : Migration(1, 2) {
-    override fun migrate(db: SupportSQLiteDatabase) {
-        db.execSQL("DROP TABLE IF EXISTS `study_projects`")
-        db.execSQL(
-            """
-            CREATE TABLE IF NOT EXISTS `active_study_project` (
-                `slot` TEXT NOT NULL,
-                `projectId` TEXT NOT NULL,
-                `title` TEXT NOT NULL,
-                `createdAtMillis` INTEGER NOT NULL,
-                `updatedAtMillis` INTEGER NOT NULL,
-                `deadlineAtMillis` INTEGER,
-                `planJson` TEXT NOT NULL,
-                `preferencesJson` TEXT NOT NULL,
-                `dailyMinutesOverride` INTEGER,
-                `acceptedTightPlan` INTEGER NOT NULL,
-                PRIMARY KEY(`slot`)
-            )
-            """.trimIndent(),
-        )
-    }
-}
-
-internal val AddDailyAvailableMinutesMigration = object : Migration(2, 3) {
-    override fun migrate(db: SupportSQLiteDatabase) {
-        db.execSQL(
-            "ALTER TABLE `active_study_project` ADD COLUMN `dailyAvailableMinutesJson` TEXT NOT NULL DEFAULT '{}'",
-        )
-    }
-}
-
-internal val AddTaskProgressMigration = object : Migration(3, 4) {
-    override fun migrate(db: SupportSQLiteDatabase) {
-        db.execSQL(
-            "ALTER TABLE `active_study_project` ADD COLUMN `taskProgressJson` TEXT NOT NULL DEFAULT '{}'",
-        )
     }
 }
 

@@ -388,7 +388,6 @@ class PdfUploadViewModel(
         sessionId += 1
         savedStateHandle[KEY_SESSION_ID] = sessionId
         savedStateHandle.remove<String>(KEY_DOCUMENT_URI_LIST)
-        savedStateHandle.remove<String>(KEY_DOCUMENT_URI)
         savedStateHandle.remove<Int>(KEY_SELECTED_PDF_INDEX)
         savedStateHandle.remove<Int>(KEY_SELECTED_PAGE)
         savedStateHandle.remove<Boolean>(KEY_MANUAL_DOCUMENT_ORDER)
@@ -400,7 +399,6 @@ class PdfUploadViewModel(
 
     private fun saveUriList(uris: List<Uri>) {
         savedStateHandle[KEY_DOCUMENT_URI_LIST] = uris.joinToString("|") { it.toString() }
-        savedStateHandle.remove<String>(KEY_DOCUMENT_URI)
     }
 
     private fun updateSavedUriList() {
@@ -413,7 +411,7 @@ class PdfUploadViewModel(
             val uris = urisStr.split("|").map { it.toUri() }
             if (uris.isNotEmpty()) return uris
         }
-        return savedStateHandle.get<String>(KEY_DOCUMENT_URI)?.let { listOf(it.toUri()) }
+        return null
     }
 
     private fun duplicateNoticeMessage(duplicateCount: Int): String? =
@@ -427,7 +425,6 @@ class PdfUploadViewModel(
         const val previewWidthPx = 1400
         const val MaxBitmapCacheBytes = 32L * 1024 * 1024
         const val KEY_SESSION_ID = "pdf_session_id"
-        const val KEY_DOCUMENT_URI = "pdf_document_uri"
         const val KEY_DOCUMENT_URI_LIST = "pdf_document_uri_list"
         const val KEY_SELECTED_PDF_INDEX = "pdf_selected_pdf_index"
         const val KEY_SELECTED_PAGE = "pdf_selected_page"

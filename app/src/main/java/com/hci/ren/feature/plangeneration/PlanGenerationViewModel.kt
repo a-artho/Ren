@@ -13,12 +13,18 @@ import com.hci.ren.feature.pdfupload.presentation.PlanSetupSubmission
 import com.hci.ren.feature.studymap.StudyProjectRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
+import java.util.concurrent.atomic.AtomicInteger
 import java.util.UUID
 import org.json.JSONArray
 import org.json.JSONObject
@@ -155,39 +161,12 @@ class PlanGenerationViewModel(application: Application) : AndroidViewModel(appli
         preparationJob = viewModelScope.launch(Dispatchers.IO) {
             var stoppedAfterFailure = false
             try {
-                while (true) {
-                    val record = synchronized(preparedDocumentsLock) {
-                        preparedDocuments.firstOrNull { it.documentId == null }
-                    } ?: break
-                    val uploadedDocumentId = runCatching {
-                        repository.uploadDocument(record.uri.toUri(), record.uploadRequestId)
-                    }.onFailure {
-                        Log.w("PlanGeneration", "Failed preparing document upload", it)
-                    }.getOrNull()
-                    if (uploadedDocumentId == null) {
-                        stoppedAfterFailure = true
-                        break
-                    }
-
-                    val shouldKeep = synchronized(preparedDocumentsLock) {
-                        preparedDocuments.any { it.uri == record.uri && it.uploadRequestId == record.uploadRequestId }
-                    }
-                    if (!shouldKeep) {
-                        runCatching { repository.deleteDocument(uploadedDocumentId) }
-                            .onFailure { Log.w("PlanGeneration", "Failed deleting stale prepared document", it) }
-                        continue
-                    }
-                    synchronized(preparedDocumentsLock) {
-                        preparedDocuments = preparedDocuments.map {
-                            if (it.uri == record.uri && it.uploadRequestId == record.uploadRequestId) {
-                                it.copy(documentId = uploadedDocumentId)
-                            } else {
-                                it
-                            }
-                        }
-                        persistPreparedDocumentsLocked()
-                    }
+                val pending = synchronized(preparedDocumentsLock) {
+                    preparedDocuments.filter { it.documentId == null }
                 }
+                if (pending.isEmpty()) return@launch
+                val results = uploadPreparedDocuments(pending)
+                stoppedAfterFailure = results.any { it == PreparedDocumentUploadResult.Failed }
             } finally {
                 preparationJob = null
                 if (!stoppedAfterFailure && synchronized(preparedDocumentsLock) { preparedDocuments.any { it.documentId == null } }) {
@@ -195,6 +174,48 @@ class PlanGenerationViewModel(application: Application) : AndroidViewModel(appli
                 }
             }
         }
+    }
+
+    private suspend fun uploadPreparedDocuments(
+        records: List<PreparedDocumentUpload>,
+        onFinished: () -> Unit = {},
+    ): List<PreparedDocumentUploadResult> = coroutineScope {
+        val semaphore = Semaphore(MAX_DOCUMENT_PREPARATION_UPLOADS)
+        records.map { record ->
+            async {
+                semaphore.withPermit {
+                    uploadPreparedDocument(record).also { onFinished() }
+                }
+            }
+        }.awaitAll()
+    }
+
+    private fun uploadPreparedDocument(record: PreparedDocumentUpload): PreparedDocumentUploadResult {
+        val uploadedDocumentId = runCatching {
+            repository.uploadDocument(record.uri.toUri(), record.uploadRequestId)
+        }.onFailure {
+            Log.w("PlanGeneration", "Failed preparing document upload", it)
+        }.getOrNull() ?: return PreparedDocumentUploadResult.Failed
+
+        val shouldKeep = synchronized(preparedDocumentsLock) {
+            preparedDocuments.any { it.uri == record.uri && it.uploadRequestId == record.uploadRequestId }
+        }
+        if (!shouldKeep) {
+            runCatching { repository.deleteDocument(uploadedDocumentId) }
+                .onFailure { Log.w("PlanGeneration", "Failed deleting stale prepared document", it) }
+            return PreparedDocumentUploadResult.Stale
+        }
+        synchronized(preparedDocumentsLock) {
+            preparedDocuments = preparedDocuments.map {
+                if (it.uri == record.uri && it.uploadRequestId == record.uploadRequestId) {
+                    it.copy(documentId = uploadedDocumentId)
+                } else {
+                    it
+                }
+            }
+            persistPreparedDocumentsLocked()
+        }
+        return PreparedDocumentUploadResult.Uploaded
     }
 
     private fun startPersistedRequest() {
@@ -472,27 +493,31 @@ class PlanGenerationViewModel(application: Application) : AndroidViewModel(appli
         }
         preparationJob?.join()
         val total = value.documentUris.size
-        return value.documentUris.mapIndexed { index, uri ->
-            onProgress(index + 1, total)
-            val record = synchronized(preparedDocumentsLock) {
+        val orderedRecords = value.documentUris.map { uri ->
+            synchronized(preparedDocumentsLock) {
                 preparedDocuments.firstOrNull { it.uri == uri }
                     ?: PreparedDocumentUpload(uri = uri, uploadRequestId = UUID.randomUUID().toString()).also { created ->
                         preparedDocuments = preparedDocuments + created
                         persistPreparedDocumentsLocked()
                     }
             }
-            record.documentId ?: repository.uploadDocument(uri.toUri(), record.uploadRequestId).also { uploadedId ->
-                synchronized(preparedDocumentsLock) {
-                    preparedDocuments = preparedDocuments.map {
-                        if (it.uri == uri && it.uploadRequestId == record.uploadRequestId) {
-                            it.copy(documentId = uploadedId)
-                        } else {
-                            it
-                        }
-                    }
-                    persistPreparedDocumentsLocked()
-                }
+        }
+        val missing = orderedRecords.filter { it.documentId == null }
+        if (missing.isNotEmpty()) {
+            val completed = AtomicInteger(total - missing.size)
+            val results = uploadPreparedDocuments(missing) {
+                onProgress(completed.incrementAndGet(), total)
             }
+            if (results.any { it == PreparedDocumentUploadResult.Failed }) {
+                error("The selected PDF could not be uploaded")
+            }
+        } else {
+            repeat(total) { index -> onProgress(index + 1, total) }
+        }
+        return value.documentUris.map { uri ->
+            synchronized(preparedDocumentsLock) {
+                preparedDocuments.firstOrNull { it.uri == uri }?.documentId
+            } ?: error("The selected PDF could not be uploaded")
         }
     }
 
@@ -580,19 +605,8 @@ class PlanGenerationViewModel(application: Application) : AndroidViewModel(appli
 
     private fun restoreSubmission(): PlanSetupSubmission? = runCatching {
         val json = JSONObject(preferences.getString(KEY_SUBMISSION, null) ?: return null)
-        val documentUris = if (json.has("documentUris")) {
-            val arr = json.getJSONArray("documentUris")
+        val documentUris = json.getJSONArray("documentUris").let { arr ->
             buildList { repeat(arr.length()) { add(arr.getString(it)) } }
-        } else {
-            val single = if (json.has("documentUri") && !json.isNull("documentUri")) {
-                json.getString("documentUri")
-            } else {
-                return null
-            }
-            json.put("documentUris", JSONArray(listOf(single)))
-            json.remove("documentUri")
-            preferences.edit { putString(KEY_SUBMISSION, json.toString()) }
-            listOf(single)
         }
         PlanSetupSubmission(
             documentUris = documentUris,
@@ -639,9 +653,16 @@ class PlanGenerationViewModel(application: Application) : AndroidViewModel(appli
         const val KEY_REQUEST_ID = "pending_request_id"
         const val KEY_PREPARED_DOCUMENTS = "prepared_documents"
         const val MAX_TRANSIENT_FAILURE_MILLIS = 5 * 60 * 1000L
+        private const val MAX_DOCUMENT_PREPARATION_UPLOADS = 5
         private val VISUAL_STEP_MINIMUM_DURATION = 2.seconds
         private val COMPLETION_SETTLE_DURATION = 650.milliseconds
     }
+}
+
+private enum class PreparedDocumentUploadResult {
+    Uploaded,
+    Stale,
+    Failed,
 }
 
 private data class PreparedDocumentUpload(

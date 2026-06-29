@@ -8,7 +8,6 @@ from app.pdf_parser import PdfPageAnchor
 from app.provider import (
     AIProvider,
     GLOBAL_EFFORT_CALIBRATION_SCHEMA,
-    GEMINI_PLAN_SCHEMA,
     GEMINI_SEMANTIC_SCHEMA,
     GeminiProvider,
     GlobalEffortCalibration,
@@ -27,7 +26,7 @@ from app.models import Difficulty, GeneratedPlan, Setup
 def test_semantic_schema_is_accepted_by_installed_gemini_sdk():
     config = types.GenerateContentConfig(
         response_mime_type="application/json",
-        response_schema=GEMINI_PLAN_SCHEMA,
+        response_schema=GEMINI_SEMANTIC_SCHEMA,
     )
 
     assert config.response_schema == GEMINI_SEMANTIC_SCHEMA
@@ -485,7 +484,6 @@ def test_gemini_provider_uses_file_api_for_semantic_extraction(tmp_path, monkeyp
     def fail_from_bytes(**kwargs):
         raise AssertionError("semantic path should use Files API, not inline PDF bytes")
 
-    monkeypatch.delenv("REN_EXTRACTION_MODE", raising=False)
     monkeypatch.setattr(types.Part, "from_bytes", fail_from_bytes)
     provider = GeminiProvider.__new__(GeminiProvider)
     provider.client = FakeClient()
@@ -563,7 +561,6 @@ def test_gemini_provider_reuses_prepared_gemini_file(tmp_path, monkeypatch):
         def __init__(self):
             self.aio = FakeAio()
 
-    monkeypatch.delenv("REN_EXTRACTION_MODE", raising=False)
     provider = GeminiProvider.__new__(GeminiProvider)
     provider.client = FakeClient()
     provider.model = "test-model"
@@ -659,7 +656,6 @@ def test_gemini_provider_clears_stale_prepared_file_and_retries_upload(tmp_path,
         def __init__(self):
             self.aio = FakeAio()
 
-    monkeypatch.delenv("REN_EXTRACTION_MODE", raising=False)
     provider = GeminiProvider.__new__(GeminiProvider)
     provider.client = FakeClient()
     provider.model = "test-model"
@@ -776,7 +772,6 @@ def test_gemini_provider_calibrates_multi_pdf_effort(tmp_path, monkeypatch):
         def __init__(self):
             self.aio = FakeAio()
 
-    monkeypatch.delenv("REN_EXTRACTION_MODE", raising=False)
     monkeypatch.delenv("REN_GLOBAL_EFFORT_CALIBRATION", raising=False)
     provider = GeminiProvider.__new__(GeminiProvider)
     provider.client = FakeClient()
@@ -881,7 +876,6 @@ def test_gemini_provider_reuses_cached_semantic_extraction(tmp_path, monkeypatch
         def __init__(self):
             self.aio = FakeAio()
 
-    monkeypatch.delenv("REN_EXTRACTION_MODE", raising=False)
     provider = GeminiProvider.__new__(GeminiProvider)
     provider.client = FakeClient()
     provider.model = "test-model"
@@ -999,10 +993,19 @@ def test_format_document_context_includes_page_anchors(tmp_path):
         filename="Lecture 1.pdf",
         source_id="doc1",
         page_count=12,
-        page_anchors=[PdfPageAnchor(page=3, word_count=42, text="HCI has gulfs of execution and evaluation.")],
+        page_anchors=[
+            PdfPageAnchor(
+                page=3,
+                word_count=42,
+                text="Gulfs of Execution | Gulf of evaluation",
+                heading="Gulfs of Execution",
+                cues=("Gulf of evaluation",),
+            )
+        ],
     )
 
     context = format_document_context(1, document)
 
     assert "Document 1 (doc1): Lecture 1.pdf, 12 pages" in context
-    assert "Page 3 (42 words): HCI has gulfs" in context
+    assert "Compact page map extracted locally:" in context
+    assert "p. 3 (42 words) | heading: Gulfs of Execution | cues: Gulf of evaluation" in context
