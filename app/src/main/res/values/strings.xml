@@ -14,7 +14,7 @@
     <string name="step_subtitle_identifying">Finding key topics across your PDFs.</string>
     <string name="step_subtitle_creating">Organizing work into study sessions.</string>
     <string name="step_subtitle_finalizing">Saving your plan.</string>
-    <string name="wait_tip_1">You can leave this open while we work.</string>
+    <string name="wait_tip_1">This may take up to a minute. You can leave this open.</string>
     <string name="cancel_generation_title">Cancel plan generation?</string>
     <string name="cancel_generation_message">Are you sure you want to stop? You will lose any progress made on generating this study plan.</string>
     <string name="cancel_generation_confirm">Yes, cancel</string>
