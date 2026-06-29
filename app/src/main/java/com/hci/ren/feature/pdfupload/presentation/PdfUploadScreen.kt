@@ -180,7 +180,7 @@ private fun PdfPickerHeader(
 ) {
     Column {
         PlanFlowIntro(
-            title = "Order study materials",
+            title = "Sort study materials",
             subtitle = "Add the notes or slides you want included.",
             titleFontWeight = FontWeight.SemiBold,
         )
