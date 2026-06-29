@@ -82,6 +82,7 @@ class SourceRef(BaseModel):
     startPage: int | None = Field(default=None, ge=1)
     endPage: int | None = Field(default=None, ge=1)
     sectionTitle: str | None = None
+    materialGroupTitle: str | None = None
 
     @model_validator(mode="after")
     def validate_page_range(self):

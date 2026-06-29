@@ -46,7 +46,7 @@
     <string name="study_map_open_error">We couldn’t open this study plan.</string>
     <string name="study_map_save_error">We couldn’t save that change. Try again.</string>
     <string name="schedule_view">Tree</string>
-    <string name="topics_view">Topics</string>
+    <string name="topics_view">Material</string>
     <string name="on_track">On track</string>
     <string name="plan_is_tight">Plan is tight</string>
     <string name="unrealistic_plan">Unrealistic</string>
@@ -207,6 +207,11 @@
     <string name="source_page">p. %1$d</string>
     <string name="source_page_range">pp. %1$d–%2$d</string>
     <string name="source_with_page">%1$s • %2$s</string>
+    <plurals name="source_page_count">
+        <item quantity="one">%1$d page</item>
+        <item quantity="other">%1$d pages</item>
+    </plurals>
+    <string name="other_material">Other material</string>
     <string name="not_started">Not started</string>
     <string name="task_status_in_progress">In progress</string>
     <string name="completed">Completed</string>

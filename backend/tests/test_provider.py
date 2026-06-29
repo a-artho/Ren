@@ -42,6 +42,7 @@ def test_semantic_extraction_canonicalizes_into_generated_plan(tmp_path):
                 "startPage": 4,
                 "endPage": 8,
                 "sectionTitle": "Modes",
+                "materialGroupTitle": "Block cipher modes",
                 "taskType": "CONCEPT",
                 "instructions": "Compare ECB and CBC.",
                 "completionCriteria": ["Explain ECB leakage."],
@@ -63,6 +64,7 @@ def test_semantic_extraction_canonicalizes_into_generated_plan(tmp_path):
                 "startPage": 9,
                 "endPage": 12,
                 "sectionTitle": "AES",
+                "materialGroupTitle": "Block ciphers",
                 "taskType": "CONCEPT",
                 "instructions": "Understand AES rounds.",
                 "completionCriteria": ["Name the core AES round operations."],
@@ -104,6 +106,8 @@ def test_semantic_extraction_canonicalizes_into_generated_plan(tmp_path):
     assert plan.blocks[0].effortMaxMinutes == 50
     assert plan.blocks[0].difficulty == Difficulty.HEAVY
     assert plan.blocks[0].sourceRefs[0].documentId == "doc1"
+    assert plan.blocks[0].sourceRefs[0].sectionTitle == "Modes"
+    assert plan.blocks[0].sourceRefs[0].materialGroupTitle == "Block cipher modes"
     assert plan.blocks[1].dependencies == ["doc1-block-1"]
     assert plan.blocks[1].status.value == "NOT_STARTED"
     assert plan.extractionWarnings[0].message == "Page labels were ambiguous."

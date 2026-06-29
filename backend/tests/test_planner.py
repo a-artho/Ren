@@ -26,7 +26,13 @@ def raw_plan(block_minutes):
                 "instructions": "Study this block.",
                 "topicIds": ["t-old"],
                 "dependencies": [],
-                "sourceRefs": [{"documentId": "doc1", "startPage": index, "endPage": index, "sectionTitle": ""}],
+                "sourceRefs": [{
+                    "documentId": "doc1",
+                    "startPage": index,
+                    "endPage": index,
+                    "sectionTitle": f"Section {index}",
+                    "materialGroupTitle": "Parent section",
+                }],
             }
             for index, minutes in enumerate(block_minutes, start=1)
         ],
@@ -44,6 +50,8 @@ def test_master_plan_normalizes_sources_and_stable_ids_without_scheduling(tmp_pa
     assert [block.id for block in plan.blocks] == ["block1", "block2"]
     assert [block.order for block in plan.blocks] == [1, 2]
     assert all(block.sourceRefs[0].documentId == "doc1" for block in plan.blocks)
+    assert plan.blocks[0].sourceRefs[0].sectionTitle == "Section 1"
+    assert plan.blocks[0].sourceRefs[0].materialGroupTitle == "Parent section"
     assert all(block.status == StudyTaskStatus.NOT_STARTED for block in plan.blocks)
     assert all(block.scheduledDate is None for block in plan.blocks)
     assert not hasattr(plan, "schedule")

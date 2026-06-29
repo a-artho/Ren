@@ -147,4 +147,5 @@ def sanitize_source_ref(
         startPage=start_page,
         endPage=max(end_page, start_page),
         sectionTitle=(ref.sectionTitle or "").strip(),
+        materialGroupTitle=(ref.materialGroupTitle or "").strip(),
     )

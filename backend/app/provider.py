@@ -27,9 +27,9 @@ from .pdf_parser import PdfPageAnchor
 
 logger = logging.getLogger("ren")
 BACKEND_ROOT = Path(__file__).parents[1]
-SEMANTIC_EXTRACTION_PROMPT_VERSION = "2026-06-28-semantic-v2"
-SEMANTIC_EXTRACTION_SCHEMA_VERSION = "semantic-schema-v1"
-SEMANTIC_EXTRACTION_CACHE_VERSION = "semantic-cache-v1"
+SEMANTIC_EXTRACTION_PROMPT_VERSION = "2026-06-29-semantic-material-groups-v1"
+SEMANTIC_EXTRACTION_SCHEMA_VERSION = "semantic-schema-v2"
+SEMANTIC_EXTRACTION_CACHE_VERSION = "semantic-cache-v2"
 CACHE_DISABLED_VALUES = {"0", "false", "no", "off"}
 
 
@@ -110,8 +110,9 @@ LEGACY_GEMINI_PLAN_SCHEMA = {
                                 "startPage": {"type": "integer", "minimum": 1},
                                 "endPage": {"type": "integer", "minimum": 1},
                                 "sectionTitle": {"type": "string"},
+                                "materialGroupTitle": {"type": "string"},
                             },
-                            "required": ["documentId", "startPage", "endPage", "sectionTitle"],
+                            "required": ["documentId", "startPage", "endPage", "sectionTitle", "materialGroupTitle"],
                         },
                     },
                 },
@@ -155,6 +156,7 @@ GEMINI_SEMANTIC_SCHEMA = {
                     "startPage": {"type": "integer", "minimum": 1},
                     "endPage": {"type": "integer", "minimum": 1},
                     "sectionTitle": {"type": "string"},
+                    "materialGroupTitle": {"type": "string"},
                     "taskType": {
                         "type": "string",
                         "enum": [
@@ -180,7 +182,7 @@ GEMINI_SEMANTIC_SCHEMA = {
                 },
                 "required": [
                     "localBlockIndex", "title", "topicIndexes", "startPage", "endPage",
-                    "sectionTitle", "taskType", "instructions", "completionCriteria",
+                    "sectionTitle", "materialGroupTitle", "taskType", "instructions", "completionCriteria",
                     "effortMinMinutes", "effortLikelyMinutes", "effortMaxMinutes",
                     "estimateConfidence", "difficultyScore", "densityScore",
                     "productionDemandScore", "splitAllowed", "continuityLabel",
@@ -211,6 +213,7 @@ class SemanticBlock(BaseModel):
     startPage: int = Field(ge=1)
     endPage: int = Field(ge=1)
     sectionTitle: str = ""
+    materialGroupTitle: str = ""
     taskType: StudyTaskType = StudyTaskType.CONCEPT
     instructions: str = Field(min_length=1)
     completionCriteria: list[str] = Field(default_factory=list)
@@ -314,6 +317,7 @@ def semantic_extractions_to_generated_plan(
                 startPage=block.startPage,
                 endPage=block.endPage,
                 sectionTitle=block.sectionTitle.strip(),
+                materialGroupTitle=block.materialGroupTitle.strip(),
             )
             blocks.append(
                 StudyBlock.model_validate(
@@ -655,6 +659,10 @@ class GeminiProvider(AIProvider):
             "Preserve named examinable concepts, methods, theories, metrics, and examples from each source "
             "section. Avoid vague blocks like 'overview' when the source contains specific terms; include the "
             "important names in the block title, instructions, or sectionTitle. "
+            "For each sourceRef, keep sectionTitle as the precise local section/subsection for that block. "
+            "Use materialGroupTitle as a broader parent heading for grouping adjacent blocks in the same PDF, "
+            "such as a chapter, lecture section, or major unit. Do not make materialGroupTitle identical to every "
+            "block title unless the source truly has no broader parent. "
             "Estimate honest active-study durations without compressing work to fit the deadline. "
             "Do not include breaks in any minute estimate. For each block, set effortMinMinutes, "
             "effortLikelyMinutes, and effortMaxMinutes with min <= likely <= max. Use durationMinutes "
@@ -723,6 +731,11 @@ def semantic_prompt() -> str:
         "Blocks are local to this lecture and must have contiguous localBlockIndex values starting at 1. "
         "Every block must reference one or more topicIndexes from the local topics. "
         "Use startPage/endPage for the source span in this PDF. Keep page ranges best-effort but grounded. "
+        "For each block, set sectionTitle to the precise local section/subsection label for that block. "
+        "Set materialGroupTitle to a broader parent heading used only for grouping nearby blocks in the material view. "
+        "Good materialGroupTitle values are chapter titles, lecture units, or major section headings that can contain multiple blocks. "
+        "Do not weaken sectionTitle to make grouping easier; keep it atomic and use materialGroupTitle for the broader label. "
+        "If the PDF has no broader parent heading, use the best concise local group label and keep it source-grounded. "
         "Preserve named examinable concepts, methods, theories, algorithms, metrics, and examples from each source section. "
         "Avoid vague blocks like 'overview' when the source contains specific names. "
         "Keep instructions short and actionable. Completion criteria should describe what the learner can verify after finishing the block. "

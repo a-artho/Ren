@@ -22,14 +22,17 @@ import org.junit.Test
 class StudyMapScreenTest {
     @get:Rule val composeRule = createComposeRule()
 
-    @Test fun generatedPlanShowsSummaryMapAndTopicView() {
+    @Test fun generatedPlanShowsSummaryTreeAndMaterialView() {
         setScreen(scheduledPlan(), submission(StudyDeadline.InOneWeek, 60))
 
         composeRule.onNodeWithText("Calculus", substring = true, useUnmergedTree = true).assertIsDisplayed()
-        composeRule.onNodeWithText("Map").assertIsDisplayed()
+        composeRule.onNodeWithText("Tree").assertIsDisplayed()
         composeRule.onNodeWithText("Read limits", substring = true).assertIsDisplayed()
-        composeRule.onNodeWithText("Topics").performClick()
-        composeRule.onNodeWithText("Limits").assertIsDisplayed()
+        composeRule.onNodeWithText("Material").performClick()
+        composeRule.onNodeWithText("Calculus notes").assertIsDisplayed()
+        composeRule.onNodeWithText("Functions and limits").assertIsDisplayed()
+        composeRule.onNodeWithText("p. 2", substring = true).assertIsDisplayed()
+        composeRule.onNodeWithText("45 min", substring = true).assertIsDisplayed()
     }
 
     @Test fun unrealisticPlanShowsInPlaceAdjustmentSheet() {
@@ -132,7 +135,7 @@ class StudyMapScreenTest {
                 instructions = "Read the core rules.",
                 topicIds = listOf("limits"),
                 taskType = StudyTaskType.Concept,
-                sourceRefs = listOf(StudySourceRef("doc", startPage = 2, endPage = 2)),
+                sourceRefs = listOf(StudySourceRef("doc", startPage = 2, endPage = 2, sectionTitle = "Limits", materialGroupTitle = "Functions and limits")),
             ),
             GeneratedStudyBlock(
                 id = "practice",
@@ -142,7 +145,7 @@ class StudyMapScreenTest {
                 instructions = "Solve five exercises.",
                 topicIds = listOf("limits"),
                 taskType = StudyTaskType.Practice,
-                sourceRefs = listOf(StudySourceRef("doc", startPage = 3, endPage = 5)),
+                sourceRefs = listOf(StudySourceRef("doc", startPage = 3, endPage = 5, sectionTitle = "Limits", materialGroupTitle = "Functions and limits")),
             ),
         ),
     )

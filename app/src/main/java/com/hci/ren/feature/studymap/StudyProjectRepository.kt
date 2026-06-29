@@ -307,6 +307,7 @@ private fun StudySourceRef.toJson() = JSONObject()
     .put("startPage", startPage)
     .put("endPage", endPage)
     .put("sectionTitle", sectionTitle)
+    .put("materialGroupTitle", materialGroupTitle)
 
 private fun ExtractionWarning.toJson() = JSONObject()
     .put("type", type)
@@ -369,6 +370,7 @@ private fun JSONObject.toSourceRef() = StudySourceRef(
     startPage = optInt("startPage").takeIf { it > 0 },
     endPage = optInt("endPage").takeIf { it > 0 },
     sectionTitle = optString("sectionTitle").takeUnless { it.isBlank() || it == "null" },
+    materialGroupTitle = optString("materialGroupTitle").takeUnless { it.isBlank() || it == "null" },
 )
 
 private fun JSONObject.toExtractionWarning() = ExtractionWarning(

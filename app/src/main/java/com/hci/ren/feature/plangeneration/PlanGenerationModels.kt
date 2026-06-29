@@ -73,6 +73,7 @@ data class StudySourceRef(
     val startPage: Int? = null,
     val endPage: Int? = null,
     val sectionTitle: String? = null,
+    val materialGroupTitle: String? = null,
 )
 data class ExtractionWarning(
     val type: String,

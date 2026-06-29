@@ -26,7 +26,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -111,6 +110,7 @@ import com.hci.ren.feature.plangeneration.GeneratedStudyBlock
 import com.hci.ren.feature.plangeneration.GeneratedStudyPlan
 import com.hci.ren.feature.plangeneration.StudyBlockDifficulty
 import com.hci.ren.feature.plangeneration.StudySourceDocument
+import com.hci.ren.feature.plangeneration.StudySourceRef
 import com.hci.ren.feature.plangeneration.StudyTaskStatus
 import com.hci.ren.feature.plangeneration.StudyTaskType
 import com.hci.ren.ui.components.PlanFlowCircleAction
@@ -229,7 +229,7 @@ fun StudyMapScreen(
                     data = data,
                     onOpenToday = onOpenToday,
                 )
-                StudyMapView.Topics -> topicItems(data)
+                StudyMapView.Topics -> materialItems(data)
             }
             if (plan.blocks.isEmpty()) {
                 item { EmptyTasksCard(onCreateProject) }
@@ -717,10 +717,16 @@ private fun androidx.compose.foundation.lazy.LazyListScope.scheduleItems(
     }
 }
 
-private fun androidx.compose.foundation.lazy.LazyListScope.topicItems(data: StudyMapData) {
-    items(data.plan.topics, key = { "topic-${it.id}" }) { topic ->
-        val tasks = data.plan.blocks.filter { topic.id in it.topicIds && it.status != StudyTaskStatus.ExcludedByUser }
-        TopicSection(topic.title, tasks, Modifier.animateItem())
+private fun androidx.compose.foundation.lazy.LazyListScope.materialItems(data: StudyMapData) {
+    val groups = materialGroups(data.plan)
+    groups.forEachIndexed { index, group ->
+        item(key = "material-${group.id}") {
+            MaterialSection(
+                group = group,
+                initiallyExpanded = index == 0,
+                modifier = Modifier.animateItem(),
+            )
+        }
     }
 }
 
@@ -1215,6 +1221,49 @@ private fun MapTaskRowContent(
 }
 
 @Composable
+private fun MaterialTaskRowContent(
+    task: GeneratedStudyBlock,
+    sourceTitle: String?,
+    meta: String,
+) {
+    val showTaskTitle = shouldShowMaterialTaskTitle(task.title, sourceTitle)
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 5.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        TaskBullet(
+            status = task.status,
+            nodeSize = 10.dp,
+            completeIconSize = 12.dp,
+            borderWidth = 1.25.dp,
+        )
+        Spacer(Modifier.width(10.dp))
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+            if (showTaskTitle) {
+                Text(
+                    text = task.title,
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.Medium,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            Text(
+                text = meta,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.82f),
+            )
+        }
+        if (task.status != StudyTaskStatus.NotStarted) {
+            Spacer(Modifier.width(8.dp))
+            StatusPill(statusLabel(task.status), statusContainer(task.status), statusContent(task.status))
+        }
+    }
+}
+
+@Composable
 private fun TaskRowTextContent(
     task: GeneratedStudyBlock,
     source: String?,
@@ -1339,11 +1388,22 @@ private fun taskTypeIcon(type: StudyTaskType): ImageVector = when (type) {
 }
 
 @Composable
-private fun TopicSection(title: String, tasks: List<GeneratedStudyBlock>, modifier: Modifier = Modifier) {
-    var expanded by rememberSaveable(title) { mutableStateOf(false) }
-    val progress = TaskProgressCalculator().projectProgress(tasks)
-    val totalMinutes = tasks.sumOf { it.durationMinutes.coerceAtLeast(0) }
-    val meta = "${progress.first} / ${progress.second} \u2022 ${formatMinutes(totalMinutes)}"
+private fun MaterialSection(
+    group: MaterialGroup,
+    initiallyExpanded: Boolean,
+    modifier: Modifier = Modifier,
+) {
+    var expanded by rememberSaveable(group.id) { mutableStateOf(initiallyExpanded) }
+    val progress = TaskProgressCalculator().projectProgress(group.tasks)
+    val totalMinutes = group.tasks.sumOf { it.durationMinutes.coerceAtLeast(0) }
+    val pageLabel = group.document?.pageCount?.let { pluralStringResource(R.plurals.source_page_count, it, it) }
+    val meta = listOfNotNull(
+        "${progress.first} / ${progress.second}",
+        formatMinutes(totalMinutes),
+        pageLabel,
+    ).joinToString(" \u2022 ")
+    val title = group.document?.filename?.shortDocumentName() ?: stringResource(R.string.other_material)
+    val sourceGroups = materialSourceGroups(group)
     Card(
         modifier = modifier,
         shape = RoundedCornerShape(16.dp),
@@ -1362,18 +1422,144 @@ private fun TopicSection(title: String, tasks: List<GeneratedStudyBlock>, modifi
             }
             if (expanded) {
                 HorizontalDivider()
-                tasks.forEach { task ->
-                    Box(Modifier.padding(horizontal = 16.dp)) {
-                        MapTaskRowContent(
-                            task = task,
-                            source = null,
+                sourceGroups.forEachIndexed { groupIndex, sourceGroup ->
+                    if (sourceGroup.title != null) {
+                        Text(
+                            text = sourceGroup.title,
+                            modifier = Modifier.padding(
+                                start = 12.dp,
+                                top = if (groupIndex == 0) 14.dp else 22.dp,
+                                end = 12.dp,
+                                bottom = 0.dp,
+                            ),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.76f),
+                            fontWeight = FontWeight.SemiBold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
                         )
+                    }
+                    sourceGroup.tasks.forEach { task ->
+                        Box(Modifier.padding(horizontal = 12.dp)) {
+                            MaterialTaskRowContent(
+                                task = task,
+                                sourceTitle = sourceGroup.title,
+                                meta = materialTaskMeta(task, group),
+                            )
+                        }
                     }
                 }
             }
         }
     }
 }
+
+private data class MaterialGroup(
+    val id: String,
+    val document: StudySourceDocument?,
+    val tasks: List<GeneratedStudyBlock>,
+)
+
+private data class MaterialSourceGroup(
+    val title: String?,
+    val tasks: List<GeneratedStudyBlock>,
+)
+
+private fun materialGroups(plan: GeneratedStudyPlan): List<MaterialGroup> {
+    val documents = plan.sourceDocuments.sortedWith(compareBy<StudySourceDocument> { it.order }.thenBy { it.filename })
+    val activeTasks = plan.blocks
+        .filterNot { it.status == StudyTaskStatus.ExcludedByUser }
+        .sortedBy { it.order }
+    val assignedTaskIds = mutableSetOf<String>()
+    val groups = documents.mapNotNull { document ->
+        val tasks = activeTasks.filter { task ->
+            task.primarySourceDocument(documents)?.id == document.id
+        }
+        if (tasks.isEmpty()) {
+            null
+        } else {
+            assignedTaskIds += tasks.map { it.id }
+            MaterialGroup(
+                id = document.id,
+                document = document,
+                tasks = tasks,
+            )
+        }
+    }.toMutableList()
+
+    val otherTasks = activeTasks.filterNot { it.id in assignedTaskIds }
+    if (otherTasks.isNotEmpty()) {
+        groups += MaterialGroup(
+            id = "other",
+            document = null,
+            tasks = otherTasks,
+        )
+    }
+    return groups
+}
+
+private fun GeneratedStudyBlock.primarySourceDocument(documents: List<StudySourceDocument>): StudySourceDocument? {
+    sourceRefs.forEach { ref ->
+        documents.firstOrNull { it.matchesSourceDocumentId(ref.documentId) }?.let { return it }
+    }
+    return null
+}
+
+private fun StudySourceDocument.matchesSourceDocumentId(value: String): Boolean =
+    id == value || uploadDocumentId == value
+
+private fun materialSourceGroups(group: MaterialGroup): List<MaterialSourceGroup> {
+    val groups = mutableListOf<MaterialSourceGroup>()
+    var currentTitle: String? = null
+    var currentTasks = mutableListOf<GeneratedStudyBlock>()
+    group.tasks.sortedBy { it.order }.forEach { task ->
+        val sourceTitle = task.materialSourceRef(group)?.materialGroupDisplayTitle()
+        if (currentTasks.isEmpty() || sourceTitle == currentTitle) {
+            currentTitle = sourceTitle
+            currentTasks += task
+        } else {
+            groups += MaterialSourceGroup(currentTitle, currentTasks)
+            currentTitle = sourceTitle
+            currentTasks = mutableListOf(task)
+        }
+    }
+    if (currentTasks.isNotEmpty()) {
+        groups += MaterialSourceGroup(currentTitle, currentTasks)
+    }
+    return groups
+}
+
+private fun GeneratedStudyBlock.materialSourceRef(group: MaterialGroup): StudySourceRef? =
+    group.document
+        ?.let { document -> sourceRefs.firstOrNull { document.matchesSourceDocumentId(it.documentId) } }
+        ?: sourceRefs.firstOrNull()
+
+private fun StudySourceRef.materialGroupDisplayTitle(): String? =
+    materialGroupTitle?.takeIf { it.isNotBlank() }
+        ?: sectionTitle?.takeIf { it.isNotBlank() }
+
+@Composable
+private fun materialTaskMeta(task: GeneratedStudyBlock, group: MaterialGroup): String {
+    val ref = task.materialSourceRef(group)
+    val pageLabel = when {
+        ref?.startPage != null && ref.endPage != null && ref.endPage != ref.startPage -> stringResource(R.string.source_page_range, ref.startPage, ref.endPage)
+        ref?.startPage != null -> stringResource(R.string.source_page, ref.startPage)
+        else -> null
+    }
+    return listOfNotNull(
+        pageLabel,
+        formatMinutes(task.durationMinutes),
+        taskTypeLabel(task.taskType),
+    ).joinToString(" \u2022 ")
+}
+
+private fun shouldShowMaterialTaskTitle(taskTitle: String, sourceTitle: String?): Boolean {
+    if (sourceTitle.isNullOrBlank()) return true
+    return comparableMaterialTitle(taskTitle) != comparableMaterialTitle(sourceTitle)
+}
+
+private fun comparableMaterialTitle(value: String): String =
+    value.lowercase(Locale.ROOT).filter(Char::isLetterOrDigit)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable

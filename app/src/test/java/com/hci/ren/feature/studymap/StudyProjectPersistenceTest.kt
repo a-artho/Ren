@@ -6,6 +6,7 @@ import com.hci.ren.feature.pdfupload.presentation.StudyDeadline
 import com.hci.ren.feature.pdfupload.presentation.StudyGoal
 import com.hci.ren.feature.plangeneration.GeneratedStudyBlock
 import com.hci.ren.feature.plangeneration.GeneratedStudyPlan
+import com.hci.ren.feature.plangeneration.StudySourceRef
 import com.hci.ren.feature.plangeneration.StudyTopic
 import java.util.Calendar
 import java.util.GregorianCalendar
@@ -69,6 +70,15 @@ class StudyProjectPersistenceTest {
                         productionDemandScore = 3,
                         completionCriteria = listOf("Explain it without notes"),
                         continuityGroup = "chapter-1",
+                        sourceRefs = listOf(
+                            StudySourceRef(
+                                documentId = "doc1",
+                                startPage = 2,
+                                endPage = 4,
+                                sectionTitle = "Atomic bit",
+                                materialGroupTitle = "Broad chapter",
+                            ),
+                        ),
                     ),
                 ),
             ),
@@ -81,6 +91,8 @@ class StudyProjectPersistenceTest {
 
         assertEquals(listOf("Explain it without notes"), block.completionCriteria)
         assertEquals("chapter-1", block.continuityGroup)
+        assertEquals("Atomic bit", block.sourceRefs.single().sectionTitle)
+        assertEquals("Broad chapter", block.sourceRefs.single().materialGroupTitle)
     }
 
     @Test fun dailyAvailableTimeOverridesPersistSeparatelyFromPlanTime() {
