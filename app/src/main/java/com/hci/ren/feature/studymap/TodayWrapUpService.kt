@@ -80,7 +80,7 @@ private fun MutableMap<String, StudyTaskProgress>.addTaskProgress(
     completedMinutes: Int = 0,
     removedMinutes: Int = 0,
 ): Boolean {
-    val sourceTaskId = task.sourceTaskId(sourceTasksById) ?: return false
+    val sourceTaskId = task.id.takeIf { it in sourceTasksById } ?: return false
     val sourceTask = sourceTasksById[sourceTaskId] ?: return false
     val totalMinutes = sourceTask.durationMinutes.coerceAtLeast(1)
     val current = this[sourceTaskId] ?: StudyTaskProgress()
@@ -98,13 +98,4 @@ private fun MutableMap<String, StudyTaskProgress>.addTaskProgress(
         this[sourceTaskId] = updated
     }
     return updated != current
-}
-
-private fun GeneratedStudyBlock.sourceTaskId(
-    sourceTasksById: Map<String, GeneratedStudyBlock>,
-): String? {
-    if (id in sourceTasksById) return id
-    val markerIndex = id.lastIndexOf(LocalSplitIdMarker)
-    if (markerIndex <= 0) return null
-    return id.substring(0, markerIndex).takeIf { it in sourceTasksById }
 }

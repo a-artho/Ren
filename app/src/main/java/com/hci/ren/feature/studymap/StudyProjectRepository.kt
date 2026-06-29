@@ -103,7 +103,6 @@ abstract class StudyProjectDatabase : RoomDatabase() {
                 StudyProjectDatabase::class.java,
                 "ren-study-projects.db",
             )
-                .fallbackToDestructiveMigration(true)
                 .build()
                 .also { instance = it }
         }
@@ -278,9 +277,9 @@ private fun JSONObject.toPlan(): GeneratedStudyPlan = GeneratedStudyPlan(
         StudyTopic(it.getString("id"), it.getString("title"), it.getInt("order"))
     }.sortedBy { it.order },
     blocks = getJSONArray("blocks").objects().map(JSONObject::toBlock).sortedBy { it.order },
-    totalEstimatedMinutes = optInt("totalEstimatedMinutes"),
+    totalEstimatedMinutes = getInt("totalEstimatedMinutes"),
     projectName = optString("projectName").safeStudyProjectTitle(),
-    planVersion = optInt("planVersion", 1),
+    planVersion = getInt("planVersion"),
     sourceDocuments = optJSONArray("sourceDocuments")?.objects()?.map(JSONObject::toSourceDocument).orEmpty().sortedBy { it.order },
     extractionWarnings = optJSONArray("extractionWarnings")?.objects()?.map(JSONObject::toExtractionWarning).orEmpty(),
 )
@@ -297,13 +296,13 @@ private fun JSONObject.toBlock() = GeneratedStudyBlock(
     id = getString("id"),
     title = getString("title"),
     order = getInt("order"),
-    durationMinutes = optInt("durationMinutes", 1).coerceAtLeast(1),
-    effortMinMinutes = optInt("effortMinMinutes", optInt("durationMinutes", 1)).coerceAtLeast(1),
-    effortLikelyMinutes = optInt("effortLikelyMinutes", optInt("durationMinutes", 1)).coerceAtLeast(1),
-    effortMaxMinutes = optInt("effortMaxMinutes", optInt("durationMinutes", 1)).coerceAtLeast(1),
+    durationMinutes = getInt("durationMinutes").coerceAtLeast(1),
+    effortMinMinutes = getInt("effortMinMinutes").coerceAtLeast(1),
+    effortLikelyMinutes = getInt("effortLikelyMinutes").coerceAtLeast(1),
+    effortMaxMinutes = getInt("effortMaxMinutes").coerceAtLeast(1),
     instructions = optString("instructions"),
     topicIds = getJSONArray("topicIds").strings(),
-    minimumUsefulMinutes = optInt("minimumUsefulMinutes", 10).coerceAtLeast(1),
+    minimumUsefulMinutes = getInt("minimumUsefulMinutes").coerceAtLeast(1),
     taskType = optString("taskType").studyTaskTypeOrDefault(StudyTaskType.Review),
     status = optString("status").enumOr(StudyTaskStatus.NotStarted),
     scheduledDate = optString("scheduledDate").takeUnless { it.isBlank() || it == "null" },
@@ -314,7 +313,7 @@ private fun JSONObject.toBlock() = GeneratedStudyBlock(
     densityScore = optInt("densityScore").takeIf { it > 0 },
     productionDemandScore = optInt("productionDemandScore").takeIf { it > 0 },
     estimateConfidence = optString("estimateConfidence", "Medium").enumOr(EstimateConfidence.Medium),
-    estimatedMinutes = optInt("estimatedMinutes", optInt("durationMinutes", 1)).coerceAtLeast(1),
+    estimatedMinutes = getInt("estimatedMinutes").coerceAtLeast(1),
     completionCriteria = optJSONArray("completionCriteria")?.strings().orEmpty(),
     splitAllowed = optBoolean("splitAllowed", true),
     continuityGroup = optString("continuityGroup").takeUnless { it.isBlank() || it == "null" },

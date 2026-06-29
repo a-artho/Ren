@@ -162,18 +162,14 @@ Local backend secrets/state are ignored by Git.
 
 ## Android scheduling model
 
-Canonical generated blocks are stored unsplit.
-
-`StudyPlanNormalizer.prepareForLocalScheduling()` derives schedulable chunks from
-the canonical blocks using the current daily capacity. This must stay derived,
-not permanently persisted, so future changes to daily time can re-split cleanly.
+Canonical generated blocks are stored and scheduled as-is. The app no longer
+creates local split-task IDs for scheduling.
 
 Core scheduling files:
 
 - `feature/studymap/StudyMapModels.kt`
 - `feature/studymap/StudyScheduleCalculator.kt`
 - `feature/studymap/StudyScheduleModels.kt`
-- `feature/studymap/StudyPlanNormalizer.kt`
 - `feature/studymap/PlanRealism.kt`
 - `feature/plangeneration/StudyWorkload.kt`
 - `feature/plangeneration/StudyWorkloadBudget.kt`
@@ -256,7 +252,7 @@ Current planned UI direction:
 | Setup wizard | `PlanSetupUiState.kt`, `PlanSetupViewModel.kt`, `PlanSetupScreen.kt` | `PlanSetupUiStateTest`, `PlanSetupScreenTest` |
 | Backend API client | `PlanApiRepository.kt`, backend `main.py`, `models.py` | backend pytest, Android generation tests |
 | Processing/retry/recovery | `PlanGenerationViewModel.kt`, `PlanGenerationModels.kt`, `PlanGenerationScreen.kt` | `PlanGenerationScreenTest`, unit tests |
-| Scheduling/realism | `StudyScheduleCalculator.kt`, `StudyPlanNormalizer.kt`, `PlanRealism.kt`, workload files | `StudyMapModelsTest`, feasibility tests |
+| Scheduling/realism | `StudyScheduleCalculator.kt`, `PlanRealism.kt`, workload files | `StudyMapModelsTest`, feasibility tests |
 | Study plan UI | `StudyMapScreen.kt`, `StudyMapDetailRoute.kt`, `StudyMapDetailViewModel.kt` | `StudyMapScreenTest`, visual emulator check |
 | Persistence/Room | `StudyProjectRepository.kt`, schema files | `StudyProjectPersistenceTest`, `StudyProjectDatabaseTest` |
 | Backend extraction/Gemini | backend `provider.py`, `planner.py`, `pdf_parser.py`, `models.py` | `test_provider.py`, `test_planner.py`, `test_pdf_parser.py` |

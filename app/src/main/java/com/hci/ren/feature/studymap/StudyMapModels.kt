@@ -112,8 +112,7 @@ internal fun buildStudyMapData(
 ): StudyMapData {
     val dailyMinutes = dailyMinutesOverride ?: preferences.dailyStudyMinutes
     val schedulingPreferences = preferences.copy(dailyStudyMinutes = dailyMinutes)
-    val activePlan = plan.applyTaskProgress(taskProgressById)
-    val schedulingPlan = activePlan.prepareForLocalScheduling(schedulingPreferences)
+    val schedulingPlan = plan.applyTaskProgress(taskProgressById)
     val schedule = StudyScheduleCalculator().calculate(
         tasks = schedulingPlan.blocks,
         preferences = schedulingPreferences,
