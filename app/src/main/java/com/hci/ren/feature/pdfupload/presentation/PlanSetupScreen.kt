@@ -228,7 +228,7 @@ private fun PlanTitleStep(
 ) {
     StepIntro(
         title = "What are we tackling?",
-        subtitle = "Use a course, exam, or topic name.",
+        subtitle = "Short names work best.",
     )
 
     OutlinedTextField(
@@ -237,7 +237,7 @@ private fun PlanTitleStep(
         modifier = Modifier
             .fillMaxWidth()
             .testTag("plan-title"),
-        label = { Text("Course, exam, or topic") },
+        label = { Text("Plan name") },
         placeholder = { Text("HCI final") },
         singleLine = true,
         shape = RoundedCornerShape(16.dp),

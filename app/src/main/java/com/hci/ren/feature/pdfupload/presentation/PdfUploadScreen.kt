@@ -3,6 +3,8 @@ package com.hci.ren.feature.pdfupload.presentation
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -57,7 +59,9 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.input.pointer.pointerInput
@@ -220,6 +224,7 @@ internal fun PdfFileCard(
     modifier: Modifier = Modifier,
 ) {
     var dragOffsetY by remember(document.uri) { mutableFloatStateOf(0f) }
+    var isDragging by remember(document.uri) { mutableStateOf(false) }
     var cardHeightPx by remember(document.uri) { mutableFloatStateOf(0f) }
     val spacingPx = with(LocalDensity.current) { 8.dp.toPx() }
     val fallbackMoveStepPx = with(LocalDensity.current) { 72.dp.toPx() }
@@ -235,19 +240,49 @@ internal fun PdfFileCard(
         animationSpec = tween(RenMotionDurationMillis, easing = RenMotionEasing),
         label = "file-card-bg",
     )
+    val cardElevation by animateDpAsState(
+        targetValue = if (isDragging) 8.dp else 1.dp,
+        animationSpec = tween(RenMotionDurationMillis, easing = RenMotionEasing),
+        label = "file-card-elevation",
+    )
+    val cardScale by animateFloatAsState(
+        targetValue = if (isDragging) 1.012f else 1f,
+        animationSpec = tween(RenMotionDurationMillis, easing = RenMotionEasing),
+        label = "file-card-scale",
+    )
+    val borderColor by animateColorAsState(
+        targetValue = if (isDragging) {
+            MaterialTheme.colorScheme.primary.copy(alpha = 0.58f)
+        } else {
+            MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.18f)
+        },
+        animationSpec = tween(RenMotionDurationMillis, easing = RenMotionEasing),
+        label = "file-card-border",
+    )
     Card(
         onClick = onSelect,
         modifier = modifier
             .fillMaxWidth()
+            .graphicsLayer {
+                scaleX = cardScale
+                scaleY = cardScale
+            }
             .onGloballyPositioned { coordinates ->
                 cardHeightPx = coordinates.size.height.toFloat()
             }
             .offset { IntOffset(0, dragOffsetY.roundToInt()) }
-            .zIndex(if (dragOffsetY != 0f) 1f else 0f)
+            .zIndex(if (isDragging || dragOffsetY != 0f) 1f else 0f)
             .pointerInput(document.uri) {
                 detectDragGesturesAfterLongPress(
-                    onDragEnd = { dragOffsetY = 0f },
-                    onDragCancel = { dragOffsetY = 0f },
+                    onDragStart = { isDragging = true },
+                    onDragEnd = {
+                        isDragging = false
+                        dragOffsetY = 0f
+                    },
+                    onDragCancel = {
+                        isDragging = false
+                        dragOffsetY = 0f
+                    },
                     onDrag = { change, dragAmount ->
                         change.consume()
                         val stepPx = moveStepPxState.value
@@ -279,17 +314,19 @@ internal fun PdfFileCard(
             .testTag("pdf-file-card"),
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(containerColor = containerColor),
-        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+        border = BorderStroke(1.dp, borderColor),
+        elevation = CardDefaults.cardElevation(defaultElevation = cardElevation),
     ) {
         Row(
-            modifier = Modifier.padding(start = 16.dp, end = 4.dp, top = 8.dp, bottom = 8.dp),
+            modifier = Modifier.padding(start = 16.dp, end = 4.dp, top = 10.dp, bottom = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Surface(
-                modifier = Modifier.size(32.dp),
+                modifier = Modifier.size(24.dp),
                 shape = CircleShape,
-                color = MaterialTheme.colorScheme.primaryContainer,
-                contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                color = MaterialTheme.colorScheme.surface,
+                contentColor = MaterialTheme.colorScheme.primary,
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.72f)),
             ) {
                 Box(
                     modifier = Modifier.fillMaxSize(),
@@ -297,18 +334,12 @@ internal fun PdfFileCard(
                 ) {
                     Text(
                         text = orderNumber.toString(),
-                        style = MaterialTheme.typography.labelLarge,
+                        style = MaterialTheme.typography.labelMedium,
                         fontWeight = FontWeight.SemiBold,
                     )
                 }
             }
-            Spacer(Modifier.width(12.dp))
-            Icon(
-                imageVector = Icons.Default.PictureAsPdf,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.primary,
-            )
-            Column(modifier = Modifier.weight(1f).padding(horizontal = 12.dp)) {
+            Column(modifier = Modifier.weight(1f).padding(start = 14.dp, end = 10.dp)) {
                 Text(
                     text = document.fileName,
                     style = MaterialTheme.typography.titleMedium,
@@ -322,12 +353,39 @@ internal fun PdfFileCard(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
+            ReorderGrip(
+                modifier = Modifier
+                    .padding(horizontal = 4.dp)
+                    .alpha(if (isDragging) 0.95f else 0.54f),
+            )
             IconButton(onClick = onRemove) {
                 Icon(
                     imageVector = Icons.Default.Close,
                     contentDescription = "Remove ${document.fileName}",
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ReorderGrip(modifier: Modifier = Modifier) {
+    Row(
+        modifier = modifier,
+        horizontalArrangement = Arrangement.spacedBy(3.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        repeat(2) {
+            Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                repeat(3) {
+                    Surface(
+                        modifier = Modifier
+                            .size(3.dp),
+                        shape = CircleShape,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    ) {}
+                }
             }
         }
     }
