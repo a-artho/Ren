@@ -115,6 +115,7 @@ internal fun buildStudyMapData(
         tasks = schedulingPlan.blocks,
         preferences = schedulingPreferences,
         today = today,
+        schedule = schedule,
         unscheduledTasks = schedule.unscheduledTasks,
         dailyAvailableMinutesByDate = dailyAvailableMinutesByDate,
     )

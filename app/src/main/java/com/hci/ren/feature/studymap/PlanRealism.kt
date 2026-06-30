@@ -2,13 +2,12 @@ package com.hci.ren.feature.studymap
 
 import com.hci.ren.feature.pdfupload.presentation.PlanSetupSubmission
 import com.hci.ren.feature.plangeneration.GeneratedStudyBlock
-import com.hci.ren.feature.plangeneration.IntensiveWorkloadRatio
 import com.hci.ren.feature.plangeneration.RealisticWorkloadRatio
-import com.hci.ren.feature.plangeneration.StudyTaskStatus
+import com.hci.ren.feature.plangeneration.requiredLikelyStudyMinutes
 import com.hci.ren.feature.plangeneration.requiredStudyMinutes
 import java.util.Calendar
 
-enum class PlanRealismStatus { OnTrack, Tight, Unrealistic }
+enum class PlanRealismStatus { OnTrack, Tight, Crammed, Overloaded }
 
 data class PlanRealism(
     val status: PlanRealismStatus,
@@ -27,25 +26,28 @@ class PlanRealismCalculator {
         preferences: PlanSetupSubmission,
         today: Calendar = currentStudyCalendar(preferences),
         dailyMinutesOverride: Int? = null,
+        schedule: StudySchedule? = null,
         unscheduledTasks: List<GeneratedStudyBlock> = emptyList(),
         dailyAvailableMinutesByDate: Map<String, Int> = emptyMap(),
     ): PlanRealism {
-        val remainingLikely = requiredLikelyMinutes(tasks)
+        val remainingLikely = requiredLikelyStudyMinutes(tasks)
         val remainingReserved = requiredStudyMinutes(tasks)
         val dailyMinutes = (dailyMinutesOverride ?: preferences.dailyStudyMinutes).coerceAtLeast(0)
         val available = availableStudyDates(preferences, today)
             .map { it.toStudyDate() }
             .sumOf { date -> dailyAvailableMinutesByDate[date]?.coerceIn(0, 1_440) ?: dailyMinutes }
-        val unplacedLikely = requiredLikelyMinutes(unscheduledTasks)
-        val unplacedReserved = requiredStudyMinutes(unscheduledTasks)
-        val likelyShortage = maxOf(unplacedLikely, remainingLikely - available, 0)
-        val reservedShortage = maxOf(unplacedReserved, remainingReserved - available, 0)
+        val effectiveUnscheduledTasks = schedule?.unscheduledTasks ?: unscheduledTasks
+        val likelyShortage = maxOf(remainingLikely - available, 0)
+        val reservedShortage = maxOf(remainingReserved - available, 0)
         val status = when {
-            unplacedLikely > 0 -> PlanRealismStatus.Unrealistic
-            remainingReserved <= available * RealisticWorkloadRatio -> PlanRealismStatus.OnTrack
-            remainingLikely <= available -> PlanRealismStatus.Tight
-            remainingReserved <= available * IntensiveWorkloadRatio -> PlanRealismStatus.Tight
-            else -> PlanRealismStatus.Unrealistic
+            effectiveUnscheduledTasks.isNotEmpty() -> PlanRealismStatus.Overloaded
+            schedule?.days.orEmpty().any { it.isOverCapacity } -> PlanRealismStatus.Crammed
+            schedule?.fitMode == ScheduleFitMode.Reserved && remainingReserved <= available * RealisticWorkloadRatio -> PlanRealismStatus.OnTrack
+            schedule?.fitMode == ScheduleFitMode.Reserved -> PlanRealismStatus.Tight
+            schedule?.fitMode == ScheduleFitMode.LikelyFallback -> PlanRealismStatus.Tight
+            schedule == null && remainingReserved <= available * RealisticWorkloadRatio -> PlanRealismStatus.OnTrack
+            schedule == null && remainingLikely <= available -> PlanRealismStatus.Tight
+            else -> PlanRealismStatus.Overloaded
         }
         return PlanRealism(
             status = status,
@@ -59,9 +61,3 @@ class PlanRealismCalculator {
         )
     }
 }
-
-private fun requiredLikelyMinutes(tasks: List<GeneratedStudyBlock>): Int =
-    tasks.asSequence()
-        .filter { it.status !in setOf(StudyTaskStatus.ExcludedByUser, StudyTaskStatus.DeferredByUser) }
-        .filter { it.status != StudyTaskStatus.Completed }
-        .sumOf { it.effortLikelyMinutes.coerceAtLeast(1) }

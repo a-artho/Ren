@@ -8,9 +8,7 @@ import com.hci.ren.feature.plangeneration.GeneratedStudyBlock
 import com.hci.ren.feature.plangeneration.StudyBlockDifficulty
 import com.hci.ren.feature.plangeneration.StudyTaskStatus
 import com.hci.ren.feature.plangeneration.effectiveCognitivePoints
-import com.hci.ren.feature.plangeneration.likelyStudyMinutes
 import com.hci.ren.feature.plangeneration.requiredBlockMinutes
-import com.hci.ren.feature.plangeneration.reservedStudyMinutes
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.GregorianCalendar
@@ -47,15 +45,14 @@ class StudyScheduleCalculator {
             )
         }
 
-        val dayTasks = linkedMapOf<String, MutableList<GeneratedStudyBlock>>()
-        val remainingCapacity = capacityByDate.toMutableMap()
+        val fixedTasksByDate = linkedMapOf<String, MutableList<GeneratedStudyBlock>>()
         val unscheduled = mutableListOf<GeneratedStudyBlock>()
         val fixedTaskIds = mutableSetOf<String>()
 
         tasks.filter(::isFixedScheduledTask)
             .sortedBy { it.order }
             .forEach { task ->
-                val date = task.scheduledDate?.takeIf { it in remainingCapacity }
+                val date = task.scheduledDate?.takeIf { it in capacityByDate }
                 if (date == null) {
                     if (task.status == StudyTaskStatus.Locked) {
                         unscheduled += task.copy(scheduledDate = null)
@@ -63,37 +60,40 @@ class StudyScheduleCalculator {
                     fixedTaskIds += task.id
                     return@forEach
                 }
-                dayTasks.getOrPut(date, ::mutableListOf).add(task.copy(scheduledDate = date))
-                remainingCapacity[date] = (remainingCapacity[date] ?: capacityByDate[date].orZero()) -
-                    task.reservedStudyMinutes.coerceAtLeast(0)
+                fixedTasksByDate.getOrPut(date, ::mutableListOf).add(task.copy(scheduledDate = date))
                 fixedTaskIds += task.id
             }
 
         val orderedTasks = tasks.filter(::isSchedulable)
             .filterNot { it.id in fixedTaskIds }
             .sortedBy { it.order }
-        val reservedAttempt = scheduleAttempt(
+        val reservedAttempt = scheduleAttemptForMode(
             tasks = orderedTasks,
             eligibleDates = eligibleDateKeys,
-            remainingCapacity = remainingCapacity,
-            existingDayTasks = dayTasks,
+            capacityByDate = capacityByDate,
+            fixedTasksByDate = fixedTasksByDate,
             fitMode = ScheduleFitMode.Reserved,
-            fitMinutes = { it.reservedStudyMinutes },
         )
-        val likelyAttempt = if (reservedAttempt.scheduledCount < orderedTasks.size) {
-            scheduleAttempt(
+        val likelyAttempt = if (reservedAttempt.scheduledCount < orderedTasks.size || reservedAttempt.fixedOverCapacity) {
+            scheduleAttemptForMode(
                 tasks = orderedTasks,
                 eligibleDates = eligibleDateKeys,
-                remainingCapacity = remainingCapacity,
-                existingDayTasks = dayTasks,
+                capacityByDate = capacityByDate,
+                fixedTasksByDate = fixedTasksByDate,
                 fitMode = ScheduleFitMode.LikelyFallback,
-                fitMinutes = { it.likelyStudyMinutes },
             )
         } else {
             null
         }
         val attempt = likelyAttempt
-            ?.takeIf { it.scheduledCount > reservedAttempt.scheduledCount }
+            ?.takeIf {
+                it.scheduledCount > reservedAttempt.scheduledCount ||
+                    (
+                        it.scheduledCount == reservedAttempt.scheduledCount &&
+                            reservedAttempt.fixedOverCapacity &&
+                            !it.fixedOverCapacity
+                    )
+            }
             ?: reservedAttempt
         val candidateTasks = attempt.candidateTasks
         val deferredTasks = attempt.deferredTasks
@@ -115,11 +115,15 @@ class StudyScheduleCalculator {
         val safeAssignedDates = assignedDates ?: orderedScheduleAssignments(
             tasks = schedulableTasks,
             eligibleDates = eligibleDateKeys,
-            remainingCapacity = remainingCapacity,
-            existingDayTasks = dayTasks,
+            remainingCapacity = attempt.remainingCapacity,
+            existingDayTasks = fixedTasksByDate,
             fitMinutes = attempt.fitMinutes,
         )
 
+        val dayTasks = linkedMapOf<String, MutableList<GeneratedStudyBlock>>().apply {
+            fixedTasksByDate.forEach { (date, tasks) -> put(date, tasks.toMutableList()) }
+        }
+        val remainingCapacity = attempt.remainingCapacity.toMutableMap()
         if (safeAssignedDates == null) {
             schedulableTasks.forEach { task ->
                 val oversized = attempt.fitMinutes(task).coerceAtLeast(1) > maxTaskCapacity
@@ -179,8 +183,45 @@ private data class ScheduleAttempt(
     val assignedDates: List<String>?,
     val fitMode: ScheduleFitMode,
     val fitMinutes: (GeneratedStudyBlock) -> Int,
+    val remainingCapacity: Map<String, Int>,
+    val fixedOverCapacity: Boolean,
 ) {
     val scheduledCount: Int get() = feasibleCount
+}
+
+private fun scheduleAttemptForMode(
+    tasks: List<GeneratedStudyBlock>,
+    eligibleDates: List<String>,
+    capacityByDate: Map<String, Int>,
+    fixedTasksByDate: Map<String, List<GeneratedStudyBlock>>,
+    fitMode: ScheduleFitMode,
+): ScheduleAttempt {
+    val remainingCapacity = capacityAfterFixedTasks(
+        eligibleDates = eligibleDates,
+        capacityByDate = capacityByDate,
+        fixedTasksByDate = fixedTasksByDate,
+        mode = fitMode,
+    )
+    val fixedOverCapacity = remainingCapacity.values.any { it < 0 }
+    return scheduleAttempt(
+        tasks = tasks,
+        eligibleDates = eligibleDates,
+        remainingCapacity = remainingCapacity,
+        existingDayTasks = fixedTasksByDate,
+        fitMode = fitMode,
+        fitMinutes = { task -> fitMode.fitMinutes(task) },
+        fixedOverCapacity = fixedOverCapacity,
+    )
+}
+
+private fun capacityAfterFixedTasks(
+    eligibleDates: List<String>,
+    capacityByDate: Map<String, Int>,
+    fixedTasksByDate: Map<String, List<GeneratedStudyBlock>>,
+    mode: ScheduleFitMode,
+): Map<String, Int> = eligibleDates.associateWith { date ->
+    val fixedMinutes = fixedTasksByDate[date].orEmpty().sumOf { task -> mode.fitMinutes(task) }
+    (capacityByDate[date] ?: 0) - fixedMinutes
 }
 
 private fun scheduleAttempt(
@@ -190,6 +231,7 @@ private fun scheduleAttempt(
     existingDayTasks: Map<String, List<GeneratedStudyBlock>>,
     fitMode: ScheduleFitMode,
     fitMinutes: (GeneratedStudyBlock) -> Int,
+    fixedOverCapacity: Boolean,
 ): ScheduleAttempt {
     val (candidateTasks, deferredTasks) = trimSuffixToAvailableCapacity(
         tasks = tasks,
@@ -203,7 +245,16 @@ private fun scheduleAttempt(
         existingDayTasks = existingDayTasks,
         fitMinutes = fitMinutes,
     )
-    return ScheduleAttempt(candidateTasks, deferredTasks, feasibleCount, assignedDates, fitMode, fitMinutes)
+    return ScheduleAttempt(
+        candidateTasks = candidateTasks,
+        deferredTasks = deferredTasks,
+        feasibleCount = feasibleCount,
+        assignedDates = assignedDates,
+        fitMode = fitMode,
+        fitMinutes = fitMinutes,
+        remainingCapacity = remainingCapacity,
+        fixedOverCapacity = fixedOverCapacity,
+    )
 }
 
 private fun largestFeasiblePrefixAssignments(

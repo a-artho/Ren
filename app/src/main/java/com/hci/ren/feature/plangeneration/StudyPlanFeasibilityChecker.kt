@@ -19,6 +19,10 @@ data class FeasibilityResult(
     val recommendedDaysIntensive: Int,
     val availableMinutesPerStudyDay: Int,
     val hasDeadline: Boolean,
+    val totalLikelyMinutes: Int = totalRequiredMinutes,
+    val totalReservedMinutes: Int = totalRequiredMinutes,
+    val likelyShortageMinutes: Int = shortageMinutes,
+    val reservedShortageMinutes: Int = shortageMinutes,
 )
 
 class StudyPlanFeasibilityChecker {
@@ -28,7 +32,8 @@ class StudyPlanFeasibilityChecker {
         today: Calendar = currentStudyCalendar(preferences),
         dailyMinutesOverride: Int? = null,
     ): FeasibilityResult {
-        val required = requiredStudyMinutes(tasks)
+        val likely = requiredLikelyStudyMinutes(tasks)
+        val reserved = requiredStudyMinutes(tasks)
         val availableStudyDays = availableStudyDates(preferences, today).size
         val dailyMinutes = (dailyMinutesOverride ?: preferences.dailyStudyMinutes).coerceAtLeast(0)
         val available = availableStudyDays * dailyMinutes
@@ -37,22 +42,35 @@ class StudyPlanFeasibilityChecker {
         } else {
             dailyMinutes
         }
-        val ratio = if (available == 0) Double.POSITIVE_INFINITY else required.toDouble() / available
+        val ratio = if (available == 0) Double.POSITIVE_INFINITY else reserved.toDouble() / available
         val coverage = when {
-            required == 0 -> 100
+            likely == 0 -> 100
             available == 0 -> 0
-            else -> ((available.toDouble() / required) * 100).roundToInt().coerceAtMost(100)
+            else -> ((available.toDouble() / likely) * 100).roundToInt().coerceAtMost(100)
         }
         val status = when {
-            required <= available * 0.9 -> FeasibilityStatus.Realistic
-            required <= available * 1.15 -> FeasibilityStatus.Intensive
+            reserved <= available * RealisticWorkloadRatio -> FeasibilityStatus.Realistic
+            likely <= available -> FeasibilityStatus.Intensive
             else -> FeasibilityStatus.Unrealistic
         }
-        return FeasibilityResult(status, required, available, (required - available).coerceAtLeast(0), ratio, coverage,
-            daysNeeded(required, availableMinutesPerStudyDay),
-            daysNeeded(required, (availableMinutesPerStudyDay * 1.5).roundToInt()),
-            availableMinutesPerStudyDay,
-            hasDeadline = true)
+        val likelyShortage = (likely - available).coerceAtLeast(0)
+        val reservedShortage = (reserved - available).coerceAtLeast(0)
+        return FeasibilityResult(
+            status = status,
+            totalRequiredMinutes = reserved,
+            availableMinutes = available,
+            shortageMinutes = maxOf(likelyShortage, reservedShortage),
+            workloadRatio = ratio,
+            estimatedCoveragePercent = coverage,
+            recommendedDaysBalanced = daysNeeded(reserved, availableMinutesPerStudyDay),
+            recommendedDaysIntensive = daysNeeded(likely, availableMinutesPerStudyDay),
+            availableMinutesPerStudyDay = availableMinutesPerStudyDay,
+            hasDeadline = true,
+            totalLikelyMinutes = likely,
+            totalReservedMinutes = reserved,
+            likelyShortageMinutes = likelyShortage,
+            reservedShortageMinutes = reservedShortage,
+        )
     }
 
     private fun daysNeeded(minutes: Int, dailyMinutes: Int) = if (minutes == 0) 0 else ceil(minutes.toDouble() / dailyMinutes.coerceAtLeast(1)).toInt()

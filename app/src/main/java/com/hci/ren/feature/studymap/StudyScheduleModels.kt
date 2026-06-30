@@ -38,3 +38,8 @@ data class StudySchedule(
 ) {
     val visibleTasks: List<GeneratedStudyBlock> get() = days.flatMap { it.tasks } + unscheduledTasks
 }
+
+internal fun ScheduleFitMode.fitMinutes(task: GeneratedStudyBlock): Int = when (this) {
+    ScheduleFitMode.Reserved -> task.reservedStudyMinutes
+    ScheduleFitMode.LikelyFallback -> task.likelyStudyMinutes
+}

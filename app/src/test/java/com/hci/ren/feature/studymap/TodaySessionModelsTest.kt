@@ -54,6 +54,54 @@ class TodaySessionModelsTest {
         assertEquals(0, session.remainingMinutes)
     }
 
+    @Test fun reducedTodayAvailabilityCanUseLikelyFallbackLocally() {
+        val first = task("first", 30).copy(order = 1, effortMaxMinutes = 60)
+        val second = task("second", 30).copy(order = 2, effortMaxMinutes = 60)
+        val data = dataFor(todayTasks = listOf(first, second), dailyMinutes = 90)
+
+        val session = TodaySessionPlanner().plan(
+            data = data,
+            date = "2026-06-22",
+            availableMinutes = 60,
+            hasAvailabilityOverride = true,
+        )
+
+        assertEquals(ScheduleFitMode.LikelyFallback, session.fitMode)
+        assertEquals(listOf("first", "second"), session.doTodayTasks.map { it.id })
+        assertEquals(emptyList<String>(), session.wontFitTodayTasks.map { it.id })
+        assertEquals(60, session.plannedMinutes)
+        assertEquals(0, session.overflowMinutes)
+    }
+
+    @Test fun todayInheritsLikelyFallbackFromScheduledDay() {
+        val first = task("first", 30).copy(order = 1, effortMaxMinutes = 60)
+        val second = task("second", 30).copy(order = 2, effortMaxMinutes = 60)
+        val data = dataFor(todayTasks = listOf(first, second), dailyMinutes = 60).copy(
+            schedule = StudySchedule(
+                days = listOf(
+                    StudyScheduleDay(
+                        date = "2026-06-22",
+                        tasks = listOf(first, second),
+                        capacityMinutes = 60,
+                        fitMode = ScheduleFitMode.LikelyFallback,
+                    ),
+                ),
+                unscheduledTasks = emptyList(),
+                fitMode = ScheduleFitMode.LikelyFallback,
+            ),
+        )
+
+        val session = TodaySessionPlanner().plan(
+            data = data,
+            date = "2026-06-22",
+            availableMinutes = 60,
+        )
+
+        assertEquals(ScheduleFitMode.LikelyFallback, session.fitMode)
+        assertEquals(listOf("first", "second"), session.doTodayTasks.map { it.id })
+        assertEquals(60, session.plannedMinutes)
+    }
+
     @Test fun pulledInWorkCanExposeOverPlannedMinutes() {
         val data = dataFor(
             todayTasks = listOf(task("today", 30).copy(order = 1)),
@@ -73,6 +121,29 @@ class TodaySessionModelsTest {
         assertEquals(90, session.plannedMinutes)
         assertEquals(60, session.overPlannedMinutes)
         assertEquals(0, session.remainingMinutes)
+    }
+
+    @Test fun pulledInWorkCanUseLikelyFallbackLocally() {
+        val future = task("future", 30).copy(order = 1, effortMaxMinutes = 60)
+        val data = dataFor(
+            todayTasks = emptyList(),
+            futureTasks = listOf(future),
+            dailyMinutes = 30,
+        )
+        val state = TodaySessionState(date = "2026-06-22")
+            .applyTaskAction("future", TodaySessionTaskAction.PullIn)
+
+        val session = TodaySessionPlanner().plan(
+            data = data,
+            date = "2026-06-22",
+            availableMinutes = 30,
+            session = state,
+        )
+
+        assertEquals(ScheduleFitMode.LikelyFallback, session.fitMode)
+        assertEquals(listOf("future"), session.pulledInTasks.map { it.id })
+        assertEquals(30, session.plannedMinutes)
+        assertEquals(0, session.overPlannedMinutes)
     }
 
     @Test fun closedTodayCapacityOverrideWinsWithoutScheduleRow() {

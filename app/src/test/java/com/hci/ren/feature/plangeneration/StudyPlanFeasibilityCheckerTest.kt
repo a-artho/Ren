@@ -73,28 +73,31 @@ class StudyPlanFeasibilityCheckerTest {
         assertEquals(FeasibilityStatus.Unrealistic, result.status)
     }
 
-    @Test fun deadlineRecommendationsUseDailyAvailabilityNotBlockDuration() {
+    @Test fun deadlineRecommendationsSeparateSafeAndTightPaces() {
         val result = StudyPlanFeasibilityChecker().check(
-            listOf(block(minutes = 675)),
+            listOf(block(minutes = 450, maxMinutes = 810)),
             submission(StudyGoal.PrepareForExam, StudyDeadline.ChooseDate, 90, setOf(StudyDay.Monday), "2026-06-23"),
             monday,
         )
-        assertEquals(675, result.totalRequiredMinutes)
+        assertEquals(450, result.totalLikelyMinutes)
+        assertEquals(630, result.totalReservedMinutes)
+        assertEquals(630, result.totalRequiredMinutes)
         assertEquals(90, result.availableMinutesPerStudyDay)
-        assertEquals(8, result.recommendedDaysBalanced)
+        assertEquals(7, result.recommendedDaysBalanced)
         assertEquals(5, result.recommendedDaysIntensive)
     }
 
     private fun block(
         id: String = "b1",
         minutes: Int,
+        maxMinutes: Int = minutes,
     ) = GeneratedStudyBlock(
         id = id,
         title = id,
         order = 1,
         effortMinMinutes = minutes,
         effortLikelyMinutes = minutes,
-        effortMaxMinutes = minutes,
+        effortMaxMinutes = maxMinutes,
         instructions = "Review",
         topicIds = listOf("t1"),
         taskType = StudyTaskType.Review,

@@ -4,7 +4,8 @@ enum class TodayImpactStatus {
     Fits,
     WorkMovesForward,
     Tight,
-    DoesNotFit,
+    Crammed,
+    Overloaded,
 }
 
 data class TodayImpactPreview(
@@ -47,8 +48,9 @@ class TodayImpactPreviewService(
             today = today,
         )
         val status = when {
-            projectedData.realism.status == PlanRealismStatus.Unrealistic ||
-                projectedData.schedule.unscheduledTasks.isNotEmpty() -> TodayImpactStatus.DoesNotFit
+            projectedData.realism.status == PlanRealismStatus.Overloaded ||
+                projectedData.schedule.unscheduledTasks.isNotEmpty() -> TodayImpactStatus.Overloaded
+            projectedData.realism.status == PlanRealismStatus.Crammed -> TodayImpactStatus.Crammed
             projectedData.realism.status == PlanRealismStatus.Tight -> TodayImpactStatus.Tight
             todayPlan.unfinishedWorkForwardMinutes > 0 -> TodayImpactStatus.WorkMovesForward
             else -> TodayImpactStatus.Fits

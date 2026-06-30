@@ -36,26 +36,31 @@ class StudyMapModelsTest {
     }
 
     @Test fun slightlyOverCapacityPlanIsTight() {
+        val tasks = listOf(task("one", 60).copy(effortMaxMinutes = 68))
+        val preferences = submission(60, StudyDeadline.ChooseDate, "2026-06-23")
+        val schedule = StudyScheduleCalculator().calculate(tasks, preferences, monday)
         val result = PlanRealismCalculator().calculate(
-            listOf(task("one", 64)),
-            submission(60, StudyDeadline.ChooseDate, "2026-06-23"),
+            tasks,
+            preferences,
             monday,
+            schedule = schedule,
         )
 
+        assertEquals(ScheduleFitMode.LikelyFallback, schedule.fitMode)
         assertEquals(PlanRealismStatus.Tight, result.status)
         assertEquals(4, result.shortageMinutes)
-        assertEquals(4, result.likelyShortageMinutes)
+        assertEquals(0, result.likelyShortageMinutes)
         assertEquals(4, result.reservedShortageMinutes)
     }
 
-    @Test fun farOverCapacityPlanIsUnrealistic() {
+    @Test fun farOverCapacityPlanIsOverloadedWhenItCannotBeScheduled() {
         val result = PlanRealismCalculator().calculate(
             listOf(task("one", 150)),
             submission(60, StudyDeadline.ChooseDate, "2026-06-23"),
             monday,
         )
 
-        assertEquals(PlanRealismStatus.Unrealistic, result.status)
+        assertEquals(PlanRealismStatus.Overloaded, result.status)
     }
 
     @Test fun suggestedDeadlineIsFutureAndProvidesEnoughCapacity() {
@@ -193,6 +198,57 @@ class StudyMapModelsTest {
         assertTrue(schedule.unscheduledTasks.isEmpty())
     }
 
+    @Test fun likelyFallbackSubtractsFixedTasksUsingLikelyMinutes() {
+        val tasks = listOf(
+            task("locked", 50).copy(
+                order = 1,
+                effortMaxMinutes = 90,
+                status = StudyTaskStatus.Locked,
+                scheduledDate = "2026-06-22",
+            ),
+            task("auto", 50).copy(order = 2, effortMaxMinutes = 90),
+        )
+
+        val schedule = StudyScheduleCalculator().calculate(
+            tasks,
+            submission(100, StudyDeadline.ChooseDate, "2026-06-23"),
+            monday,
+        )
+        val day = schedule.days.single()
+
+        assertEquals(ScheduleFitMode.LikelyFallback, schedule.fitMode)
+        assertEquals(listOf("locked", "auto"), day.tasks.map { it.id })
+        assertEquals(100, day.fittedMinutes)
+        assertEquals(140, day.reservedMinutes)
+        assertTrue(day.isRisky)
+        assertTrue(schedule.unscheduledTasks.isEmpty())
+    }
+
+    @Test fun likelyFallbackHandlesFixedOnlyDayWhenLikelyFits() {
+        val tasks = listOf(
+            task("locked", 50).copy(
+                order = 1,
+                effortMaxMinutes = 90,
+                status = StudyTaskStatus.Locked,
+                scheduledDate = "2026-06-22",
+            ),
+        )
+
+        val data = buildStudyMapData(
+            plan(tasks),
+            submission(60, StudyDeadline.ChooseDate, "2026-06-23"),
+            today = monday,
+        )
+        val day = data.schedule.days.single()
+
+        assertEquals(ScheduleFitMode.LikelyFallback, data.schedule.fitMode)
+        assertEquals(50, day.fittedMinutes)
+        assertEquals(70, day.reservedMinutes)
+        assertTrue(day.isRisky)
+        assertFalse(day.isOverCapacity)
+        assertEquals(PlanRealismStatus.Tight, data.realism.status)
+    }
+
     @Test fun scheduleAllowsDependenciesAfterEarlierBlocksAreScheduled() {
         val tasks = listOf(
             task("first", 30).copy(order = 1),
@@ -251,6 +307,25 @@ class StudyMapModelsTest {
         assertEquals(listOf("locked"), schedule.days.first { it.date == "2026-06-22" }.tasks.map { it.id })
         assertEquals(listOf("auto"), schedule.days.flatMap { it.tasks }.filterNot { it.id == "locked" }.map { it.id })
         assertEquals("2026-06-23", schedule.days.flatMap { it.tasks }.single { it.id == "auto" }.scheduledDate)
+    }
+
+    @Test fun lockedOverCapacityDayMakesPlanCrammed() {
+        val tasks = listOf(
+            task("locked", 90).copy(
+                order = 1,
+                status = StudyTaskStatus.Locked,
+                scheduledDate = "2026-06-22",
+            ),
+        )
+
+        val data = buildStudyMapData(
+            plan(tasks),
+            submission(60, StudyDeadline.ChooseDate, "2026-06-23"),
+            today = monday,
+        )
+
+        assertTrue(data.schedule.days.single().isOverCapacity)
+        assertEquals(PlanRealismStatus.Crammed, data.realism.status)
     }
 
     @Test fun activeStateMarksTaskCompletedWithoutChangingSourceEffort() {

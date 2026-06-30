@@ -214,7 +214,7 @@ fun StudyMapScreen(
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             item { ProjectSummaryCard(data) }
-            if (!acceptedTightPlan && data.realism.status in setOf(PlanRealismStatus.Tight, PlanRealismStatus.Unrealistic)) {
+            if (!acceptedTightPlan && data.realism.status != PlanRealismStatus.OnTrack) {
                 item {
                     RealismWarningPanel(
                         realism = data.realism,
@@ -581,21 +581,29 @@ private fun SummaryMetric(
 
 @Composable
 private fun RealismWarningPanel(realism: PlanRealism, onAction: (AdjustmentSheet) -> Unit) {
+    val container = realismContainer(realism.status)
+    val content = realismContent(realism.status)
+    val accent = realismColor(realism.status)
     Card(
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.tertiaryContainer),
+        colors = CardDefaults.cardColors(containerColor = container),
         shape = RoundedCornerShape(18.dp),
     ) {
         Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Default.WarningAmber, contentDescription = null, tint = MaterialTheme.colorScheme.tertiary)
+                Icon(Icons.Default.WarningAmber, contentDescription = null, tint = accent)
                 Spacer(Modifier.width(8.dp))
                 Text(
-                    if (realism.status == PlanRealismStatus.Tight) stringResource(R.string.plan_is_tight) else stringResource(R.string.unrealistic_plan_title),
+                    realismWarningTitle(realism.status),
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
+                    color = content,
                 )
             }
-            Text(stringResource(R.string.tight_plan_message, formatMinutes(realism.remainingMinutes), formatMinutes(realism.availableMinutes ?: 0)), style = MaterialTheme.typography.bodyMedium)
+            Text(
+                stringResource(R.string.tight_plan_message, formatMinutes(realism.remainingMinutes), formatMinutes(realism.availableMinutes ?: 0)),
+                style = MaterialTheme.typography.bodyMedium,
+                color = content,
+            )
             AdjustmentAction(R.string.choose_material, R.string.choose_material_subtitle) { onAction(AdjustmentSheet.Scope) }
             AdjustmentAction(R.string.increase_daily_time, R.string.increase_daily_time_subtitle) { onAction(AdjustmentSheet.DailyTime) }
             AdjustmentAction(R.string.extend_deadline, R.string.extend_deadline_subtitle) { onAction(AdjustmentSheet.Deadline) }
@@ -2176,28 +2184,40 @@ private fun StatusPill(label: String, container: Color, content: Color) {
 private fun realismLabel(status: PlanRealismStatus) = when (status) {
     PlanRealismStatus.OnTrack -> stringResource(R.string.on_track)
     PlanRealismStatus.Tight -> stringResource(R.string.plan_is_tight)
-    PlanRealismStatus.Unrealistic -> stringResource(R.string.unrealistic_plan)
+    PlanRealismStatus.Crammed -> stringResource(R.string.plan_is_crammed)
+    PlanRealismStatus.Overloaded -> stringResource(R.string.plan_is_overloaded)
+}
+
+@Composable
+private fun realismWarningTitle(status: PlanRealismStatus) = when (status) {
+    PlanRealismStatus.OnTrack -> stringResource(R.string.on_track)
+    PlanRealismStatus.Tight -> stringResource(R.string.plan_is_tight)
+    PlanRealismStatus.Crammed -> stringResource(R.string.crammed_plan_title)
+    PlanRealismStatus.Overloaded -> stringResource(R.string.overloaded_plan_title)
 }
 
 @Composable
 private fun realismColor(status: PlanRealismStatus) = when (status) {
     PlanRealismStatus.OnTrack -> MaterialTheme.colorScheme.primary
     PlanRealismStatus.Tight -> MaterialTheme.colorScheme.tertiary
-    PlanRealismStatus.Unrealistic -> MaterialTheme.colorScheme.error
+    PlanRealismStatus.Crammed -> MaterialTheme.colorScheme.tertiary
+    PlanRealismStatus.Overloaded -> MaterialTheme.colorScheme.error
 }
 
 @Composable
 private fun realismContainer(status: PlanRealismStatus) = when (status) {
     PlanRealismStatus.OnTrack -> MaterialTheme.colorScheme.primaryContainer
     PlanRealismStatus.Tight -> MaterialTheme.colorScheme.tertiaryContainer
-    PlanRealismStatus.Unrealistic -> MaterialTheme.colorScheme.errorContainer
+    PlanRealismStatus.Crammed -> MaterialTheme.colorScheme.tertiaryContainer
+    PlanRealismStatus.Overloaded -> MaterialTheme.colorScheme.errorContainer
 }
 
 @Composable
 private fun realismContent(status: PlanRealismStatus) = when (status) {
     PlanRealismStatus.OnTrack -> MaterialTheme.colorScheme.onPrimaryContainer
     PlanRealismStatus.Tight -> MaterialTheme.colorScheme.onTertiaryContainer
-    PlanRealismStatus.Unrealistic -> MaterialTheme.colorScheme.onErrorContainer
+    PlanRealismStatus.Crammed -> MaterialTheme.colorScheme.onTertiaryContainer
+    PlanRealismStatus.Overloaded -> MaterialTheme.colorScheme.onErrorContainer
 }
 
 @Composable

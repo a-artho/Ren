@@ -49,10 +49,12 @@
     <string name="topics_view">Material</string>
     <string name="on_track">On track</string>
     <string name="plan_is_tight">Plan is tight</string>
-    <string name="unrealistic_plan">Unrealistic</string>
+    <string name="plan_is_crammed">Crammed</string>
+    <string name="plan_is_overloaded">Overloaded</string>
     <string name="tasks_completed_compact">%1$d / %2$d</string>
     <string name="tight_plan_message">You need %1$s, but your available time is %2$s. Choose how you want to adjust it.</string>
-    <string name="unrealistic_plan_title">This plan may need changes</string>
+    <string name="crammed_plan_title">This plan is crammed</string>
+    <string name="overloaded_plan_title">This plan is overloaded</string>
     <string name="choose_material">Choose material</string>
     <string name="choose_material_subtitle">Decide what stays in this plan.</string>
     <string name="increase_daily_time">Increase daily time</string>
@@ -88,7 +90,8 @@
     <string name="today_impact_fits">Preview: plan still fits after wrap-up.</string>
     <string name="today_impact_moves_forward">Preview: work moves forward after wrap-up.</string>
     <string name="today_impact_tight">Preview: plan becomes tight after wrap-up.</string>
-    <string name="today_impact_does_not_fit">Preview: some work may not fit after wrap-up.</string>
+    <string name="today_impact_crammed">Preview: plan becomes crammed after wrap-up.</string>
+    <string name="today_impact_overloaded">Preview: plan becomes overloaded after wrap-up.</string>
     <string name="wont_fit_today">Won\'t fit today</string>
     <string name="move_later_at_wrap_up">Will move later if you wrap up with this plan.</string>
     <string name="moved_later">Moved later</string>
@@ -142,7 +145,8 @@
     <string name="wrap_up_impact_fits">Plan still fits after wrap-up.</string>
     <string name="wrap_up_impact_moves_forward">Unfinished work moves forward after wrap-up.</string>
     <string name="wrap_up_impact_tight">Plan becomes tight after wrap-up.</string>
-    <string name="wrap_up_impact_does_not_fit">Some work may not fit after wrap-up.</string>
+    <string name="wrap_up_impact_crammed">Plan becomes crammed after wrap-up.</string>
+    <string name="wrap_up_impact_overloaded">Plan becomes overloaded after wrap-up.</string>
     <string name="wrap_up_today_no_task_changes">No completed or removed task changes yet.</string>
     <string name="wrap_up_today_closes_day">Today closes with 0 min left.</string>
     <string name="wrap_up_today_confirm">Wrap up</string>

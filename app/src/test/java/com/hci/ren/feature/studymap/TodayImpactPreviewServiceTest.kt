@@ -6,6 +6,7 @@ import com.hci.ren.feature.pdfupload.presentation.StudyDeadline
 import com.hci.ren.feature.pdfupload.presentation.StudyGoal
 import com.hci.ren.feature.plangeneration.GeneratedStudyBlock
 import com.hci.ren.feature.plangeneration.GeneratedStudyPlan
+import com.hci.ren.feature.plangeneration.StudyTaskStatus
 import com.hci.ren.feature.plangeneration.StudyTaskType
 import java.util.Calendar
 import java.util.GregorianCalendar
@@ -72,7 +73,26 @@ class TodayImpactPreviewServiceTest {
         assertEquals(TodayImpactStatus.Tight, preview?.status)
     }
 
-    @Test fun previewReportsProjectedPlanThatDoesNotFit() {
+    @Test fun previewReportsProjectedPlanThatBecomesCrammed() {
+        val project = project(
+            tasks = listOf(
+                task("locked", 90).copy(
+                    order = 1,
+                    status = StudyTaskStatus.Locked,
+                    scheduledDate = "2026-06-23",
+                ),
+            ),
+            dailyMinutes = 60,
+            deadline = StudyDeadline.ChooseDate,
+            deadlineDate = "2026-06-24",
+        )
+
+        val preview = TodayImpactPreviewService().preview(project, "2026-06-22", null)
+
+        assertEquals(TodayImpactStatus.Crammed, preview?.status)
+    }
+
+    @Test fun previewReportsProjectedPlanThatBecomesOverloaded() {
         val project = project(
             tasks = listOf(
                 task("today", 60).copy(order = 1),
@@ -87,7 +107,7 @@ class TodayImpactPreviewServiceTest {
 
         val preview = TodayImpactPreviewService().preview(project, "2026-06-22", session)
 
-        assertEquals(TodayImpactStatus.DoesNotFit, preview?.status)
+        assertEquals(TodayImpactStatus.Overloaded, preview?.status)
     }
 
     private fun project(

@@ -2,7 +2,6 @@ package com.hci.ren.feature.studymap
 
 import com.hci.ren.feature.plangeneration.GeneratedStudyBlock
 import com.hci.ren.feature.plangeneration.StudyTaskStatus
-import com.hci.ren.feature.plangeneration.reservedStudyMinutes
 
 data class TodaySessionState(
     val date: String,
@@ -37,6 +36,7 @@ data class TodaySessionPlan(
     val date: String,
     val baseAvailableMinutes: Int,
     val availableMinutes: Int,
+    val fitMode: ScheduleFitMode = ScheduleFitMode.Reserved,
     val doTodayTasks: List<GeneratedStudyBlock>,
     val pulledInTasks: List<GeneratedStudyBlock>,
     val doneTodayTasks: List<GeneratedStudyBlock>,
@@ -48,31 +48,31 @@ data class TodaySessionPlan(
     val hasTaskChanges: Boolean = false,
 ) {
     val plannedMinutes: Int
-        get() = doTodayTasks.sumOf { it.reservedStudyMinutes.coerceAtLeast(0) } +
-            pulledInTasks.sumOf { it.reservedStudyMinutes.coerceAtLeast(0) } +
-            doneTodayTasks.sumOf { it.reservedStudyMinutes.coerceAtLeast(0) }
+        get() = doTodayTasks.fitMinutesTotal(fitMode) +
+            pulledInTasks.fitMinutesTotal(fitMode) +
+            doneTodayTasks.fitMinutesTotal(fitMode)
 
     val committedPlannedMinutes: Int
-        get() = doTodayTasks.sumOf { it.reservedStudyMinutes.coerceAtLeast(0) } +
-            wontFitTodayTasks.sumOf { it.reservedStudyMinutes.coerceAtLeast(0) }
+        get() = doTodayTasks.fitMinutesTotal(fitMode) +
+            wontFitTodayTasks.fitMinutesTotal(fitMode)
 
     val completedMinutes: Int
-        get() = doneTodayTasks.sumOf { it.reservedStudyMinutes.coerceAtLeast(0) }
+        get() = doneTodayTasks.fitMinutesTotal(fitMode)
 
     val overflowMinutes: Int
-        get() = wontFitTodayTasks.sumOf { it.reservedStudyMinutes.coerceAtLeast(0) }
+        get() = wontFitTodayTasks.fitMinutesTotal(fitMode)
 
     val movedLaterMinutes: Int
-        get() = movedLaterTasks.sumOf { it.reservedStudyMinutes.coerceAtLeast(0) }
+        get() = movedLaterTasks.fitMinutesTotal(fitMode)
 
     val removedMinutes: Int
-        get() = removedFromPlanTasks.sumOf { it.reservedStudyMinutes.coerceAtLeast(0) }
+        get() = removedFromPlanTasks.fitMinutesTotal(fitMode)
 
     val unfinishedWorkForwardTasks: List<GeneratedStudyBlock>
         get() = doTodayTasks + pulledInTasks + wontFitTodayTasks + movedLaterTasks
 
     val unfinishedWorkForwardMinutes: Int
-        get() = unfinishedWorkForwardTasks.sumOf { it.reservedStudyMinutes.coerceAtLeast(0) }
+        get() = unfinishedWorkForwardTasks.fitMinutesTotal(fitMode)
 
     val remainingMinutes: Int
         get() = (availableMinutes - plannedMinutes).coerceAtLeast(0)
@@ -138,24 +138,29 @@ class TodaySessionPlanner {
             .filterNot { it.id in movedLaterTaskIds }
             .filterNot { it.id in doneTodayIds }
             .filterNot { it.id in removedIds }
-        val doTodayTasks = committedCandidates.todayTasksWithin(normalizedAvailableMinutes)
-        val doTodayIds = doTodayTasks.mapTo(mutableSetOf()) { it.id }
-        val wontFitTodayTasks = committedCandidates.filterNot { it.id in doTodayIds }
         val pulledInTasks = forwardTasks
             .filter { it.id in pulledIds && it.id !in doneTodayIds && it.id !in removedIds }
             .filter { task -> task.canPullForward(completedIds, doneTodayIds, activeTasksById) }
+        val fitMode = localTodayFitMode(
+            tasks = committedCandidates + pulledInTasks + doneTodayTasks,
+            capacityMinutes = normalizedAvailableMinutes,
+            scheduledFitMode = todaySchedule?.fitMode ?: data.schedule.fitMode,
+        )
+        val doTodayTasks = committedCandidates.todayTasksWithin(normalizedAvailableMinutes, fitMode)
+        val doTodayIds = doTodayTasks.mapTo(mutableSetOf()) { it.id }
+        val wontFitTodayTasks = committedCandidates.filterNot { it.id in doTodayIds }
         val removedFromPlanTasks = orderedByPlan(data.activeTasks, removedIds)
         val removedFromPlanTaskIds = removedFromPlanTasks.mapTo(mutableSetOf()) { it.id }
         val plannedTasks = doTodayTasks + pulledInTasks + doneTodayTasks
         val plannedIds = plannedTasks.mapTo(mutableSetOf()) { it.id }
-        val remainingMinutes = (normalizedAvailableMinutes - plannedTasks.sumOf { it.reservedStudyMinutes.coerceAtLeast(0) })
+        val remainingMinutes = (normalizedAvailableMinutes - plannedTasks.fitMinutesTotal(fitMode))
             .coerceAtLeast(0)
         val pullInCandidates = if (remainingMinutes > 0) {
             forwardTasks.asSequence()
                 .filterNot { it.id in plannedIds }
                 .filterNot { it.id in removedIds }
                 .filter { task -> task.canPullForward(completedIds, doneTodayIds, activeTasksById) }
-                .pullCandidatesFor(remainingMinutes)
+                .pullCandidatesFor(remainingMinutes, fitMode)
         } else {
             emptyList()
         }
@@ -163,6 +168,7 @@ class TodaySessionPlanner {
             date = date,
             baseAvailableMinutes = baseAvailableMinutes,
             availableMinutes = normalizedAvailableMinutes,
+            fitMode = fitMode,
             doTodayTasks = doTodayTasks,
             pulledInTasks = pulledInTasks,
             doneTodayTasks = doneTodayTasks,
@@ -219,14 +225,41 @@ fun TodaySessionState.applyTaskAction(
     )
 }
 
-private fun List<GeneratedStudyBlock>.todayTasksWithin(capacityMinutes: Int): List<GeneratedStudyBlock> {
+private fun localTodayFitMode(
+    tasks: List<GeneratedStudyBlock>,
+    capacityMinutes: Int,
+    scheduledFitMode: ScheduleFitMode,
+): ScheduleFitMode {
+    if (scheduledFitMode == ScheduleFitMode.LikelyFallback) return ScheduleFitMode.LikelyFallback
+    val reservedTasks = tasks.todayTasksWithin(capacityMinutes, ScheduleFitMode.Reserved)
+    val likelyTasks = tasks.todayTasksWithin(capacityMinutes, ScheduleFitMode.LikelyFallback)
+    val reservedMinutes = reservedTasks.fitMinutesTotal(ScheduleFitMode.Reserved)
+    val likelyMinutes = likelyTasks.fitMinutesTotal(ScheduleFitMode.LikelyFallback)
+    return if (
+        likelyTasks.size > reservedTasks.size ||
+        (
+            likelyTasks.size == reservedTasks.size &&
+                likelyMinutes <= capacityMinutes &&
+                reservedMinutes > capacityMinutes
+        )
+    ) {
+        ScheduleFitMode.LikelyFallback
+    } else {
+        ScheduleFitMode.Reserved
+    }
+}
+
+private fun List<GeneratedStudyBlock>.todayTasksWithin(
+    capacityMinutes: Int,
+    fitMode: ScheduleFitMode,
+): List<GeneratedStudyBlock> {
     val anchorEnd = indexOfLast { it.status in TodayAnchorStatuses } + 1
     val anchoredPrefix = take(anchorEnd)
-    var used = anchoredPrefix.sumOf { it.reservedStudyMinutes.coerceAtLeast(0) }
+    var used = anchoredPrefix.fitMinutesTotal(fitMode)
     return buildList {
         addAll(anchoredPrefix)
         for (task in this@todayTasksWithin.drop(anchorEnd)) {
-            val minutes = task.reservedStudyMinutes.coerceAtLeast(1)
+            val minutes = fitMode.fitMinutes(task).coerceAtLeast(1)
             if (used + minutes > capacityMinutes) break
             add(task)
             used += minutes
@@ -234,12 +267,15 @@ private fun List<GeneratedStudyBlock>.todayTasksWithin(capacityMinutes: Int): Li
     }
 }
 
-private fun Sequence<GeneratedStudyBlock>.pullCandidatesFor(remainingMinutes: Int): List<GeneratedStudyBlock> {
+private fun Sequence<GeneratedStudyBlock>.pullCandidatesFor(
+    remainingMinutes: Int,
+    fitMode: ScheduleFitMode,
+): List<GeneratedStudyBlock> {
     val candidates = toList()
     var used = 0
     val fittingPrefix = buildList {
         for (task in candidates) {
-            val minutes = task.reservedStudyMinutes.coerceAtLeast(1)
+            val minutes = fitMode.fitMinutes(task).coerceAtLeast(1)
             if (used + minutes > remainingMinutes) break
             add(task)
             used += minutes
@@ -269,6 +305,9 @@ private fun orderedByPlan(
     tasks: List<GeneratedStudyBlock>,
     ids: List<String>,
 ): List<GeneratedStudyBlock> = orderedByPlan(tasks, ids.toSet())
+
+private fun Iterable<GeneratedStudyBlock>.fitMinutesTotal(fitMode: ScheduleFitMode): Int =
+    sumOf { fitMode.fitMinutes(it).coerceAtLeast(0) }
 
 internal fun todayBaseAvailableMinutes(
     project: StudyProject,

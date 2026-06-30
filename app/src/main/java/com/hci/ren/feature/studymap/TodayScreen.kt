@@ -661,7 +661,8 @@ private fun TodayImpactPreview.message(): String = when (status) {
     TodayImpactStatus.Fits -> stringResource(R.string.today_impact_fits)
     TodayImpactStatus.WorkMovesForward -> stringResource(R.string.today_impact_moves_forward)
     TodayImpactStatus.Tight -> stringResource(R.string.today_impact_tight)
-    TodayImpactStatus.DoesNotFit -> stringResource(R.string.today_impact_does_not_fit)
+    TodayImpactStatus.Crammed -> stringResource(R.string.today_impact_crammed)
+    TodayImpactStatus.Overloaded -> stringResource(R.string.today_impact_overloaded)
 }
 
 @Composable
@@ -947,7 +948,8 @@ private fun TodayImpactPreview.dialogMessage(): String = when (status) {
     TodayImpactStatus.Fits -> stringResource(R.string.wrap_up_impact_fits)
     TodayImpactStatus.WorkMovesForward -> stringResource(R.string.wrap_up_impact_moves_forward)
     TodayImpactStatus.Tight -> stringResource(R.string.wrap_up_impact_tight)
-    TodayImpactStatus.DoesNotFit -> stringResource(R.string.wrap_up_impact_does_not_fit)
+    TodayImpactStatus.Crammed -> stringResource(R.string.wrap_up_impact_crammed)
+    TodayImpactStatus.Overloaded -> stringResource(R.string.wrap_up_impact_overloaded)
 }
 
 private enum class TodayEmptyState {
