@@ -30,6 +30,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Assignment
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
@@ -100,6 +101,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.Dp
@@ -533,7 +535,7 @@ private fun ProjectSummaryCard(data: StudyMapData) {
             ) {
                 OutlinedStatusPill(
                     label = realismLabel(data.realism.status),
-                    color = realismColor(data.realism.status),
+                    color = realismPillColor(data.realism.status),
                 )
             }
             SummaryMetric(
@@ -600,13 +602,11 @@ private fun RealismWarningPanel(realism: PlanRealism, onAction: (AdjustmentSheet
                 )
             }
             Text(
-                stringResource(R.string.tight_plan_message, formatMinutes(realism.remainingMinutes), formatMinutes(realism.availableMinutes ?: 0)),
+                realismWarningMessage(realism),
                 style = MaterialTheme.typography.bodyMedium,
                 color = content,
             )
-            AdjustmentAction(R.string.choose_material, R.string.choose_material_subtitle) { onAction(AdjustmentSheet.Scope) }
-            AdjustmentAction(R.string.increase_daily_time, R.string.increase_daily_time_subtitle) { onAction(AdjustmentSheet.DailyTime) }
-            AdjustmentAction(R.string.extend_deadline, R.string.extend_deadline_subtitle) { onAction(AdjustmentSheet.Deadline) }
+            AdjustmentAction(R.string.edit_plan, R.string.edit_plan_sheet_subtitle) { onAction(AdjustmentSheet.PlanEdit) }
             AdjustmentAction(R.string.continue_anyway, R.string.continue_anyway_short_subtitle) { onAction(AdjustmentSheet.Continue) }
         }
     }
@@ -856,6 +856,7 @@ private fun StudyDayMapCard(
                     TimelineSourceDivider(
                         source = sourceDocument,
                         continuesChildRail = index > 0,
+                        showMainRail = !isLast || index == 0,
                     )
                 }
                 previousSource = sourceDocument
@@ -885,13 +886,14 @@ private fun DayTimelineMarker(
 ) {
     val activeColor = MaterialTheme.colorScheme.primary
     val mutedColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.72f)
+    val railColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.96f)
     val nodeBorderColor = if (isToday) activeColor.copy(alpha = 0.72f) else mutedColor
     val dotSize = if (isToday) 13.dp else 10.dp
     val dotTop = 19.dp
     Box(
         modifier = modifier
             .width(18.dp)
-            .height(if (expanded) 58.dp else 88.dp),
+            .height(if (expanded) 48.dp else 88.dp),
         contentAlignment = Alignment.TopCenter,
     ) {
         Canvas(Modifier.fillMaxSize()) {
@@ -900,7 +902,7 @@ private fun DayTimelineMarker(
             val dotCenterY = dotTop.toPx() + dotRadius
             if (!isFirst) {
                 drawLine(
-                    color = mutedColor,
+                    color = railColor,
                     start = Offset(centerX, 0f),
                     end = Offset(centerX, dotCenterY - dotRadius),
                     strokeWidth = 1.dp.toPx(),
@@ -909,7 +911,7 @@ private fun DayTimelineMarker(
             }
             if (!isLast) {
                 drawLine(
-                    color = mutedColor,
+                    color = railColor,
                     start = Offset(centerX, dotCenterY + dotRadius),
                     end = Offset(centerX, size.height),
                     strokeWidth = 1.dp.toPx(),
@@ -963,11 +965,11 @@ private fun TimelineTaskBranchRow(
                 pageLabel = pageLabel,
                 modifier = Modifier
                     .weight(1f)
-                    .padding(vertical = 7.dp),
+                    .padding(vertical = 10.dp),
             )
             if (task.status != StudyTaskStatus.NotStarted) {
                 Spacer(Modifier.width(10.dp))
-                Box(Modifier.padding(top = 7.dp)) {
+                Box(Modifier.padding(top = 10.dp)) {
                     StatusPill(statusLabel(task.status), statusContainer(task.status), statusContent(task.status))
                 }
             }
@@ -978,7 +980,7 @@ private fun TimelineTaskBranchRow(
             nodeSize = 10.dp,
             completeIconSize = 12.dp,
             borderWidth = 1.25.dp,
-            modifier = Modifier.padding(start = 24.dp, top = 7.dp),
+            modifier = Modifier.padding(start = 24.dp, top = 10.dp),
         )
     }
 }
@@ -987,13 +989,14 @@ private fun TimelineTaskBranchRow(
 private fun TimelineSourceDivider(
     source: String,
     continuesChildRail: Boolean,
+    showMainRail: Boolean,
     modifier: Modifier = Modifier,
 ) {
-    val mutedRail = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.72f)
+    val mutedRail = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.96f)
     Box(
         modifier = modifier
             .fillMaxWidth()
-            .height(30.dp),
+            .height(24.dp),
     ) {
         Canvas(
             modifier = Modifier
@@ -1002,13 +1005,15 @@ private fun TimelineSourceDivider(
         ) {
             val branchX = 9.dp.toPx()
             val nodeCenterX = 39.dp.toPx()
-            drawLine(
-                color = mutedRail,
-                start = Offset(branchX, 0f),
-                end = Offset(branchX, size.height),
-                strokeWidth = 1.dp.toPx(),
-                cap = StrokeCap.Round,
-            )
+            if (showMainRail) {
+                drawLine(
+                    color = mutedRail,
+                    start = Offset(branchX, 0f),
+                    end = Offset(branchX, size.height),
+                    strokeWidth = 1.dp.toPx(),
+                    cap = StrokeCap.Round,
+                )
+            }
             if (continuesChildRail) {
                 drawLine(
                     color = mutedRail,
@@ -1023,7 +1028,7 @@ private fun TimelineSourceDivider(
             text = source,
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(start = 54.dp, end = 10.dp)
+                .padding(start = 44.dp, end = 24.dp)
                 .align(Alignment.CenterStart),
         )
     }
@@ -1078,25 +1083,27 @@ private fun TaskBranchConnector(
     isLastDay: Boolean,
     modifier: Modifier = Modifier,
 ) {
-    val mutedColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.72f)
+    val mutedColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.96f)
     Canvas(modifier) {
         val branchX = 9.dp.toPx()
         val nodeCenterX = 39.dp.toPx()
         val nodeCenterY = 22.dp.toPx()
         val exitY = size.height
-        if (!isLastDay || !isLastBranch) {
-            drawLine(
-                color = mutedColor,
-                start = Offset(branchX, 0f),
-                end = Offset(branchX, exitY),
-                strokeWidth = 1.dp.toPx(),
-                cap = StrokeCap.Round,
-            )
+        if (isLastDay) {
+            if (isFirstBranch) {
+                drawLine(
+                    color = mutedColor,
+                    start = Offset(branchX, 0f),
+                    end = Offset(branchX, nodeCenterY),
+                    strokeWidth = 1.dp.toPx(),
+                    cap = StrokeCap.Round,
+                )
+            }
         } else {
             drawLine(
                 color = mutedColor,
                 start = Offset(branchX, 0f),
-                end = Offset(branchX, nodeCenterY),
+                end = Offset(branchX, exitY),
                 strokeWidth = 1.dp.toPx(),
                 cap = StrokeCap.Round,
             )
@@ -1128,7 +1135,7 @@ private fun TaskBranchConnector(
 
 @Composable
 private fun TimelineDayGap(height: Dp = 16.dp) {
-    val mutedColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.72f)
+    val mutedColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.96f)
     Canvas(
         modifier = Modifier
             .width(54.dp)
@@ -1246,86 +1253,91 @@ private fun UnscheduledWorkCard(
     documents: List<StudySourceDocument>,
     modifier: Modifier = Modifier,
 ) {
+    val sourceGroups = remember(tasks, documents) { unscheduledSourceGroups(tasks, documents) }
+    val meta = listOf(
+        pluralStringResource(R.plurals.study_day_task_count, tasks.size, tasks.size),
+        formatMinutes(tasks.sumOf { it.likelyStudyMinutes }),
+    ).joinToString(" \u2022 ")
     Card(
         modifier = modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(22.dp),
+        shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         border = CardDefaults.outlinedCardBorder(),
     ) {
-        Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            SectionTitle(stringResource(R.string.unscheduled_tasks), stringResource(R.string.unscheduled_explanation))
-            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.7f))
-            tasks.forEach { task ->
-                MapTaskRow(
-                    task = task,
-                    source = taskSourceLabel(task, documents),
-                    onClick = null,
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Row(verticalAlignment = Alignment.Top) {
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text(
+                        text = stringResource(R.string.unscheduled_tasks),
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.semantics { heading() },
+                    )
+                    Text(
+                        text = stringResource(R.string.unscheduled_explanation),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Spacer(Modifier.width(12.dp))
+                Text(
+                    text = meta,
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
                 )
+            }
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.7f))
+            sourceGroups.forEachIndexed { groupIndex, group ->
+                if (groupIndex > 0) {
+                    Spacer(Modifier.height(2.dp))
+                }
+                group.source?.let { source ->
+                    SourceDividerLabel(
+                        text = source,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(start = 40.dp, end = 4.dp),
+                    )
+                }
+                group.tasks.forEach { task ->
+                    UnscheduledTaskRow(
+                        task = task,
+                        pageLabel = taskPageLabel(task),
+                    )
+                }
             }
         }
     }
 }
 
 @Composable
-private fun MapTaskRow(
+private fun UnscheduledTaskRow(
     task: GeneratedStudyBlock,
-    source: String?,
-    onClick: (() -> Unit)?,
+    pageLabel: String?,
 ) {
-    if (onClick != null) {
-        Surface(
-            onClick = onClick,
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(12.dp),
-            color = Color.Transparent,
-        ) {
-            MapTaskRowContent(task = task, source = source)
-        }
-    } else {
-        MapTaskRowContent(task = task, source = source)
-    }
-}
-
-@Composable
-private fun MapTaskRowContent(
-    task: GeneratedStudyBlock,
-    source: String?,
-) {
+    val nodeColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.82f)
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = 7.dp),
+            .padding(vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        TaskBullet(status = task.status)
-        Spacer(Modifier.width(12.dp))
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text(
-                text = task.title,
-                style = MaterialTheme.typography.labelLarge,
-                fontWeight = FontWeight.SemiBold,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Text(
-                text = "${formatMinutes(task.likelyStudyMinutes)} • ${taskTypeLabel(task.taskType)}",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            if (source != null) {
-                Text(
-                    text = source,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.82f),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
-        }
-        if (task.status != StudyTaskStatus.NotStarted) {
-            Spacer(Modifier.width(10.dp))
-            StatusPill(statusLabel(task.status), statusContainer(task.status), statusContent(task.status))
-        }
+        TaskBullet(
+            status = task.status,
+            nodeSize = 10.dp,
+            completeIconSize = 12.dp,
+            borderWidth = 1.25.dp,
+            borderColor = nodeColor,
+        )
+        Spacer(Modifier.width(10.dp))
+        TaskRowTextContent(
+            task = task,
+            pageLabel = pageLabel,
+            modifier = Modifier.weight(1f),
+        )
     }
 }
 
@@ -1375,7 +1387,7 @@ private fun MaterialTaskRowContent(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(vertical = 5.dp),
+                .padding(vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             TaskBullet(
@@ -1385,7 +1397,7 @@ private fun MaterialTaskRowContent(
                 borderWidth = 1.25.dp,
             )
             Spacer(Modifier.width(10.dp))
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(5.dp)) {
                 Text(
                     text = task.title,
                     style = MaterialTheme.typography.labelLarge,
@@ -1418,7 +1430,7 @@ private fun TaskRowTextContent(
         formatMinutes(task.likelyStudyMinutes),
         taskTypeLabel(task.taskType),
     ).joinToString(" \u2022 ")
-    Column(modifier, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+    Column(modifier, verticalArrangement = Arrangement.spacedBy(5.dp)) {
         Text(
             text = task.title,
             style = MaterialTheme.typography.labelLarge,
@@ -1441,6 +1453,7 @@ private fun TaskBullet(
     nodeSize: Dp = 14.dp,
     completeIconSize: Dp = 16.dp,
     borderWidth: Dp = 1.5.dp,
+    borderColor: Color? = null,
 ) {
     val complete = status == StudyTaskStatus.Completed
     Box(modifier = modifier.size(30.dp), contentAlignment = Alignment.Center) {
@@ -1459,7 +1472,7 @@ private fun TaskBullet(
                     color = Color.Transparent,
                     border = BorderStroke(
                         width = borderWidth,
-                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.72f),
+                        color = borderColor ?: MaterialTheme.colorScheme.primary.copy(alpha = 0.72f),
                     ),
                 ) {}
             }
@@ -1479,20 +1492,6 @@ private fun difficultyLabel(difficulty: StudyBlockDifficulty): String = when (di
     StudyBlockDifficulty.Light -> stringResource(R.string.load_light)
     StudyBlockDifficulty.Standard -> stringResource(R.string.load_standard)
     StudyBlockDifficulty.Heavy -> stringResource(R.string.load_heavy)
-}
-
-@Composable
-private fun taskSourceLabel(task: GeneratedStudyBlock, documents: List<StudySourceDocument>): String? {
-    val ref = task.sourceRefs.firstOrNull() ?: return null
-    val document = documents.firstOrNull { it.id == ref.documentId || it.uploadDocumentId == ref.documentId }
-    val documentName = document?.filename?.shortDocumentName() ?: ref.sectionTitle
-    val pageLabel = taskPageLabel(task)
-    return when {
-        documentName != null && pageLabel != null -> stringResource(R.string.source_with_page, documentName, pageLabel)
-        documentName != null -> documentName
-        pageLabel != null -> pageLabel
-        else -> null
-    }
 }
 
 private fun taskSourceDocumentLabel(task: GeneratedStudyBlock, documents: List<StudySourceDocument>): String? {
@@ -1609,6 +1608,37 @@ private data class MaterialGroup(
 private data class MaterialSourceGroup(
     val tasks: List<GeneratedStudyBlock>,
 )
+
+private data class UnscheduledSourceGroup(
+    val source: String?,
+    val tasks: List<GeneratedStudyBlock>,
+)
+
+private fun unscheduledSourceGroups(
+    tasks: List<GeneratedStudyBlock>,
+    documents: List<StudySourceDocument>,
+): List<UnscheduledSourceGroup> {
+    val groups = mutableListOf<UnscheduledSourceGroup>()
+    var currentSource: String? = null
+    var currentTasks = mutableListOf<GeneratedStudyBlock>()
+
+    tasks.sortedBy { it.order }.forEach { task ->
+        val source = taskSourceDocumentLabel(task, documents)
+        if (currentTasks.isEmpty() || source == currentSource) {
+            currentSource = source
+            currentTasks += task
+        } else {
+            groups += UnscheduledSourceGroup(currentSource, currentTasks)
+            currentSource = source
+            currentTasks = mutableListOf(task)
+        }
+    }
+
+    if (currentTasks.isNotEmpty()) {
+        groups += UnscheduledSourceGroup(currentSource, currentTasks)
+    }
+    return groups
+}
 
 private fun materialGroups(plan: GeneratedStudyPlan): List<MaterialGroup> {
     val documents = plan.sourceDocuments.sortedWith(compareBy<StudySourceDocument> { it.order }.thenBy { it.filename })
@@ -1779,22 +1809,68 @@ private fun DeadlineOption(title: String, description: String, onClick: () -> Un
 @Composable
 private fun DailyTimeSheet(currentMinutes: Int, blockMinutes: Int, onDismiss: () -> Unit, onApply: (Int) -> Unit) {
     var selected by remember { mutableIntStateOf(currentMinutes + blockMinutes) }
-    var custom by remember { mutableStateOf("") }
+    var customHours by remember { mutableStateOf("") }
+    var customMinutes by remember { mutableStateOf("") }
+    val hasCustomTime = customHours.isNotBlank() || customMinutes.isNotBlank()
+    val customHourValue = customHours.toIntOrNull()
+    val customMinuteValue = customMinutes.toIntOrNull()
+    val customHoursValid = customHours.isBlank() || customHourValue in 0..24
+    val customMinutesValid = customMinutes.isBlank() || customMinuteValue in 0..59
+    val customTotal = if (hasCustomTime && customHoursValid && customMinutesValid) {
+        ((customHourValue ?: 0) * 60 + (customMinuteValue ?: 0)).takeIf { it in 1..1_440 }
+    } else {
+        null
+    }
+    val canApply = !hasCustomTime || customTotal != null
     val options = listOf(currentMinutes + blockMinutes to R.string.add_one_block, currentMinutes + blockMinutes * 2 to R.string.add_two_blocks)
     ModalBottomSheet(onDismissRequest = onDismiss) {
         Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 28.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Text(stringResource(R.string.increase_daily_time), style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
             DetailRow(stringResource(R.string.current_daily_time), stringResource(R.string.minutes_per_day, formatMinutes(currentMinutes)))
             options.forEach { (minutes, label) ->
-                Surface(onClick = { selected = minutes }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp), color = if (selected == minutes) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant) {
+                Surface(
+                    onClick = {
+                        selected = minutes
+                        customHours = ""
+                        customMinutes = ""
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp),
+                    color = if (!hasCustomTime && selected == minutes) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant,
+                ) {
                     Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
                         Text(stringResource(label), modifier = Modifier.weight(1f), fontWeight = FontWeight.SemiBold)
                         Text(formatMinutes(minutes))
                     }
                 }
             }
-            OutlinedTextField(value = custom, onValueChange = { custom = it.filter(Char::isDigit).take(4); custom.toIntOrNull()?.let { value -> if (value in 1..1_440) selected = value } }, label = { Text(stringResource(R.string.custom_time)) }, suffix = { Text(stringResource(R.string.minutes_per_day_suffix)) }, singleLine = true, modifier = Modifier.fillMaxWidth())
-            Button(onClick = { onApply(selected.coerceIn(1, 1_440)) }, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.apply_changes)) }
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                OutlinedTextField(
+                    value = customHours,
+                    onValueChange = { customHours = it.filter(Char::isDigit).take(2) },
+                    label = { Text(stringResource(R.string.hours_label)) },
+                    singleLine = true,
+                    isError = hasCustomTime && !customHoursValid,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    modifier = Modifier.weight(1f),
+                )
+                OutlinedTextField(
+                    value = customMinutes,
+                    onValueChange = { customMinutes = it.filter(Char::isDigit).take(2) },
+                    label = { Text(stringResource(R.string.minutes_label)) },
+                    singleLine = true,
+                    isError = hasCustomTime && !customMinutesValid,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    modifier = Modifier.weight(1f),
+                )
+            }
+            Button(
+                onClick = { onApply((customTotal ?: selected).coerceIn(1, 1_440)) },
+                enabled = canApply,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text(stringResource(R.string.apply_changes))
+            }
         }
     }
 }
@@ -2197,7 +2273,27 @@ private fun realismWarningTitle(status: PlanRealismStatus) = when (status) {
 }
 
 @Composable
+private fun realismWarningMessage(realism: PlanRealism) = when (realism.status) {
+    PlanRealismStatus.OnTrack -> ""
+    PlanRealismStatus.Tight -> stringResource(
+        R.string.tight_plan_message,
+        formatMinutes(realism.remainingMinutes),
+        formatMinutes(realism.availableMinutes ?: 0),
+    )
+    PlanRealismStatus.Crammed -> stringResource(R.string.crammed_plan_message)
+    PlanRealismStatus.Overloaded -> stringResource(R.string.overloaded_plan_message)
+}
+
+@Composable
 private fun realismColor(status: PlanRealismStatus) = when (status) {
+    PlanRealismStatus.OnTrack -> MaterialTheme.colorScheme.primary
+    PlanRealismStatus.Tight -> MaterialTheme.colorScheme.tertiary
+    PlanRealismStatus.Crammed -> MaterialTheme.colorScheme.tertiary
+    PlanRealismStatus.Overloaded -> MaterialTheme.colorScheme.tertiary
+}
+
+@Composable
+private fun realismPillColor(status: PlanRealismStatus) = when (status) {
     PlanRealismStatus.OnTrack -> MaterialTheme.colorScheme.primary
     PlanRealismStatus.Tight -> MaterialTheme.colorScheme.tertiary
     PlanRealismStatus.Crammed -> MaterialTheme.colorScheme.tertiary
@@ -2209,7 +2305,7 @@ private fun realismContainer(status: PlanRealismStatus) = when (status) {
     PlanRealismStatus.OnTrack -> MaterialTheme.colorScheme.primaryContainer
     PlanRealismStatus.Tight -> MaterialTheme.colorScheme.tertiaryContainer
     PlanRealismStatus.Crammed -> MaterialTheme.colorScheme.tertiaryContainer
-    PlanRealismStatus.Overloaded -> MaterialTheme.colorScheme.errorContainer
+    PlanRealismStatus.Overloaded -> MaterialTheme.colorScheme.tertiaryContainer
 }
 
 @Composable
@@ -2217,7 +2313,7 @@ private fun realismContent(status: PlanRealismStatus) = when (status) {
     PlanRealismStatus.OnTrack -> MaterialTheme.colorScheme.onPrimaryContainer
     PlanRealismStatus.Tight -> MaterialTheme.colorScheme.onTertiaryContainer
     PlanRealismStatus.Crammed -> MaterialTheme.colorScheme.onTertiaryContainer
-    PlanRealismStatus.Overloaded -> MaterialTheme.colorScheme.onErrorContainer
+    PlanRealismStatus.Overloaded -> MaterialTheme.colorScheme.onTertiaryContainer
 }
 
 @Composable

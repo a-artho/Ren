@@ -237,7 +237,7 @@ private fun PlanTitleStep(
         modifier = Modifier
             .fillMaxWidth()
             .testTag("plan-title"),
-        label = { Text("Plan name") },
+        label = { Text("Course, exam, or topic") },
         placeholder = { Text("HCI final") },
         singleLine = true,
         shape = RoundedCornerShape(16.dp),

@@ -52,9 +52,11 @@
     <string name="plan_is_crammed">Crammed</string>
     <string name="plan_is_overloaded">Overloaded</string>
     <string name="tasks_completed_compact">%1$d / %2$d</string>
-    <string name="tight_plan_message">You need %1$s, but your available time is %2$s. Choose how you want to adjust it.</string>
+    <string name="tight_plan_message">Little room for surprises: about %1$s estimated for %2$s available.</string>
     <string name="crammed_plan_title">This plan is crammed</string>
+    <string name="crammed_plan_message">Some days are packed past their budget.</string>
     <string name="overloaded_plan_title">This plan is overloaded</string>
+    <string name="overloaded_plan_message">Some tasks are still outside the scheduled days.</string>
     <string name="choose_material">Choose material</string>
     <string name="choose_material_subtitle">Decide what stays in this plan.</string>
     <string name="increase_daily_time">Increase daily time</string>
@@ -165,15 +167,16 @@
     <string name="today_complete_empty_title">Everything planned is done</string>
     <string name="today_complete_empty_message">You can wrap up now or pull in more work if you want to keep going.</string>
     <string name="tomorrow">Tomorrow</string>
-    <string name="unscheduled_tasks">Unscheduled tasks</string>
-    <string name="unscheduled_explanation">These tasks do not fit within the current plan capacity.</string>
+    <string name="unscheduled_tasks">Needs room</string>
+    <string name="unscheduled_explanation">These tasks do not fit in the time budget.</string>
     <string name="not_scheduled">Not scheduled</string>
     <string name="current_deadline">Current deadline</string>
     <string name="apply_changes">Apply changes</string>
     <string name="current_daily_time">Current</string>
     <string name="add_one_block">Add 1 block/day</string>
     <string name="add_two_blocks">Add 2 blocks/day</string>
-    <string name="custom_time">Custom time</string>
+    <string name="hours_label">Hours</string>
+    <string name="minutes_label">Minutes</string>
     <string name="minutes_per_day">%1$s/day</string>
     <string name="choose_material_sheet_title">Choose material</string>
     <string name="choose_material_to_keep">Choose topics to keep</string>
@@ -211,7 +214,6 @@
     <string name="load_heavy">Dense</string>
     <string name="source_page">p. %1$d</string>
     <string name="source_page_range">pp. %1$d–%2$d</string>
-    <string name="source_with_page">%1$s • %2$s</string>
     <plurals name="source_page_count">
         <item quantity="one">%1$d page</item>
         <item quantity="other">%1$d pages</item>
@@ -236,5 +238,4 @@
     <string name="task_type_summary">Summary</string>
     <string name="task_type_mistake_review">Mistake Review</string>
     <string name="task_type_custom">Custom</string>
-    <string name="minutes_per_day_suffix">min/day</string>
 </resources>
