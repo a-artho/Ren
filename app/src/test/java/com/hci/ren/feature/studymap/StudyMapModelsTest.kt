@@ -48,9 +48,9 @@ class StudyMapModelsTest {
 
         assertEquals(ScheduleFitMode.LikelyFallback, schedule.fitMode)
         assertEquals(PlanRealismStatus.Tight, result.status)
-        assertEquals(4, result.shortageMinutes)
+        assertEquals(2, result.shortageMinutes)
         assertEquals(0, result.likelyShortageMinutes)
-        assertEquals(4, result.reservedShortageMinutes)
+        assertEquals(2, result.reservedShortageMinutes)
     }
 
     @Test fun farOverCapacityPlanIsOverloadedWhenItCannotBeScheduled() {
@@ -192,7 +192,7 @@ class StudyMapModelsTest {
 
         assertEquals(ScheduleFitMode.LikelyFallback, schedule.fitMode)
         assertEquals(100, day.fittedMinutes)
-        assertEquals(140, day.reservedMinutes)
+        assertEquals(120, day.reservedMinutes)
         assertTrue(day.isRisky)
         assertFalse(day.isOverCapacity)
         assertTrue(schedule.unscheduledTasks.isEmpty())
@@ -219,7 +219,7 @@ class StudyMapModelsTest {
         assertEquals(ScheduleFitMode.LikelyFallback, schedule.fitMode)
         assertEquals(listOf("locked", "auto"), day.tasks.map { it.id })
         assertEquals(100, day.fittedMinutes)
-        assertEquals(140, day.reservedMinutes)
+        assertEquals(120, day.reservedMinutes)
         assertTrue(day.isRisky)
         assertTrue(schedule.unscheduledTasks.isEmpty())
     }
@@ -228,7 +228,7 @@ class StudyMapModelsTest {
         val tasks = listOf(
             task("locked", 50).copy(
                 order = 1,
-                effortMaxMinutes = 90,
+                effortMaxMinutes = 94,
                 status = StudyTaskStatus.Locked,
                 scheduledDate = "2026-06-22",
             ),
@@ -243,7 +243,7 @@ class StudyMapModelsTest {
 
         assertEquals(ScheduleFitMode.LikelyFallback, data.schedule.fitMode)
         assertEquals(50, day.fittedMinutes)
-        assertEquals(70, day.reservedMinutes)
+        assertEquals(61, day.reservedMinutes)
         assertTrue(day.isRisky)
         assertFalse(day.isOverCapacity)
         assertEquals(PlanRealismStatus.Tight, data.realism.status)
@@ -435,8 +435,8 @@ class StudyMapModelsTest {
         )
 
         assertEquals(50, updated.effortLikelyMinutes)
-        assertEquals(65, updated.effectiveReservedMinutes())
-        assertEquals(80, updated.effectiveCognitivePoints())
+        assertEquals(58, updated.effectiveReservedMinutes())
+        assertEquals(71, updated.effectiveCognitivePoints())
     }
 
     @Test fun lockedTaskIsNotSelectedAsNextTask() {

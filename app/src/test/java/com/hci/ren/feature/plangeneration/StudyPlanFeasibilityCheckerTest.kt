@@ -80,10 +80,10 @@ class StudyPlanFeasibilityCheckerTest {
             monday,
         )
         assertEquals(450, result.totalLikelyMinutes)
-        assertEquals(630, result.totalReservedMinutes)
-        assertEquals(630, result.totalRequiredMinutes)
+        assertEquals(540, result.totalReservedMinutes)
+        assertEquals(540, result.totalRequiredMinutes)
         assertEquals(90, result.availableMinutesPerStudyDay)
-        assertEquals(7, result.recommendedDaysBalanced)
+        assertEquals(6, result.recommendedDaysBalanced)
         assertEquals(5, result.recommendedDaysIntensive)
     }
 

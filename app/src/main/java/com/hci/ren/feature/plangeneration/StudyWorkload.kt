@@ -17,9 +17,9 @@ object WorkloadEngine {
         val likely = block.effortLikelyMinutes.coerceAtLeast(minMinutes)
         val maxMinutes = block.effortMaxMinutes.coerceAtLeast(likely)
         val riskWeight = when (block.estimateConfidence) {
-            EstimateConfidence.High -> 0.25
-            EstimateConfidence.Medium -> 0.50
-            EstimateConfidence.Low -> 0.75
+            EstimateConfidence.High -> 0.0
+            EstimateConfidence.Medium -> 0.25
+            EstimateConfidence.Low -> 0.50
         }
         val reserved = ceil(likely + riskWeight * (maxMinutes - likely))
             .toInt()

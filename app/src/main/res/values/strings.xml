@@ -47,7 +47,7 @@
     <string name="study_map_save_error">We couldn’t save that change. Try again.</string>
     <string name="schedule_view">Tree</string>
     <string name="topics_view">Material</string>
-    <string name="on_track">On track</string>
+    <string name="on_track">Looks doable</string>
     <string name="plan_is_tight">Plan is tight</string>
     <string name="plan_is_crammed">Crammed</string>
     <string name="plan_is_overloaded">Overloaded</string>
@@ -200,7 +200,7 @@
         <item quantity="other">in %1$d days</item>
     </plurals>
     <string name="deadline_past">past deadline</string>
-    <string name="planned_metric_label">Planned work</string>
+    <string name="planned_metric_label">Likely workload</string>
     <string name="available_metric_label">Available time</string>
     <string name="next_task_preview">Next: %1$s</string>
     <string name="open_today">Tap to view</string>
