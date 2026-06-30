@@ -7,11 +7,11 @@ import com.hci.ren.feature.pdfupload.presentation.StudyGoal
 import com.hci.ren.feature.plangeneration.GeneratedStudyBlock
 import com.hci.ren.feature.plangeneration.GeneratedStudyPlan
 import com.hci.ren.feature.plangeneration.StudySourceRef
+import com.hci.ren.feature.plangeneration.StudyTaskStatus
 import com.hci.ren.feature.plangeneration.StudyTopic
 import java.util.Calendar
 import java.util.GregorianCalendar
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class StudyProjectPersistenceTest {
@@ -59,7 +59,6 @@ class StudyProjectPersistenceTest {
                         id = "b1",
                         title = "Dense bit",
                         order = 1,
-                        durationMinutes = 40,
                         effortMinMinutes = 30,
                         effortLikelyMinutes = 40,
                         effortMaxMinutes = 70,
@@ -69,7 +68,7 @@ class StudyProjectPersistenceTest {
                         densityScore = 4,
                         productionDemandScore = 3,
                         completionCriteria = listOf("Explain it without notes"),
-                        continuityGroup = "chapter-1",
+                        keepTogetherGroup = "chapter-1",
                         sourceRefs = listOf(
                             StudySourceRef(
                                 documentId = "doc1",
@@ -90,7 +89,7 @@ class StudyProjectPersistenceTest {
         val block = decoded.plan.blocks.single()
 
         assertEquals(listOf("Explain it without notes"), block.completionCriteria)
-        assertEquals("chapter-1", block.continuityGroup)
+        assertEquals("chapter-1", block.keepTogetherGroup)
         assertEquals("Atomic bit", block.sourceRefs.single().sectionTitle)
         assertEquals("Broad chapter", block.sourceRefs.single().materialGroupTitle)
     }
@@ -110,26 +109,28 @@ class StudyProjectPersistenceTest {
         assertEquals(mapOf("2026-06-22" to 15), decoded.dailyAvailableMinutesByDate)
     }
 
-    @Test fun taskProgressPersistsSeparatelyFromSourcePlan() {
+    @Test fun taskStatePersistsSeparatelyFromSourcePlan() {
         val project = newStudyProject(
             plan(listOf(GeneratedStudyBlock(
                 id = "chapter",
                 title = "Chapter",
                 order = 1,
-                durationMinutes = 100,
+                effortMinMinutes = 80,
+                effortLikelyMinutes = 100,
+                effortMaxMinutes = 120,
                 instructions = "Study",
                 topicIds = listOf("topic"),
             ))),
             preferences(),
             nowMillis = 100,
         ).copy(
-            taskProgressById = mapOf("chapter" to StudyTaskProgress(completedMinutes = 50)),
+            taskStateById = mapOf("chapter" to StudyTaskState(status = StudyTaskStatus.Completed)),
         )
 
         val decoded = StudyProjectJsonCodec.decode(StudyProjectJsonCodec.encode(project))
 
-        assertEquals(100, decoded.plan.blocks.single().durationMinutes)
-        assertEquals(StudyTaskProgress(completedMinutes = 50), decoded.taskProgressById["chapter"])
+        assertEquals(100, decoded.plan.blocks.single().effortLikelyMinutes)
+        assertEquals(StudyTaskState(status = StudyTaskStatus.Completed), decoded.taskStateById["chapter"])
     }
 
     @Test fun generatedProjectKeepsCanonicalBlocksBeforePersistence() {
@@ -140,20 +141,19 @@ class StudyProjectPersistenceTest {
                         id = "b1",
                         title = "Dense chapter",
                         order = 1,
-                        durationMinutes = 100,
                         effortMinMinutes = 70,
                         effortLikelyMinutes = 100,
                         effortMaxMinutes = 140,
                         instructions = "Study",
                         topicIds = listOf("topic"),
-                        minimumUsefulMinutes = 20,
-                        splitAllowed = true,
                     ),
                     GeneratedStudyBlock(
                         id = "b2",
                         title = "After",
                         order = 2,
-                        durationMinutes = 30,
+                        effortMinMinutes = 20,
+                        effortLikelyMinutes = 30,
+                        effortMaxMinutes = 45,
                         instructions = "Study",
                         topicIds = listOf("topic"),
                         dependencies = listOf("b1"),
@@ -165,8 +165,7 @@ class StudyProjectPersistenceTest {
         )
 
         assertEquals(listOf("b1", "b2"), generated.plan.blocks.map { it.id })
-        assertEquals(listOf(100, 30), generated.plan.blocks.map { it.durationMinutes })
-        assertTrue(generated.plan.blocks.first().splitAllowed)
+        assertEquals(listOf(100, 30), generated.plan.blocks.map { it.effortLikelyMinutes })
         assertEquals(listOf("b1"), generated.plan.blocks[1].dependencies)
     }
 
@@ -174,7 +173,6 @@ class StudyProjectPersistenceTest {
         id = "plan",
         topics = listOf(StudyTopic("topic", "Topic", 1)),
         blocks = blocks,
-        totalEstimatedMinutes = blocks.sumOf { it.durationMinutes },
         projectName = "Plan",
     )
 

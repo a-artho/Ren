@@ -203,6 +203,7 @@
     </plurals>
     <string name="load_light">Light</string>
     <string name="load_standard">Manageable</string>
+    <string name="load_tight">Tight</string>
     <string name="load_heavy">Dense</string>
     <string name="source_page">p. %1$d</string>
     <string name="source_page_range">pp. %1$d–%2$d</string>

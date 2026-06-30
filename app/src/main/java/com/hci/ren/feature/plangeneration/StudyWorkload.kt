@@ -4,46 +4,52 @@ import kotlin.math.ceil
 import kotlin.math.roundToInt
 
 data class StudyWorkload(
-    val robustMinutes: Int,
+    val minMinutes: Int,
+    val likelyMinutes: Int,
+    val maxMinutes: Int,
+    val reservedMinutes: Int,
     val cognitivePoints: Int,
 )
 
-fun GeneratedStudyBlock.localWorkload(): StudyWorkload {
-    val likely = effortLikelyMinutes.coerceAtLeast(durationMinutes).coerceAtLeast(1)
-    val maxMinutes = effortMaxMinutes.coerceAtLeast(likely)
-    val confidenceBuffer = when (estimateConfidence) {
-        EstimateConfidence.High -> 1.05
-        EstimateConfidence.Medium -> 1.12
-        EstimateConfidence.Low -> 1.25
-    }
-    val robust = ceil(likely * confidenceBuffer)
-        .toInt()
-        .coerceAtLeast(likely)
-        .coerceAtMost(maxMinutes)
+object WorkloadEngine {
+    fun estimate(block: GeneratedStudyBlock): StudyWorkload {
+        val minMinutes = block.effortMinMinutes.coerceAtLeast(1)
+        val likely = block.effortLikelyMinutes.coerceAtLeast(minMinutes)
+        val maxMinutes = block.effortMaxMinutes.coerceAtLeast(likely)
+        val riskWeight = when (block.estimateConfidence) {
+            EstimateConfidence.High -> 0.25
+            EstimateConfidence.Medium -> 0.50
+            EstimateConfidence.Low -> 0.75
+        }
+        val reserved = ceil(likely + riskWeight * (maxMinutes - likely))
+            .toInt()
+            .coerceIn(likely, maxMinutes)
 
-    val difficulty = normalizedScore(difficultyScore ?: difficulty.defaultScore)
-    val density = normalizedScore(densityScore ?: taskType.defaultDensityScore)
-    val production = normalizedScore(productionDemandScore ?: taskType.defaultProductionDemandScore)
-    val intensity = (taskType.baseIntensity + 0.20 * difficulty + 0.15 * density + 0.20 * production)
-        .coerceIn(0.65, 1.55)
-    val cognitive = (robust * intensity).roundToInt().coerceAtLeast(1)
-    return StudyWorkload(robust, cognitive)
+        val difficulty = normalizedScore(block.difficultyScore ?: 3)
+        val density = normalizedScore(block.densityScore ?: block.taskType.defaultDensityScore)
+        val production = normalizedScore(block.productionDemandScore ?: block.taskType.defaultProductionDemandScore)
+        val intensity = (block.taskType.baseIntensity + 0.20 * difficulty + 0.15 * density + 0.20 * production)
+            .coerceIn(0.65, 1.55)
+        val cognitive = (reserved * intensity).roundToInt().coerceAtLeast(1)
+        return StudyWorkload(minMinutes, likely, maxMinutes, reserved, cognitive)
+    }
 }
 
-fun GeneratedStudyBlock.effectiveRobustMinutes(): Int =
-    localWorkload().robustMinutes
+fun GeneratedStudyBlock.localWorkload(): StudyWorkload = WorkloadEngine.estimate(this)
+
+val GeneratedStudyBlock.likelyStudyMinutes: Int
+    get() = localWorkload().likelyMinutes
+
+val GeneratedStudyBlock.reservedStudyMinutes: Int
+    get() = localWorkload().reservedMinutes
+
+fun GeneratedStudyBlock.effectiveReservedMinutes(): Int =
+    localWorkload().reservedMinutes
 
 fun GeneratedStudyBlock.effectiveCognitivePoints(): Int =
     localWorkload().cognitivePoints
 
 private fun normalizedScore(value: Int): Double = (value.coerceIn(1, 5) - 1) / 4.0
-
-private val StudyBlockDifficulty.defaultScore: Int
-    get() = when (this) {
-        StudyBlockDifficulty.Light -> 2
-        StudyBlockDifficulty.Standard -> 3
-        StudyBlockDifficulty.Heavy -> 4
-    }
 
 private val StudyTaskType.defaultDensityScore: Int
     get() = when (this) {

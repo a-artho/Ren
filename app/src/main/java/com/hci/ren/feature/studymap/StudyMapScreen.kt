@@ -115,6 +115,8 @@ import com.hci.ren.feature.plangeneration.StudySourceDocument
 import com.hci.ren.feature.plangeneration.StudySourceRef
 import com.hci.ren.feature.plangeneration.StudyTaskStatus
 import com.hci.ren.feature.plangeneration.StudyTaskType
+import com.hci.ren.feature.plangeneration.likelyStudyMinutes
+import com.hci.ren.feature.plangeneration.reservedStudyMinutes
 import com.hci.ren.ui.components.PlanFlowCircleAction
 import com.hci.ren.ui.components.PlanLandingScaffold
 import com.hci.ren.ui.motion.isReducedMotionEnabled
@@ -134,7 +136,7 @@ fun StudyMapScreen(
     modifier: Modifier = Modifier,
     dailyMinutesOverride: Int? = null,
     dailyAvailableMinutesByDate: Map<String, Int> = emptyMap(),
-    taskProgressById: Map<String, StudyTaskProgress> = emptyMap(),
+    taskStateById: Map<String, StudyTaskState> = emptyMap(),
     acceptedTightPlan: Boolean = false,
     changeMessage: String? = null,
     suggestedDeadline: String? = null,
@@ -181,7 +183,7 @@ fun StudyMapScreen(
         preferences = preferences,
         dailyMinutesOverride = dailyMinutesOverride,
         dailyAvailableMinutesByDate = dailyAvailableMinutesByDate,
-        taskProgressById = taskProgressById,
+        taskStateById = taskStateById,
     )
 
     Scaffold(
@@ -522,7 +524,7 @@ private fun ProjectSummaryCard(data: StudyMapData) {
         ) {
             SummaryMetric(
                 label = stringResource(R.string.planned_metric_label),
-                value = formatMinutes(data.totalEstimatedMinutes),
+                value = formatMinutes(data.remainingReservedMinutes),
                 modifier = Modifier.weight(1f),
             )
             Box(
@@ -1298,7 +1300,7 @@ private fun MapTaskRowContent(
                 overflow = TextOverflow.Ellipsis,
             )
             Text(
-                text = "${formatMinutes(task.durationMinutes)} • ${taskTypeLabel(task.taskType)}",
+                text = "${formatMinutes(task.likelyStudyMinutes)} • ${taskTypeLabel(task.taskType)}",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -1405,7 +1407,7 @@ private fun TaskRowTextContent(
 ) {
     val meta = listOfNotNull(
         pageLabel,
-        formatMinutes(task.durationMinutes),
+        formatMinutes(task.likelyStudyMinutes),
         taskTypeLabel(task.taskType),
     ).joinToString(" \u2022 ")
     Column(modifier, verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -1460,6 +1462,7 @@ private fun TaskBullet(
 @Composable
 private fun dayLoadLabel(day: StudyScheduleDay): String = when {
     day.isOverCapacity -> stringResource(R.string.over_capacity)
+    day.isRisky -> stringResource(R.string.load_tight)
     else -> difficultyLabel(day.load)
 }
 
@@ -1539,7 +1542,7 @@ private fun MaterialSection(
 ) {
     var expanded by rememberSaveable(group.id) { mutableStateOf(initiallyExpanded) }
     val progress = TaskProgressCalculator().projectProgress(group.tasks)
-    val totalMinutes = group.tasks.sumOf { it.durationMinutes.coerceAtLeast(0) }
+    val totalMinutes = group.tasks.sumOf { it.reservedStudyMinutes.coerceAtLeast(0) }
     val pageLabel = group.document?.pageCount?.let { pluralStringResource(R.plurals.source_page_count, it, it) }
     val meta = listOfNotNull(
         "${progress.first} / ${progress.second}",
@@ -1677,7 +1680,6 @@ private fun GeneratedStudyBlock.materialSourceRef(group: MaterialGroup): StudySo
 
 private fun StudySourceRef.materialGroupDisplayTitle(): String? =
     materialGroupTitle?.takeIf { it.isNotBlank() }
-        ?: sectionTitle?.takeIf { it.isNotBlank() }
 
 @Composable
 private fun materialTaskMeta(task: GeneratedStudyBlock, group: MaterialGroup): String {
@@ -1689,7 +1691,7 @@ private fun materialTaskMeta(task: GeneratedStudyBlock, group: MaterialGroup): S
     }
     return listOfNotNull(
         pageLabel,
-        formatMinutes(task.durationMinutes),
+        formatMinutes(task.likelyStudyMinutes),
         taskTypeLabel(task.taskType),
     ).joinToString(" \u2022 ")
 }
@@ -2303,7 +2305,7 @@ private fun relativeDeadlineLabel(preferences: PlanSetupSubmission, today: Calen
 }
 
 private fun suggestedBlockMinutes(tasks: List<GeneratedStudyBlock>): Int {
-    val values = tasks.map { it.durationMinutes }.filter { it > 0 }.sorted()
+    val values = tasks.map { it.likelyStudyMinutes }.filter { it > 0 }.sorted()
     return (values.getOrNull(values.size / 2) ?: 30).coerceIn(15, 120)
 }
 

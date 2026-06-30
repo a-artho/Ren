@@ -7,7 +7,6 @@ import com.hci.ren.feature.plangeneration.StudyTaskStatus
 import com.hci.ren.feature.plangeneration.StudyTaskType
 import com.hci.ren.feature.plangeneration.requiredStudyMinutes
 import java.util.Calendar
-import kotlin.math.roundToInt
 
 enum class StudyMapView { Schedule, Topics }
 
@@ -21,10 +20,18 @@ data class StudyMapData(
     val activeTasks: List<GeneratedStudyBlock>
         get() = plan.blocks.filterNot { it.status == StudyTaskStatus.ExcludedByUser }
     val requiredTasks: List<GeneratedStudyBlock>
-        get() = activeTasks
-    val totalEstimatedMinutes: Int get() = requiredStudyMinutes(requiredTasks)
-    val completedTasks: Int get() = activeTasks.count { it.status == StudyTaskStatus.Completed }
-    val progress: Float get() = if (activeTasks.isEmpty()) 0f else completedTasks.toFloat() / activeTasks.size
+        get() = plan.blocks.filter(::countsTowardRequiredTime)
+    val totalLikelyMinutes: Int
+        get() = requiredTasks
+            .sumOf { it.effortLikelyMinutes.coerceAtLeast(1) }
+    val remainingLikelyMinutes: Int
+        get() = requiredTasks
+            .filter { it.status != StudyTaskStatus.Completed }
+            .sumOf { it.effortLikelyMinutes.coerceAtLeast(1) }
+    val totalReservedMinutes: Int get() = requiredStudyMinutes(requiredTasks, includeCompleted = true)
+    val remainingReservedMinutes: Int get() = requiredStudyMinutes(requiredTasks)
+    val completedTasks: Int get() = requiredTasks.count { it.status == StudyTaskStatus.Completed }
+    val progress: Float get() = if (requiredTasks.isEmpty()) 0f else completedTasks.toFloat() / requiredTasks.size
     val nextTask: GeneratedStudyBlock?
         get() {
             val completedIds = activeTasks.filter { it.status == StudyTaskStatus.Completed }.mapTo(mutableSetOf()) { it.id }
@@ -72,21 +79,6 @@ class PlanAdjustmentService {
         ScopeReductionPreview(ScopeReduction.ChooseTopics, 0),
     )
 
-    fun applyScope(
-        tasks: List<GeneratedStudyBlock>,
-        strategy: ScopeReduction,
-        selectedTopicIds: Set<String> = emptySet(),
-    ): List<GeneratedStudyBlock> = tasks.map { task ->
-        when (strategy) {
-            ScopeReduction.ChooseTopics -> if (selectedTopicIds.isNotEmpty() && task.topicIds.none(selectedTopicIds::contains)) task.excluded() else task
-        }
-    }
-
-    private fun GeneratedStudyBlock.excluded() = copy(
-        status = StudyTaskStatus.ExcludedByUser,
-        scheduledDate = null,
-    )
-
     companion object {
         const val MAX_DEADLINE_SEARCH_DAYS = 366 * 3
     }
@@ -94,7 +86,7 @@ class PlanAdjustmentService {
 
 class TaskProgressCalculator {
     fun projectProgress(tasks: List<GeneratedStudyBlock>): Pair<Int, Int> {
-        val included = tasks.filterNot { it.status == StudyTaskStatus.ExcludedByUser }
+        val included = tasks.filter(::countsTowardRequiredTime)
         return included.count { it.status == StudyTaskStatus.Completed } to included.size
     }
 
@@ -107,12 +99,12 @@ internal fun buildStudyMapData(
     preferences: PlanSetupSubmission,
     dailyMinutesOverride: Int? = null,
     dailyAvailableMinutesByDate: Map<String, Int> = emptyMap(),
-    taskProgressById: Map<String, StudyTaskProgress> = emptyMap(),
+    taskStateById: Map<String, StudyTaskState> = emptyMap(),
     today: Calendar = currentStudyCalendar(preferences),
 ): StudyMapData {
     val dailyMinutes = dailyMinutesOverride ?: preferences.dailyStudyMinutes
     val schedulingPreferences = preferences.copy(dailyStudyMinutes = dailyMinutes)
-    val schedulingPlan = plan.applyTaskProgress(taskProgressById)
+    val schedulingPlan = plan.applyTaskState(taskStateById)
     val schedule = StudyScheduleCalculator().calculate(
         tasks = schedulingPlan.blocks,
         preferences = schedulingPreferences,
@@ -135,52 +127,13 @@ internal fun countsTowardRequiredTime(task: GeneratedStudyBlock): Boolean =
 internal val StudyTaskType.isReviewType: Boolean
     get() = this in setOf(StudyTaskType.Review, StudyTaskType.Summary, StudyTaskType.MistakeReview)
 
-internal fun GeneratedStudyBlock.withLocalDuration(minutes: Int): GeneratedStudyBlock {
-    val coerced = minutes.coerceIn(1, 1_440)
-    val newMinimum = minOf(minimumUsefulMinutes, coerced).coerceAtLeast(1)
-    val newEffortMin = minOf(coerced, maxOf(1, newMinimum, (coerced * 0.7).roundToInt()))
-    val newEffortMax = maxOf(coerced, (coerced * 1.35).roundToInt())
-    return copy(
-        durationMinutes = coerced,
-        estimatedMinutes = coerced,
-        minimumUsefulMinutes = newMinimum,
-        effortMinMinutes = newEffortMin,
-        effortLikelyMinutes = coerced,
-        effortMaxMinutes = newEffortMax.coerceAtMost(1_440),
-    )
-}
-
-private fun GeneratedStudyPlan.applyTaskProgress(
-    progressById: Map<String, StudyTaskProgress>,
+private fun GeneratedStudyPlan.applyTaskState(
+    stateById: Map<String, StudyTaskState>,
 ): GeneratedStudyPlan {
-    if (progressById.isEmpty()) return this
+    if (stateById.isEmpty()) return this
     val updatedBlocks = blocks.map { block ->
-        if (block.status in SourceStatusOverridesProgress) return@map block
-        val progress = progressById[block.id] ?: return@map block
-        val total = block.durationMinutes.coerceAtLeast(1)
-        val completed = progress.completedMinutes.coerceIn(0, total)
-        val removed = progress.removedMinutes.coerceIn(0, total - completed)
-        val remaining = (total - completed - removed).coerceAtLeast(0)
-        when {
-            completed >= total -> block.copy(status = StudyTaskStatus.Completed)
-            remaining == 0 -> block.copy(status = StudyTaskStatus.ExcludedByUser)
-            completed > 0 -> block
-                .withLocalDuration(remaining)
-                .copy(status = StudyTaskStatus.InProgress)
-            removed > 0 -> block.withLocalDuration(remaining)
-            else -> block
-        }
+        val state = stateById[block.id] ?: return@map block
+        block.copy(status = state.status, scheduledDate = state.scheduledDate)
     }
-    return copy(
-        blocks = updatedBlocks,
-        totalEstimatedMinutes = updatedBlocks
-            .filter(::countsTowardRequiredTime)
-            .sumOf { it.durationMinutes },
-    )
+    return copy(blocks = updatedBlocks)
 }
-
-private val SourceStatusOverridesProgress = setOf(
-    StudyTaskStatus.Completed,
-    StudyTaskStatus.DeferredByUser,
-    StudyTaskStatus.ExcludedByUser,
-)

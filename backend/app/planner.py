@@ -8,7 +8,6 @@ from .models import (
     SourceDocumentInfo,
     SourceRef,
     StudyBlock,
-    StudyTaskStatus,
 )
 from .provider import SourceDocument
 
@@ -104,13 +103,12 @@ def normalize_plan(plan: GeneratedPlan, source_documents: list[SourceDocumentInf
         blocks.append(
             StudyBlock.model_validate(
                 {
-                    **block.model_dump(exclude={"scheduledDate"}),
+                    **block.model_dump(),
                     "id": block_id_map[block.id],
                     "order": index,
                     "topicIds": topic_ids,
                     "sourceRefs": [ref.model_dump() for ref in refs],
                     "dependencies": dependencies,
-                    "status": StudyTaskStatus.NOT_STARTED,
                 }
             )
         )

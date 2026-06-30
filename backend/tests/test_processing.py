@@ -18,7 +18,8 @@ class FakeProvider(AIProvider):
         if self.calls <= self.failures: raise ValueError("invalid provider output")
         return GeneratedPlan.model_validate({
             "topics": [{"id": "t1", "title": "Topic", "order": 1}],
-            "blocks": [{"id": "b1", "title": "Block", "order": 1, "durationMinutes": 20,
+            "blocks": [{"id": "b1", "title": "Block", "order": 1,
+                        "effortMinMinutes": 10, "effortLikelyMinutes": 20, "effortMaxMinutes": 30,
                         "instructions": "Review the topic.", "topicIds": ["t1"]}],
         })
 

@@ -269,7 +269,7 @@ class PlanGenerationViewModel(application: Application) : AndroidViewModel(appli
     }
 
     fun retry() {
-        val completedPlan = fetchedPlan?.withScheduledTotal()
+        val completedPlan = fetchedPlan
         val completedSubmission = submission
         if (completedPlan != null && completedSubmission != null && _uiState.value.status == PlanStatus.Failed) {
             viewModelScope.launch {
@@ -348,7 +348,7 @@ class PlanGenerationViewModel(application: Application) : AndroidViewModel(appli
                 
                 if (step == PlanStatus.Completed) {
                     delay(COMPLETION_SETTLE_DURATION)
-                    val plan = fetchedPlan?.withScheduledTotal()
+                    val plan = fetchedPlan
                     val currentSubmission = submission
                     if (plan == null || currentSubmission == null) {
                         fail()
@@ -669,8 +669,4 @@ private data class PreparedDocumentUpload(
     val uri: String,
     val uploadRequestId: String,
     val documentId: String? = null,
-)
-
-private fun GeneratedStudyPlan.withScheduledTotal() = copy(
-    totalEstimatedMinutes = blocks.filterNot { it.status == StudyTaskStatus.ExcludedByUser }.sumOf { it.durationMinutes },
 )

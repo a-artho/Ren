@@ -112,50 +112,11 @@ class StudyTaskType(StrEnum):
     CUSTOM = "CUSTOM"
 
 
-class Difficulty(StrEnum):
-    LIGHT = "LIGHT"
-    STANDARD = "STANDARD"
-    HEAVY = "HEAVY"
-
-
 class EstimateConfidence(StrEnum):
     LOW = "LOW"
     MEDIUM = "MEDIUM"
     HIGH = "HIGH"
 
-
-class StudyTaskStatus(StrEnum):
-    NOT_STARTED = "NOT_STARTED"
-    IN_PROGRESS = "IN_PROGRESS"
-    COMPLETED = "COMPLETED"
-    DEFERRED_BY_USER = "DEFERRED_BY_USER"
-    LOCKED = "LOCKED"
-    OVERDUE = "OVERDUE"
-    RESCHEDULED = "RESCHEDULED"
-    EXCLUDED_BY_USER = "EXCLUDED_BY_USER"
-    UNSCHEDULED = "UNSCHEDULED"
-    OVER_CAPACITY = "OVER_CAPACITY"
-
-
-TASK_TYPE_MINIMUMS = {
-    StudyTaskType.CONCEPT: 10,
-    StudyTaskType.PRACTICE: 10,
-    StudyTaskType.REVIEW: 10,
-    StudyTaskType.MOCK_TEST: 10,
-    StudyTaskType.MEMORIZATION: 10,
-    StudyTaskType.READING: 10,
-    StudyTaskType.SUMMARY: 10,
-    StudyTaskType.MISTAKE_REVIEW: 10,
-    StudyTaskType.QUIZ: 10,
-    StudyTaskType.CUSTOM: 5,
-}
-
-
-DIFFICULTY_SCORE_DEFAULTS = {
-    Difficulty.LIGHT: 2,
-    Difficulty.STANDARD: 3,
-    Difficulty.HEAVY: 4,
-}
 
 TASK_TYPE_PRODUCTION_DEFAULTS = {
     StudyTaskType.CONCEPT: 3,
@@ -189,48 +150,28 @@ class StudyBlock(BaseModel):
     id: str = Field(min_length=1)
     title: str = Field(min_length=1)
     order: int = Field(ge=1)
-    durationMinutes: int | None = Field(default=None, gt=0, le=1440)
-    estimatedMinutes: int | None = Field(default=None, gt=0, le=1440)
-    minimumUsefulMinutes: int = Field(default=10, gt=0, le=1440)
     taskType: StudyTaskType = StudyTaskType.REVIEW
     instructions: str = Field(min_length=1)
     topicIds: list[str] = Field(min_length=1)
     sourceRefs: list[SourceRef] = Field(default_factory=list)
-    difficulty: Difficulty = Difficulty.STANDARD
     difficultyScore: int | None = Field(default=None, ge=1, le=5)
     densityScore: int | None = Field(default=None, ge=1, le=5)
     productionDemandScore: int | None = Field(default=None, ge=1, le=5)
     estimateConfidence: EstimateConfidence = EstimateConfidence.MEDIUM
-    effortMinMinutes: int | None = Field(default=None, gt=0, le=1440)
-    effortLikelyMinutes: int | None = Field(default=None, gt=0, le=1440)
-    effortMaxMinutes: int | None = Field(default=None, gt=0, le=1440)
+    effortMinMinutes: int = Field(gt=0, le=1440)
+    effortLikelyMinutes: int = Field(gt=0, le=1440)
+    effortMaxMinutes: int = Field(gt=0, le=1440)
     completionCriteria: list[str] = Field(default_factory=list)
-    splitAllowed: bool = True
-    continuityGroup: str | None = None
+    keepTogetherGroup: str | None = None
     dependencies: list[str] = Field(default_factory=list)
-    status: StudyTaskStatus = StudyTaskStatus.NOT_STARTED
-    scheduledDate: str | None = None
 
     @model_validator(mode="after")
     def validate_workload_fields(self):
-        minimum_floor = TASK_TYPE_MINIMUMS.get(self.taskType, 5)
-        self.minimumUsefulMinutes = max(self.minimumUsefulMinutes, minimum_floor)
-        minutes = self.estimatedMinutes or self.durationMinutes or self.minimumUsefulMinutes
-        minutes = max(minutes, self.minimumUsefulMinutes)
-        self.estimatedMinutes = minutes
-        self.durationMinutes = minutes
-        likely = self.effortLikelyMinutes or minutes
-        likely = max(likely, self.minimumUsefulMinutes)
-        min_minutes = self.effortMinMinutes or max(self.minimumUsefulMinutes, round(likely * 0.7))
-        max_minutes = self.effortMaxMinutes or max(likely, round(likely * 1.35))
-        min_minutes = min(max(min_minutes, self.minimumUsefulMinutes), likely)
-        max_minutes = max(max_minutes, likely)
-        self.effortMinMinutes = min_minutes
-        self.effortLikelyMinutes = likely
-        self.effortMaxMinutes = max_minutes
-        self.difficultyScore = self.difficultyScore or DIFFICULTY_SCORE_DEFAULTS.get(self.difficulty, 3)
+        self.effortLikelyMinutes = max(self.effortLikelyMinutes, self.effortMinMinutes)
+        self.effortMaxMinutes = max(self.effortMaxMinutes, self.effortLikelyMinutes)
         self.densityScore = self.densityScore or TASK_TYPE_DENSITY_DEFAULTS.get(self.taskType, 3)
         self.productionDemandScore = self.productionDemandScore or TASK_TYPE_PRODUCTION_DEFAULTS.get(self.taskType, 3)
+        self.difficultyScore = self.difficultyScore or 3
         self.completionCriteria = [item.strip() for item in self.completionCriteria if item.strip()]
         return self
 

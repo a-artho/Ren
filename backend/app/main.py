@@ -9,7 +9,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from dotenv import load_dotenv
-from .models import CreatePlanRequest, GeneratedPlan, PlanStatus, Setup, StudyTaskStatus
+from .models import CreatePlanRequest, GeneratedPlan, PlanStatus, Setup
 from .pdf_parser import parse_pdf_metadata
 from .planner import build_master_plan
 from .provider import AIProvider, GeminiProvider, PreparedGeminiFile, SourceDocument
@@ -374,9 +374,4 @@ def get_plan(plan_id: str):
             "sourceDocuments": dumped.get("sourceDocuments", []),
             "extractionWarnings": dumped.get("extractionWarnings", []),
             "topics": dumped["topics"],
-            "blocks": dumped["blocks"],
-            "totalEstimatedMinutes": sum(
-                b.durationMinutes or 0
-                for b in result.blocks
-                if b.status != StudyTaskStatus.EXCLUDED_BY_USER
-            )}
+            "blocks": dumped["blocks"]}

@@ -20,7 +20,7 @@ from app.provider import (
     format_global_effort_context,
     semantic_extractions_to_generated_plan,
 )
-from app.models import Difficulty, GeneratedPlan, Setup
+from app.models import GeneratedPlan, Setup
 
 
 def test_semantic_schema_is_accepted_by_installed_gemini_sdk():
@@ -67,8 +67,7 @@ def test_semantic_extraction_canonicalizes_into_generated_plan(tmp_path):
                 "difficultyScore": 4,
                 "densityScore": 3,
                 "productionDemandScore": 3,
-                "splitAllowed": True,
-                "continuityLabel": "modes",
+                "keepTogetherLabel": "modes",
                 "prerequisiteLocalBlockIndexes": [],
             },
             {
@@ -89,8 +88,7 @@ def test_semantic_extraction_canonicalizes_into_generated_plan(tmp_path):
                 "difficultyScore": 5,
                 "densityScore": 4,
                 "productionDemandScore": 4,
-                "splitAllowed": False,
-                "continuityLabel": "",
+                "keepTogetherLabel": "",
                 "prerequisiteLocalBlockIndexes": [1],
             },
         ],
@@ -115,15 +113,13 @@ def test_semantic_extraction_canonicalizes_into_generated_plan(tmp_path):
     assert plan.title == "HCI final"
     assert [topic.id for topic in plan.topics] == ["doc1-topic-1", "doc1-topic-2"]
     assert [block.id for block in plan.blocks] == ["doc1-block-1", "doc1-block-2"]
-    assert plan.blocks[0].durationMinutes == 35
-    assert plan.blocks[0].estimatedMinutes == 35
+    assert plan.blocks[0].effortLikelyMinutes == 35
     assert plan.blocks[0].effortMaxMinutes == 50
-    assert plan.blocks[0].difficulty == Difficulty.HEAVY
+    assert plan.blocks[0].difficultyScore == 4
     assert plan.blocks[0].sourceRefs[0].documentId == "doc1"
     assert plan.blocks[0].sourceRefs[0].sectionTitle == "Modes"
     assert plan.blocks[0].sourceRefs[0].materialGroupTitle == "Block cipher modes"
     assert plan.blocks[1].dependencies == ["doc1-block-1"]
-    assert plan.blocks[1].status.value == "NOT_STARTED"
     assert plan.extractionWarnings[0].message == "Page labels were ambiguous."
 
 
@@ -268,11 +264,9 @@ def test_global_effort_calibration_updates_effort_without_changing_source_map(tm
                 "id": "doc1-block-1",
                 "title": "Foundation",
                 "order": 1,
-                "durationMinutes": 60,
                 "effortMinMinutes": 40,
                 "effortLikelyMinutes": 60,
                 "effortMaxMinutes": 90,
-                "minimumUsefulMinutes": 20,
                 "taskType": "CONCEPT",
                 "instructions": "Learn it.",
                 "topicIds": ["t1"],
@@ -297,10 +291,8 @@ def test_global_effort_calibration_updates_effort_without_changing_source_map(tm
 
     calibrated = apply_global_effort_calibration(plan, calibration)
 
-    assert calibrated.blocks[0].durationMinutes == 20
-    assert calibrated.blocks[0].estimatedMinutes == 20
-    assert calibrated.blocks[0].effortMinMinutes == 20
-    assert calibrated.blocks[0].effortLikelyMinutes == 20
+    assert calibrated.blocks[0].effortMinMinutes == 5
+    assert calibrated.blocks[0].effortLikelyMinutes == 15
     assert calibrated.blocks[0].effortMaxMinutes == 25
     assert calibrated.blocks[0].estimateConfidence.value == "HIGH"
     assert calibrated.blocks[0].sourceRefs == plan.blocks[0].sourceRefs
@@ -317,11 +309,9 @@ def test_global_effort_calibration_ignores_unchanged_adjustments():
                 "id": "doc1-block-1",
                 "title": "Keep effort",
                 "order": 1,
-                "durationMinutes": 45,
                 "effortMinMinutes": 30,
                 "effortLikelyMinutes": 45,
                 "effortMaxMinutes": 60,
-                "minimumUsefulMinutes": 20,
                 "taskType": "CONCEPT",
                 "instructions": "Learn it.",
                 "topicIds": ["t1"],
@@ -344,7 +334,6 @@ def test_global_effort_calibration_ignores_unchanged_adjustments():
 
     calibrated = apply_global_effort_calibration(plan, calibration)
 
-    assert calibrated.blocks[0].durationMinutes == 45
     assert calibrated.blocks[0].effortMinMinutes == 30
     assert calibrated.blocks[0].effortLikelyMinutes == 45
     assert calibrated.blocks[0].effortMaxMinutes == 60
@@ -361,8 +350,9 @@ def test_global_effort_context_includes_instructions(tmp_path):
                 "id": "doc1-block-1",
                 "title": "Worked examples",
                 "order": 1,
-                "durationMinutes": 35,
-                "minimumUsefulMinutes": 10,
+                "effortMinMinutes": 20,
+                "effortLikelyMinutes": 35,
+                "effortMaxMinutes": 50,
                 "taskType": "PRACTICE",
                 "instructions": "Redo the worked factoring examples without looking.",
                 "topicIds": ["t1"],
@@ -437,8 +427,7 @@ def test_gemini_provider_uses_file_api_for_semantic_extraction(tmp_path, monkeyp
                 "difficultyScore": 3,
                 "densityScore": 3,
                 "productionDemandScore": 3,
-                "splitAllowed": True,
-                "continuityLabel": "",
+                "keepTogetherLabel": "",
                 "prerequisiteLocalBlockIndexes": [],
             }
         ],
@@ -500,8 +489,8 @@ def test_gemini_provider_uses_file_api_for_semantic_extraction(tmp_path, monkeyp
     assert provider.client.aio.files.deleted == "files/test"
     assert provider.client.aio.models.config.response_schema == GEMINI_SEMANTIC_SCHEMA
     assert plan.blocks[0].id == "doc1-block-1"
-    assert plan.blocks[0].durationMinutes == 25
-    assert plan.blocks[0].sourceRefs[0].materialGroupTitle == "Section"
+    assert plan.blocks[0].effortLikelyMinutes == 25
+    assert plan.blocks[0].sourceRefs[0].materialGroupTitle == ""
 
 
 def test_gemini_provider_reuses_prepared_gemini_file(tmp_path, monkeypatch):
@@ -528,8 +517,7 @@ def test_gemini_provider_reuses_prepared_gemini_file(tmp_path, monkeypatch):
                 "difficultyScore": 3,
                 "densityScore": 3,
                 "productionDemandScore": 3,
-                "splitAllowed": True,
-                "continuityLabel": "",
+                "keepTogetherLabel": "",
                 "prerequisiteLocalBlockIndexes": [],
             }
         ],
@@ -612,8 +600,7 @@ def test_gemini_provider_clears_stale_prepared_file_and_retries_upload(tmp_path,
                 "difficultyScore": 3,
                 "densityScore": 3,
                 "productionDemandScore": 3,
-                "splitAllowed": True,
-                "continuityLabel": "",
+                "keepTogetherLabel": "",
                 "prerequisiteLocalBlockIndexes": [],
             }
         ],
@@ -717,8 +704,7 @@ def test_gemini_provider_calibrates_multi_pdf_effort(tmp_path, monkeypatch):
                     "difficultyScore": 3,
                     "densityScore": 3,
                     "productionDemandScore": 3,
-                    "splitAllowed": True,
-                    "continuityLabel": "",
+                    "keepTogetherLabel": "",
                     "prerequisiteLocalBlockIndexes": [],
                 }
             ],
@@ -802,7 +788,7 @@ def test_gemini_provider_calibrates_multi_pdf_effort(tmp_path, monkeypatch):
 
     assert provider.client.aio.models.schemas.count(GEMINI_SEMANTIC_SCHEMA) == 2
     assert provider.client.aio.models.schemas.count(GLOBAL_EFFORT_CALIBRATION_SCHEMA) == 1
-    assert [block.durationMinutes for block in plan.blocks] == [60, 30]
+    assert [block.effortLikelyMinutes for block in plan.blocks] == [60, 30]
     assert plan.blocks[1].sourceRefs[0].documentId == "doc2"
     assert plan.blocks[1].sourceRefs[0].startPage == 1
     assert plan.blocks[1].estimateConfidence.value == "HIGH"
@@ -832,8 +818,7 @@ def test_gemini_provider_reuses_cached_semantic_extraction(tmp_path, monkeypatch
                 "difficultyScore": 3,
                 "densityScore": 3,
                 "productionDemandScore": 3,
-                "splitAllowed": True,
-                "continuityLabel": "",
+                "keepTogetherLabel": "",
                 "prerequisiteLocalBlockIndexes": [],
             }
         ],
@@ -898,7 +883,7 @@ def test_gemini_provider_reuses_cached_semantic_extraction(tmp_path, monkeypatch
     assert "First plan" not in provider.client.aio.models.contents[-1]
     assert first.title == "First plan"
     assert second.title == "Second plan"
-    assert second.blocks[0].durationMinutes == 25
+    assert second.blocks[0].effortLikelyMinutes == 25
     assert list((tmp_path / "cache").rglob("*.json"))
 
 
@@ -950,8 +935,9 @@ class RecordingProvider(AIProvider):
         return GeneratedPlan(
             title="Test",
             topics=[{"id": "t1", "title": "Topic", "order": 1}],
-            blocks=[{"id": "b1", "title": "Block", "order": 1, "durationMinutes": 20,
-                      "minimumUsefulMinutes": 10, "taskType": "REVIEW",
+            blocks=[{"id": "b1", "title": "Block", "order": 1,
+                      "effortMinMinutes": 10, "effortLikelyMinutes": 20, "effortMaxMinutes": 30,
+                      "taskType": "REVIEW",
                       "instructions": "Read", "topicIds": ["t1"]}],
         )
 

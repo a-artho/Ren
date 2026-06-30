@@ -88,10 +88,15 @@ class StudyPlanFeasibilityCheckerTest {
     private fun block(
         id: String = "b1",
         minutes: Int,
-        minimum: Int = 10,
     ) = GeneratedStudyBlock(
-        id = id, title = id, order = 1, durationMinutes = minutes,
-        instructions = "Review", topicIds = listOf("t1"), minimumUsefulMinutes = minimum,
+        id = id,
+        title = id,
+        order = 1,
+        effortMinMinutes = minutes,
+        effortLikelyMinutes = minutes,
+        effortMaxMinutes = minutes,
+        instructions = "Review",
+        topicIds = listOf("t1"),
         taskType = StudyTaskType.Review,
     )
 

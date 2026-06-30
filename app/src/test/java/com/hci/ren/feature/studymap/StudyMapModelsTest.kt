@@ -10,7 +10,8 @@ import com.hci.ren.feature.plangeneration.StudyBlockDifficulty
 import com.hci.ren.feature.plangeneration.StudyTaskStatus
 import com.hci.ren.feature.plangeneration.StudyTaskType
 import com.hci.ren.feature.plangeneration.effectiveCognitivePoints
-import com.hci.ren.feature.plangeneration.effectiveRobustMinutes
+import com.hci.ren.feature.plangeneration.effectiveReservedMinutes
+import com.hci.ren.feature.plangeneration.reservedStudyMinutes
 import java.util.Calendar
 import java.util.GregorianCalendar
 import org.junit.Assert.assertEquals
@@ -43,6 +44,8 @@ class StudyMapModelsTest {
 
         assertEquals(PlanRealismStatus.Tight, result.status)
         assertEquals(4, result.shortageMinutes)
+        assertEquals(4, result.likelyShortageMinutes)
+        assertEquals(4, result.reservedShortageMinutes)
     }
 
     @Test fun farOverCapacityPlanIsUnrealistic() {
@@ -83,24 +86,29 @@ class StudyMapModelsTest {
         assertTrue(schedule.unscheduledTasks.isEmpty())
     }
 
-    @Test fun chosenTopicScopeExcludesOtherTopicsFromRequiredTimeAndTopicCounts() {
+    @Test fun chosenTopicScopeStateExcludesOtherTopicsFromRequiredTimeAndTopicCounts() {
         val tasks = listOf(
             task("kept", 60, topic = "a"),
             task("removed", 60, topic = "b"),
         )
-        val reduced = PlanAdjustmentService().applyScope(tasks, ScopeReduction.ChooseTopics, selectedTopicIds = setOf("a"))
-        val data = buildStudyMapData(plan(reduced), submission(60, StudyDeadline.InThreeDays), today = monday)
+        val data = buildStudyMapData(
+            plan(tasks),
+            submission(60, StudyDeadline.InThreeDays),
+            taskStateById = mapOf("removed" to StudyTaskState(status = StudyTaskStatus.ExcludedByUser)),
+            today = monday,
+        )
 
-        assertEquals(60, data.totalEstimatedMinutes)
-        assertEquals(StudyTaskStatus.ExcludedByUser, reduced.single { it.id == "removed" }.status)
-        assertEquals(0 to 0, TaskProgressCalculator().topicProgress(reduced, "b"))
+        assertEquals(60, data.totalReservedMinutes)
+        assertEquals(StudyTaskStatus.NotStarted, tasks.single { it.id == "removed" }.status)
+        assertEquals(StudyTaskStatus.ExcludedByUser, data.plan.blocks.single { it.id == "removed" }.status)
+        assertEquals(0 to 0, TaskProgressCalculator().topicProgress(data.plan.blocks, "b"))
     }
 
     @Test fun overflowTasksRemainVisibleAndDailyTotalsMatchVisibleDurations() {
         val tasks = listOf(task("one", 45), task("two", 45), task("three", 45))
         val schedule = StudyScheduleCalculator().calculate(tasks, submission(60, StudyDeadline.ChooseDate, "2026-06-23"), monday)
 
-        assertEquals(schedule.days.single().tasks.sumOf { it.durationMinutes }, schedule.days.single().totalScheduledMinutes)
+        assertEquals(schedule.days.single().tasks.sumOf { it.reservedStudyMinutes }, schedule.days.single().totalScheduledMinutes)
         assertEquals(2, schedule.unscheduledTasks.size)
         assertTrue(schedule.unscheduledTasks.all { it.status == StudyTaskStatus.Unscheduled })
     }
@@ -164,6 +172,27 @@ class StudyMapModelsTest {
         assertEquals(StudyTaskStatus.Unscheduled, schedule.unscheduledTasks.single().status)
     }
 
+    @Test fun scheduleReportsLikelyFallbackWhenReservedDoesNotFit() {
+        val tasks = listOf(
+            task("first", 50).copy(order = 1, effortMaxMinutes = 90),
+            task("second", 50).copy(order = 2, effortMaxMinutes = 90),
+        )
+
+        val schedule = StudyScheduleCalculator().calculate(
+            tasks,
+            submission(100, StudyDeadline.ChooseDate, "2026-06-23"),
+            monday,
+        )
+        val day = schedule.days.single()
+
+        assertEquals(ScheduleFitMode.LikelyFallback, schedule.fitMode)
+        assertEquals(100, day.fittedMinutes)
+        assertEquals(140, day.reservedMinutes)
+        assertTrue(day.isRisky)
+        assertFalse(day.isOverCapacity)
+        assertTrue(schedule.unscheduledTasks.isEmpty())
+    }
+
     @Test fun scheduleAllowsDependenciesAfterEarlierBlocksAreScheduled() {
         val tasks = listOf(
             task("first", 30).copy(order = 1),
@@ -224,70 +253,50 @@ class StudyMapModelsTest {
         assertEquals("2026-06-23", schedule.days.flatMap { it.tasks }.single { it.id == "auto" }.scheduledDate)
     }
 
-    @Test fun activeProgressReducesRemainingWorkWithoutChangingSourceIdentity() {
-        val canonical = task("chapter", 100).copy(
-            order = 1,
-            minimumUsefulMinutes = 20,
-            splitAllowed = true,
-        )
+    @Test fun activeStateMarksTaskCompletedWithoutChangingSourceEffort() {
+        val canonical = task("chapter", 100).copy(order = 1)
         val data = buildStudyMapData(
             plan(listOf(canonical)),
             submission(60, StudyDeadline.InThreeDays),
-            taskProgressById = mapOf("chapter" to StudyTaskProgress(completedMinutes = 50)),
+            taskStateById = mapOf("chapter" to StudyTaskState(status = StudyTaskStatus.Completed)),
             today = monday,
         )
 
         assertEquals(listOf("chapter"), data.plan.blocks.map { it.id })
-        assertEquals(listOf(50), data.plan.blocks.map { it.durationMinutes })
-        assertEquals(StudyTaskStatus.InProgress, data.plan.blocks.single().status)
-        assertEquals(listOf("chapter"), data.schedule.days.flatMap { it.tasks }.map { it.id })
+        assertEquals(listOf(100), data.plan.blocks.map { it.effortLikelyMinutes })
+        assertEquals(StudyTaskStatus.Completed, data.plan.blocks.single().status)
+        assertTrue(data.schedule.days.isEmpty())
+        assertEquals(1, data.completedTasks)
     }
 
-    @Test fun removedOnlyActiveProgressReducesWorkWithoutMarkingStarted() {
+    @Test fun excludedActiveStateRemovesTaskWithoutChangingSourceEffort() {
         val canonical = task("chapter", 100).copy(order = 1)
         val data = buildStudyMapData(
             plan(listOf(canonical)),
             submission(60, StudyDeadline.InThreeDays),
-            taskProgressById = mapOf("chapter" to StudyTaskProgress(removedMinutes = 40)),
-            today = monday,
-        )
-
-        val remaining = data.plan.blocks.single()
-        assertEquals(60, remaining.durationMinutes)
-        assertEquals(StudyTaskStatus.NotStarted, remaining.status)
-        assertEquals(listOf("chapter"), data.schedule.days.flatMap { it.tasks }.map { it.id })
-    }
-
-    @Test fun explicitSourceStatusWinsOverStaleProgress() {
-        val canonical = task("chapter", 100).copy(
-            order = 1,
-            status = StudyTaskStatus.ExcludedByUser,
-        )
-        val data = buildStudyMapData(
-            plan(listOf(canonical)),
-            submission(60, StudyDeadline.InThreeDays),
-            taskProgressById = mapOf("chapter" to StudyTaskProgress(completedMinutes = 40)),
+            taskStateById = mapOf("chapter" to StudyTaskState(status = StudyTaskStatus.ExcludedByUser)),
             today = monday,
         )
 
         val task = data.plan.blocks.single()
-        assertEquals(100, task.durationMinutes)
+        assertEquals(100, task.effortLikelyMinutes)
         assertEquals(StudyTaskStatus.ExcludedByUser, task.status)
         assertTrue(data.schedule.days.isEmpty())
     }
 
-    @Test fun completedActiveProgressRemovesTaskFromRemainingSchedule() {
+    @Test fun inProgressActiveStateKeepsFullSourceEffortScheduled() {
         val canonical = task("chapter", 100).copy(order = 1)
         val data = buildStudyMapData(
             plan(listOf(canonical)),
             submission(60, StudyDeadline.InThreeDays),
-            taskProgressById = mapOf("chapter" to StudyTaskProgress(completedMinutes = 100)),
+            taskStateById = mapOf("chapter" to StudyTaskState(status = StudyTaskStatus.InProgress)),
             today = monday,
         )
 
-        assertEquals(StudyTaskStatus.Completed, data.plan.blocks.single().status)
+        assertEquals(100, data.plan.blocks.single().effortLikelyMinutes)
+        assertEquals(StudyTaskStatus.InProgress, data.plan.blocks.single().status)
         assertTrue(data.schedule.days.isEmpty())
-        assertEquals(1, data.completedTasks)
+        assertEquals(listOf("chapter"), data.schedule.unscheduledTasks.map { it.id })
     }
 
     @Test fun dailyAvailableOverrideChangesOnlyThatStudyDateCapacity() {
@@ -336,21 +345,23 @@ class StudyMapModelsTest {
         assertEquals(StudyTaskStatus.DeferredByUser, data.plan.blocks.single { it.id == "deferred" }.status)
         assertEquals(listOf("active"), data.schedule.days.flatMap { it.tasks }.map { it.id })
         assertTrue(data.schedule.unscheduledTasks.isEmpty())
+        assertEquals(30, data.totalLikelyMinutes)
+        assertEquals(30, data.totalReservedMinutes)
+        assertEquals(0f, data.progress)
+        assertEquals(0 to 1, TaskProgressCalculator().projectProgress(data.plan.blocks))
         assertEquals(30, data.realism.remainingMinutes)
     }
 
-    @Test fun localDurationEditsKeepWorkloadFieldsInSync() {
-        val updated = task("edited", 100).copy(
-            effortMinMinutes = 70,
-            effortLikelyMinutes = 100,
-            effortMaxMinutes = 140,
-        ).withLocalDuration(50)
+    @Test fun workloadEngineUsesEffortRangeWithoutChangingSourceEstimate() {
+        val updated = task("edited", 50).copy(
+            effortMinMinutes = 35,
+            effortLikelyMinutes = 50,
+            effortMaxMinutes = 80,
+        )
 
-        assertEquals(50, updated.durationMinutes)
-        assertEquals(50, updated.estimatedMinutes)
         assertEquals(50, updated.effortLikelyMinutes)
-        assertEquals(57, updated.effectiveRobustMinutes())
-        assertEquals(70, updated.effectiveCognitivePoints())
+        assertEquals(65, updated.effectiveReservedMinutes())
+        assertEquals(80, updated.effectiveCognitivePoints())
     }
 
     @Test fun lockedTaskIsNotSelectedAsNextTask() {
@@ -408,10 +419,11 @@ class StudyMapModelsTest {
         id = id,
         title = id,
         order = id.hashCode(),
-        durationMinutes = minutes,
+        effortMinMinutes = minutes,
+        effortLikelyMinutes = minutes,
+        effortMaxMinutes = minutes,
         instructions = "Study $id",
         topicIds = listOf(topic),
-        minimumUsefulMinutes = 10,
         taskType = StudyTaskType.Concept,
     )
 
@@ -419,7 +431,6 @@ class StudyMapModelsTest {
         id = "plan",
         topics = emptyList(),
         blocks = tasks,
-        totalEstimatedMinutes = tasks.sumOf { it.durationMinutes },
         projectName = "Calculus",
     )
 

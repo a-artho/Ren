@@ -492,7 +492,7 @@ class TodaySessionModelsTest {
         preferences = submission(dailyMinutes),
         realism = PlanRealism(
             status = PlanRealismStatus.OnTrack,
-            remainingMinutes = todayTasks.sumOf { it.durationMinutes } + futureTasks.sumOf { it.durationMinutes },
+            remainingMinutes = todayTasks.sumOf { it.effortLikelyMinutes } + futureTasks.sumOf { it.effortLikelyMinutes },
             availableMinutes = dailyMinutes * 3,
             shortageMinutes = 0,
         ),
@@ -512,10 +512,11 @@ class TodaySessionModelsTest {
         id = id,
         title = id,
         order = 1,
-        durationMinutes = minutes,
+        effortMinMinutes = minutes,
+        effortLikelyMinutes = minutes,
+        effortMaxMinutes = minutes,
         instructions = "Study $id",
         topicIds = listOf("topic"),
-        minimumUsefulMinutes = 10,
         taskType = StudyTaskType.Concept,
     )
 
@@ -523,7 +524,6 @@ class TodaySessionModelsTest {
         id = "plan",
         topics = emptyList(),
         blocks = tasks,
-        totalEstimatedMinutes = tasks.sumOf { it.durationMinutes },
         projectName = "Plan",
     )
 

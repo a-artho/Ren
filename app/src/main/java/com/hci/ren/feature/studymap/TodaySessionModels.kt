@@ -2,6 +2,7 @@ package com.hci.ren.feature.studymap
 
 import com.hci.ren.feature.plangeneration.GeneratedStudyBlock
 import com.hci.ren.feature.plangeneration.StudyTaskStatus
+import com.hci.ren.feature.plangeneration.reservedStudyMinutes
 
 data class TodaySessionState(
     val date: String,
@@ -47,31 +48,31 @@ data class TodaySessionPlan(
     val hasTaskChanges: Boolean = false,
 ) {
     val plannedMinutes: Int
-        get() = doTodayTasks.sumOf { it.durationMinutes.coerceAtLeast(0) } +
-            pulledInTasks.sumOf { it.durationMinutes.coerceAtLeast(0) } +
-            doneTodayTasks.sumOf { it.durationMinutes.coerceAtLeast(0) }
+        get() = doTodayTasks.sumOf { it.reservedStudyMinutes.coerceAtLeast(0) } +
+            pulledInTasks.sumOf { it.reservedStudyMinutes.coerceAtLeast(0) } +
+            doneTodayTasks.sumOf { it.reservedStudyMinutes.coerceAtLeast(0) }
 
     val committedPlannedMinutes: Int
-        get() = doTodayTasks.sumOf { it.durationMinutes.coerceAtLeast(0) } +
-            wontFitTodayTasks.sumOf { it.durationMinutes.coerceAtLeast(0) }
+        get() = doTodayTasks.sumOf { it.reservedStudyMinutes.coerceAtLeast(0) } +
+            wontFitTodayTasks.sumOf { it.reservedStudyMinutes.coerceAtLeast(0) }
 
     val completedMinutes: Int
-        get() = doneTodayTasks.sumOf { it.durationMinutes.coerceAtLeast(0) }
+        get() = doneTodayTasks.sumOf { it.reservedStudyMinutes.coerceAtLeast(0) }
 
     val overflowMinutes: Int
-        get() = wontFitTodayTasks.sumOf { it.durationMinutes.coerceAtLeast(0) }
+        get() = wontFitTodayTasks.sumOf { it.reservedStudyMinutes.coerceAtLeast(0) }
 
     val movedLaterMinutes: Int
-        get() = movedLaterTasks.sumOf { it.durationMinutes.coerceAtLeast(0) }
+        get() = movedLaterTasks.sumOf { it.reservedStudyMinutes.coerceAtLeast(0) }
 
     val removedMinutes: Int
-        get() = removedFromPlanTasks.sumOf { it.durationMinutes.coerceAtLeast(0) }
+        get() = removedFromPlanTasks.sumOf { it.reservedStudyMinutes.coerceAtLeast(0) }
 
     val unfinishedWorkForwardTasks: List<GeneratedStudyBlock>
         get() = doTodayTasks + pulledInTasks + wontFitTodayTasks + movedLaterTasks
 
     val unfinishedWorkForwardMinutes: Int
-        get() = unfinishedWorkForwardTasks.sumOf { it.durationMinutes.coerceAtLeast(0) }
+        get() = unfinishedWorkForwardTasks.sumOf { it.reservedStudyMinutes.coerceAtLeast(0) }
 
     val remainingMinutes: Int
         get() = (availableMinutes - plannedMinutes).coerceAtLeast(0)
@@ -147,7 +148,7 @@ class TodaySessionPlanner {
         val removedFromPlanTaskIds = removedFromPlanTasks.mapTo(mutableSetOf()) { it.id }
         val plannedTasks = doTodayTasks + pulledInTasks + doneTodayTasks
         val plannedIds = plannedTasks.mapTo(mutableSetOf()) { it.id }
-        val remainingMinutes = (normalizedAvailableMinutes - plannedTasks.sumOf { it.durationMinutes.coerceAtLeast(0) })
+        val remainingMinutes = (normalizedAvailableMinutes - plannedTasks.sumOf { it.reservedStudyMinutes.coerceAtLeast(0) })
             .coerceAtLeast(0)
         val pullInCandidates = if (remainingMinutes > 0) {
             forwardTasks.asSequence()
@@ -221,11 +222,11 @@ fun TodaySessionState.applyTaskAction(
 private fun List<GeneratedStudyBlock>.todayTasksWithin(capacityMinutes: Int): List<GeneratedStudyBlock> {
     val anchorEnd = indexOfLast { it.status in TodayAnchorStatuses } + 1
     val anchoredPrefix = take(anchorEnd)
-    var used = anchoredPrefix.sumOf { it.durationMinutes.coerceAtLeast(0) }
+    var used = anchoredPrefix.sumOf { it.reservedStudyMinutes.coerceAtLeast(0) }
     return buildList {
         addAll(anchoredPrefix)
         for (task in this@todayTasksWithin.drop(anchorEnd)) {
-            val minutes = task.durationMinutes.coerceAtLeast(1)
+            val minutes = task.reservedStudyMinutes.coerceAtLeast(1)
             if (used + minutes > capacityMinutes) break
             add(task)
             used += minutes
@@ -238,7 +239,7 @@ private fun Sequence<GeneratedStudyBlock>.pullCandidatesFor(remainingMinutes: In
     var used = 0
     val fittingPrefix = buildList {
         for (task in candidates) {
-            val minutes = task.durationMinutes.coerceAtLeast(1)
+            val minutes = task.reservedStudyMinutes.coerceAtLeast(1)
             if (used + minutes > remainingMinutes) break
             add(task)
             used += minutes

@@ -26,7 +26,7 @@ class TodayImpactPreviewService(
             preferences = project.preferences,
             dailyMinutesOverride = project.dailyMinutesOverride,
             dailyAvailableMinutesByDate = project.dailyAvailableMinutesByDate,
-            taskProgressById = project.taskProgressById,
+            taskStateById = project.taskStateById,
             today = today,
         )
         val todayPlan = TodaySessionPlanner().plan(
@@ -43,7 +43,7 @@ class TodayImpactPreviewService(
             preferences = projected.preferences,
             dailyMinutesOverride = projected.dailyMinutesOverride,
             dailyAvailableMinutesByDate = projected.dailyAvailableMinutesByDate,
-            taskProgressById = projected.taskProgressById,
+            taskStateById = projected.taskStateById,
             today = today,
         )
         val status = when {

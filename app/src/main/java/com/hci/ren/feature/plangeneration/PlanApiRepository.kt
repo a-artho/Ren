@@ -108,35 +108,27 @@ class PlanApiRepository(
             StudyTopic(it.getString("id"), it.getString("title"), it.getInt("order"))
         }.sortedBy { it.order }
         val blocks = json.getJSONArray("blocks").objects().map {
-            val duration = when {
-                it.has("durationMinutes") && !it.isNull("durationMinutes") -> it.getInt("durationMinutes")
-                else -> it.optInt("estimatedMinutes", 1)
-            }.coerceAtLeast(1)
+            val effortMin = it.getInt("effortMinMinutes").coerceAtLeast(1)
+            val effortLikely = it.getInt("effortLikelyMinutes").coerceAtLeast(effortMin)
+            val effortMax = it.getInt("effortMaxMinutes").coerceAtLeast(effortLikely)
             GeneratedStudyBlock(
                 id = it.getString("id"),
                 title = it.getString("title"),
                 order = it.getInt("order"),
-                durationMinutes = duration,
-                effortMinMinutes = it.optInt("effortMinMinutes", duration).coerceAtLeast(1),
-                effortLikelyMinutes = it.optInt("effortLikelyMinutes", duration).coerceAtLeast(1),
-                effortMaxMinutes = it.optInt("effortMaxMinutes", duration).coerceAtLeast(1),
+                effortMinMinutes = effortMin,
+                effortLikelyMinutes = effortLikely,
+                effortMaxMinutes = effortMax,
                 instructions = it.getString("instructions"),
                 topicIds = it.getJSONArray("topicIds").strings(),
-                minimumUsefulMinutes = it.optInt("minimumUsefulMinutes", 10).coerceAtLeast(1),
                 taskType = it.optString("taskType", "REVIEW").toStudyTaskType(),
-                status = it.optString("status", "NOT_STARTED").toTaskStatus(),
-                scheduledDate = it.optString("scheduledDate").takeUnless { value -> value.isBlank() || value == "null" },
                 dependencies = it.optJSONArray("dependencies")?.strings().orEmpty(),
                 sourceRefs = it.optJSONArray("sourceRefs")?.objects()?.map(JSONObject::toStudySourceRef).orEmpty(),
-                difficulty = it.optString("difficulty", "STANDARD").toStudyBlockDifficulty(),
                 difficultyScore = it.optInt("difficultyScore").takeIf { value -> value > 0 },
                 densityScore = it.optInt("densityScore").takeIf { value -> value > 0 },
                 productionDemandScore = it.optInt("productionDemandScore").takeIf { value -> value > 0 },
                 estimateConfidence = it.optString("estimateConfidence", "MEDIUM").toEstimateConfidence(),
-                estimatedMinutes = it.optInt("estimatedMinutes", duration).coerceAtLeast(1),
                 completionCriteria = it.optJSONArray("completionCriteria")?.strings().orEmpty(),
-                splitAllowed = it.optBoolean("splitAllowed", true),
-                continuityGroup = it.optString("continuityGroup").takeUnless { value -> value.isBlank() || value == "null" },
+                keepTogetherGroup = it.optString("keepTogetherGroup").takeUnless { value -> value.isBlank() || value == "null" },
             )
         }.sortedBy { it.order }
         val title = if (json.has("title") && !json.isNull("title")) {
@@ -146,7 +138,6 @@ class PlanApiRepository(
             id = planId,
             topics = topics,
             blocks = blocks,
-            totalEstimatedMinutes = json.getInt("totalEstimatedMinutes"),
             projectName = title ?: DEFAULT_PROJECT_NAME,
             planVersion = json.optInt("planVersion", 1),
             sourceDocuments = sourceDocuments,
@@ -246,14 +237,6 @@ private fun String.toStudyTaskType(): StudyTaskType {
     if (normalized == "Skim") return StudyTaskType.Reading
     return runCatching { StudyTaskType.valueOf(normalized) }.getOrDefault(StudyTaskType.Custom)
 }
-
-private fun String.toTaskStatus() = runCatching {
-    StudyTaskStatus.valueOf(wireEnumName())
-}.getOrDefault(StudyTaskStatus.NotStarted)
-
-private fun String.toStudyBlockDifficulty() = runCatching {
-    StudyBlockDifficulty.valueOf(wireEnumName())
-}.getOrDefault(StudyBlockDifficulty.Standard)
 
 private fun String.toEstimateConfidence() = runCatching {
     EstimateConfidence.valueOf(wireEnumName())

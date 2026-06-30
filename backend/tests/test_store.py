@@ -15,7 +15,8 @@ def request(request_id="request-1", document_id="doc-1"):
 def generated_plan():
     return GeneratedPlan.model_validate({
         "topics": [{"id": "t1", "title": "Foundations", "order": 1}],
-        "blocks": [{"id": "b1", "title": "Read", "order": 1, "durationMinutes": 30,
+        "blocks": [{"id": "b1", "title": "Read", "order": 1,
+                    "effortMinMinutes": 20, "effortLikelyMinutes": 30, "effortMaxMinutes": 40,
                     "instructions": "Read and summarize.", "topicIds": ["t1"]}],
     })
 

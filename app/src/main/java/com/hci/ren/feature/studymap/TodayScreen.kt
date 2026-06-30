@@ -48,6 +48,7 @@ import com.hci.ren.R
 import com.hci.ren.feature.plangeneration.GeneratedStudyBlock
 import com.hci.ren.feature.plangeneration.StudyTaskStatus
 import com.hci.ren.feature.plangeneration.StudyTaskType
+import com.hci.ren.feature.plangeneration.likelyStudyMinutes
 
 @Composable
 fun TodayScreen(
@@ -67,7 +68,7 @@ fun TodayScreen(
         preferences = project.preferences,
         dailyMinutesOverride = project.dailyMinutesOverride,
         dailyAvailableMinutesByDate = project.dailyAvailableMinutesByDate,
-        taskProgressById = project.taskProgressById,
+        taskStateById = project.taskStateById,
     )
     val today = currentStudyCalendar(project.preferences).toStudyDate()
     val baseAvailableMinutes = todayBaseAvailableMinutes(project, data, today)
@@ -782,7 +783,7 @@ private fun TodayTaskRow(
                 overflow = TextOverflow.Ellipsis,
             )
             Text(
-                text = "${formatTodayMinutes(task.durationMinutes)} - ${taskTypeLabel(task.taskType)}",
+                text = "${formatTodayMinutes(task.likelyStudyMinutes)} - ${taskTypeLabel(task.taskType)}",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,

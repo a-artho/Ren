@@ -19,7 +19,6 @@ import com.hci.ren.feature.plangeneration.ExtractionWarning
 import com.hci.ren.feature.plangeneration.GeneratedStudyBlock
 import com.hci.ren.feature.plangeneration.GeneratedStudyPlan
 import com.hci.ren.feature.plangeneration.EstimateConfidence
-import com.hci.ren.feature.plangeneration.StudyBlockDifficulty
 import com.hci.ren.feature.plangeneration.StudySourceDocument
 import com.hci.ren.feature.plangeneration.StudySourceRef
 import com.hci.ren.feature.plangeneration.StudyTaskStatus
@@ -40,15 +39,16 @@ data class StudyProject(
     val preferences: PlanSetupSubmission,
     val dailyMinutesOverride: Int? = null,
     val dailyAvailableMinutesByDate: Map<String, Int> = emptyMap(),
-    val taskProgressById: Map<String, StudyTaskProgress> = emptyMap(),
+    val taskStateById: Map<String, StudyTaskState> = emptyMap(),
     val acceptedTightPlan: Boolean = false,
 )
 
-data class StudyTaskProgress(
-    val completedMinutes: Int = 0,
-    val removedMinutes: Int = 0,
+data class StudyTaskState(
+    val status: StudyTaskStatus = StudyTaskStatus.NotStarted,
+    val scheduledDate: String? = null,
 ) {
-    val isEmpty: Boolean get() = completedMinutes <= 0 && removedMinutes <= 0
+    val isDefault: Boolean
+        get() = status == StudyTaskStatus.NotStarted && scheduledDate.isNullOrBlank()
 }
 
 private const val ActiveProjectSlot = "active"
@@ -65,7 +65,7 @@ data class StudyProjectEntity(
     val preferencesJson: String,
     val dailyMinutesOverride: Int?,
     val dailyAvailableMinutesJson: String,
-    val taskProgressJson: String,
+    val taskStateJson: String,
     val acceptedTightPlan: Boolean,
 )
 
@@ -90,7 +90,7 @@ interface StudyProjectDao {
     }
 }
 
-@Database(entities = [StudyProjectEntity::class], version = 4, exportSchema = true)
+@Database(entities = [StudyProjectEntity::class], version = 5, exportSchema = true)
 abstract class StudyProjectDatabase : RoomDatabase() {
     abstract fun studyProjectDao(): StudyProjectDao
 
@@ -103,6 +103,7 @@ abstract class StudyProjectDatabase : RoomDatabase() {
                 StudyProjectDatabase::class.java,
                 "ren-study-projects.db",
             )
+                .fallbackToDestructiveMigration(dropAllTables = true)
                 .build()
                 .also { instance = it }
         }
@@ -139,7 +140,7 @@ internal object StudyProjectJsonCodec {
         preferencesJson = project.preferences.toPersistedJson().toString(),
         dailyMinutesOverride = project.dailyMinutesOverride,
         dailyAvailableMinutesJson = project.dailyAvailableMinutesByDate.toJson().toString(),
-        taskProgressJson = project.taskProgressById.toTaskProgressJson().toString(),
+        taskStateJson = project.taskStateById.toTaskStateJson().toString(),
         acceptedTightPlan = project.acceptedTightPlan,
     )
 
@@ -155,7 +156,7 @@ internal object StudyProjectJsonCodec {
             preferences = JSONObject(entity.preferencesJson).toSubmission(),
             dailyMinutesOverride = entity.dailyMinutesOverride,
             dailyAvailableMinutesByDate = JSONObject(entity.dailyAvailableMinutesJson).toDailyAvailableMinutes(),
-            taskProgressById = JSONObject(entity.taskProgressJson).toTaskProgress(),
+            taskStateById = JSONObject(entity.taskStateJson).toTaskState(),
             acceptedTightPlan = entity.acceptedTightPlan,
         )
     }
@@ -215,7 +216,6 @@ private fun GeneratedStudyPlan.toJson() = JSONObject()
     .put("id", id)
     .put("planVersion", planVersion)
     .put("projectName", projectName)
-    .put("totalEstimatedMinutes", totalEstimatedMinutes)
     .put("sourceDocuments", JSONArray(sourceDocuments.map(StudySourceDocument::toJson)))
     .put("extractionWarnings", JSONArray(extractionWarnings.map(ExtractionWarning::toJson)))
     .put("topics", JSONArray(topics.map { topic ->
@@ -234,27 +234,20 @@ private fun GeneratedStudyBlock.toJson() = JSONObject()
     .put("id", id)
     .put("title", title)
     .put("order", order)
-    .put("durationMinutes", durationMinutes)
     .put("effortMinMinutes", effortMinMinutes)
     .put("effortLikelyMinutes", effortLikelyMinutes)
     .put("effortMaxMinutes", effortMaxMinutes)
-    .put("estimatedMinutes", estimatedMinutes)
     .put("instructions", instructions)
     .put("topicIds", JSONArray(topicIds))
-    .put("minimumUsefulMinutes", minimumUsefulMinutes)
     .put("taskType", taskType.name)
-    .put("status", status.name)
-    .put("scheduledDate", scheduledDate)
     .put("dependencies", JSONArray(dependencies))
     .put("sourceRefs", JSONArray(sourceRefs.map(StudySourceRef::toJson)))
-    .put("difficulty", difficulty.name)
     .put("difficultyScore", difficultyScore)
     .put("densityScore", densityScore)
     .put("productionDemandScore", productionDemandScore)
     .put("estimateConfidence", estimateConfidence.name)
     .put("completionCriteria", JSONArray(completionCriteria))
-    .put("splitAllowed", splitAllowed)
-    .put("continuityGroup", continuityGroup)
+    .put("keepTogetherGroup", keepTogetherGroup)
 
 private fun StudySourceRef.toJson() = JSONObject()
     .put("documentId", documentId)
@@ -277,7 +270,6 @@ private fun JSONObject.toPlan(): GeneratedStudyPlan = GeneratedStudyPlan(
         StudyTopic(it.getString("id"), it.getString("title"), it.getInt("order"))
     }.sortedBy { it.order },
     blocks = getJSONArray("blocks").objects().map(JSONObject::toBlock).sortedBy { it.order },
-    totalEstimatedMinutes = getInt("totalEstimatedMinutes"),
     projectName = optString("projectName").safeStudyProjectTitle(),
     planVersion = getInt("planVersion"),
     sourceDocuments = optJSONArray("sourceDocuments")?.objects()?.map(JSONObject::toSourceDocument).orEmpty().sortedBy { it.order },
@@ -292,32 +284,30 @@ private fun JSONObject.toSourceDocument() = StudySourceDocument(
     uploadDocumentId = optString("uploadDocumentId").takeUnless { it.isBlank() || it == "null" },
 )
 
-private fun JSONObject.toBlock() = GeneratedStudyBlock(
-    id = getString("id"),
-    title = getString("title"),
-    order = getInt("order"),
-    durationMinutes = getInt("durationMinutes").coerceAtLeast(1),
-    effortMinMinutes = getInt("effortMinMinutes").coerceAtLeast(1),
-    effortLikelyMinutes = getInt("effortLikelyMinutes").coerceAtLeast(1),
-    effortMaxMinutes = getInt("effortMaxMinutes").coerceAtLeast(1),
-    instructions = optString("instructions"),
-    topicIds = getJSONArray("topicIds").strings(),
-    minimumUsefulMinutes = getInt("minimumUsefulMinutes").coerceAtLeast(1),
-    taskType = optString("taskType").studyTaskTypeOrDefault(StudyTaskType.Review),
-    status = optString("status").enumOr(StudyTaskStatus.NotStarted),
-    scheduledDate = optString("scheduledDate").takeUnless { it.isBlank() || it == "null" },
-    dependencies = optJSONArray("dependencies")?.strings().orEmpty(),
-    sourceRefs = optJSONArray("sourceRefs")?.objects()?.map(JSONObject::toSourceRef).orEmpty(),
-    difficulty = optString("difficulty", "Standard").enumOr(StudyBlockDifficulty.Standard),
-    difficultyScore = optInt("difficultyScore").takeIf { it > 0 },
-    densityScore = optInt("densityScore").takeIf { it > 0 },
-    productionDemandScore = optInt("productionDemandScore").takeIf { it > 0 },
-    estimateConfidence = optString("estimateConfidence", "Medium").enumOr(EstimateConfidence.Medium),
-    estimatedMinutes = getInt("estimatedMinutes").coerceAtLeast(1),
-    completionCriteria = optJSONArray("completionCriteria")?.strings().orEmpty(),
-    splitAllowed = optBoolean("splitAllowed", true),
-    continuityGroup = optString("continuityGroup").takeUnless { it.isBlank() || it == "null" },
-)
+private fun JSONObject.toBlock(): GeneratedStudyBlock {
+    val effortMin = getInt("effortMinMinutes").coerceAtLeast(1)
+    val effortLikely = getInt("effortLikelyMinutes").coerceAtLeast(effortMin)
+    val effortMax = getInt("effortMaxMinutes").coerceAtLeast(effortLikely)
+    return GeneratedStudyBlock(
+        id = getString("id"),
+        title = getString("title"),
+        order = getInt("order"),
+        effortMinMinutes = effortMin,
+        effortLikelyMinutes = effortLikely,
+        effortMaxMinutes = effortMax,
+        instructions = optString("instructions"),
+        topicIds = getJSONArray("topicIds").strings(),
+        taskType = optString("taskType").studyTaskTypeOrDefault(StudyTaskType.Review),
+        dependencies = optJSONArray("dependencies")?.strings().orEmpty(),
+        sourceRefs = optJSONArray("sourceRefs")?.objects()?.map(JSONObject::toSourceRef).orEmpty(),
+        difficultyScore = optInt("difficultyScore").takeIf { it > 0 },
+        densityScore = optInt("densityScore").takeIf { it > 0 },
+        productionDemandScore = optInt("productionDemandScore").takeIf { it > 0 },
+        estimateConfidence = optString("estimateConfidence", "Medium").enumOr(EstimateConfidence.Medium),
+        completionCriteria = optJSONArray("completionCriteria")?.strings().orEmpty(),
+        keepTogetherGroup = optString("keepTogetherGroup").takeUnless { it.isBlank() || it == "null" },
+    )
+}
 
 private fun JSONObject.toSourceRef() = StudySourceRef(
     documentId = getString("documentId"),
@@ -358,32 +348,29 @@ private fun JSONObject.toDailyAvailableMinutes(): Map<String, Int> = keys().asSe
     }
     .toMap()
 
-private fun Map<String, StudyTaskProgress>.toTaskProgressJson() = JSONObject().apply {
+private fun Map<String, StudyTaskState>.toTaskStateJson() = JSONObject().apply {
     entries
-        .filter { (taskId, progress) ->
-            taskId.isNotBlank() &&
-                progress.completedMinutes in 0..1_440 &&
-                progress.removedMinutes in 0..1_440 &&
-                !progress.isEmpty
+        .filter { (taskId, state) ->
+            taskId.isNotBlank() && !state.isDefault
         }
-        .forEach { (taskId, progress) ->
+        .forEach { (taskId, state) ->
             put(
                 taskId,
                 JSONObject()
-                    .put("completedMinutes", progress.completedMinutes)
-                    .put("removedMinutes", progress.removedMinutes),
+                    .put("status", state.status.name)
+                    .put("scheduledDate", state.scheduledDate),
             )
         }
 }
 
-private fun JSONObject.toTaskProgress(): Map<String, StudyTaskProgress> = keys().asSequence()
+private fun JSONObject.toTaskState(): Map<String, StudyTaskState> = keys().asSequence()
     .mapNotNull { taskId ->
         val value = optJSONObject(taskId) ?: return@mapNotNull null
-        val progress = StudyTaskProgress(
-            completedMinutes = value.optInt("completedMinutes", 0).coerceIn(0, 1_440),
-            removedMinutes = value.optInt("removedMinutes", 0).coerceIn(0, 1_440),
+        val state = StudyTaskState(
+            status = value.optString("status").enumOr(StudyTaskStatus.NotStarted),
+            scheduledDate = value.optString("scheduledDate").takeUnless { it.isBlank() || it == "null" },
         )
-        if (taskId.isNotBlank() && !progress.isEmpty) taskId to progress else null
+        if (taskId.isNotBlank() && !state.isDefault) taskId to state else null
     }
     .toMap()
 

@@ -8,7 +8,9 @@ import com.hci.ren.feature.plangeneration.GeneratedStudyBlock
 import com.hci.ren.feature.plangeneration.StudyBlockDifficulty
 import com.hci.ren.feature.plangeneration.StudyTaskStatus
 import com.hci.ren.feature.plangeneration.effectiveCognitivePoints
+import com.hci.ren.feature.plangeneration.likelyStudyMinutes
 import com.hci.ren.feature.plangeneration.requiredBlockMinutes
+import com.hci.ren.feature.plangeneration.reservedStudyMinutes
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.GregorianCalendar
@@ -63,30 +65,47 @@ class StudyScheduleCalculator {
                 }
                 dayTasks.getOrPut(date, ::mutableListOf).add(task.copy(scheduledDate = date))
                 remainingCapacity[date] = (remainingCapacity[date] ?: capacityByDate[date].orZero()) -
-                    task.durationMinutes.coerceAtLeast(0)
+                    task.reservedStudyMinutes.coerceAtLeast(0)
                 fixedTaskIds += task.id
             }
 
         val orderedTasks = tasks.filter(::isSchedulable)
             .filterNot { it.id in fixedTaskIds }
             .sortedBy { it.order }
-        val (candidateTasks, deferredTasks) = trimSuffixToAvailableCapacity(
+        val reservedAttempt = scheduleAttempt(
             tasks = orderedTasks,
-            availableMinutes = remainingCapacity.values.sumOf { it.coerceAtLeast(0) },
+            eligibleDates = eligibleDateKeys,
+            remainingCapacity = remainingCapacity,
+            existingDayTasks = dayTasks,
+            fitMode = ScheduleFitMode.Reserved,
+            fitMinutes = { it.reservedStudyMinutes },
         )
+        val likelyAttempt = if (reservedAttempt.scheduledCount < orderedTasks.size) {
+            scheduleAttempt(
+                tasks = orderedTasks,
+                eligibleDates = eligibleDateKeys,
+                remainingCapacity = remainingCapacity,
+                existingDayTasks = dayTasks,
+                fitMode = ScheduleFitMode.LikelyFallback,
+                fitMinutes = { it.likelyStudyMinutes },
+            )
+        } else {
+            null
+        }
+        val attempt = likelyAttempt
+            ?.takeIf { it.scheduledCount > reservedAttempt.scheduledCount }
+            ?: reservedAttempt
+        val candidateTasks = attempt.candidateTasks
+        val deferredTasks = attempt.deferredTasks
         deferredTasks.forEach { task ->
             unscheduled += task.copy(scheduledDate = null, status = StudyTaskStatus.Unscheduled)
         }
 
-        val (feasibleCount, assignedDates) = largestFeasiblePrefixAssignments(
-            tasks = candidateTasks,
-            eligibleDates = eligibleDateKeys,
-            remainingCapacity = remainingCapacity,
-            existingDayTasks = dayTasks,
-        )
+        val feasibleCount = attempt.feasibleCount
+        val assignedDates = attempt.assignedDates
         val schedulableTasks = candidateTasks.take(feasibleCount)
         candidateTasks.drop(feasibleCount).forEachIndexed { index, task ->
-            val blockingOversizedTask = index == 0 && task.durationMinutes.coerceAtLeast(1) > maxTaskCapacity
+            val blockingOversizedTask = index == 0 && attempt.fitMinutes(task).coerceAtLeast(1) > maxTaskCapacity
             unscheduled += task.copy(
                 scheduledDate = null,
                 status = if (blockingOversizedTask) StudyTaskStatus.OverCapacity else StudyTaskStatus.Unscheduled,
@@ -98,11 +117,12 @@ class StudyScheduleCalculator {
             eligibleDates = eligibleDateKeys,
             remainingCapacity = remainingCapacity,
             existingDayTasks = dayTasks,
+            fitMinutes = attempt.fitMinutes,
         )
 
         if (safeAssignedDates == null) {
             schedulableTasks.forEach { task ->
-                val oversized = task.durationMinutes.coerceAtLeast(1) > maxTaskCapacity
+                val oversized = attempt.fitMinutes(task).coerceAtLeast(1) > maxTaskCapacity
                 unscheduled += task.copy(
                     scheduledDate = null,
                     status = if (oversized) StudyTaskStatus.OverCapacity else StudyTaskStatus.Unscheduled,
@@ -113,7 +133,7 @@ class StudyScheduleCalculator {
                 val scheduledTask = task.copy(scheduledDate = date)
                 dayTasks.getOrPut(date, ::mutableListOf).add(scheduledTask)
                 remainingCapacity[date] = (remainingCapacity[date] ?: capacityByDate[date].orZero()) -
-                    task.durationMinutes.coerceAtLeast(1)
+                    attempt.fitMinutes(task).coerceAtLeast(1)
             }
         }
 
@@ -126,11 +146,13 @@ class StudyScheduleCalculator {
                         tasks = it.sortedBy { task -> task.order },
                         capacityMinutes = capacityByDate[key] ?: capacity,
                         dayIndex = index + 1,
+                        fitMode = attempt.fitMode,
                         load = dayLoad(dayLoadIndex(it, capacityByDate[key] ?: capacity)),
                     )
                 }
             },
             unscheduledTasks = unscheduled.distinctBy { it.id },
+            fitMode = attempt.fitMode,
         )
     }
 }
@@ -150,11 +172,46 @@ private fun isSchedulable(task: GeneratedStudyBlock): Boolean =
             StudyTaskStatus.Locked,
         )
 
+private data class ScheduleAttempt(
+    val candidateTasks: List<GeneratedStudyBlock>,
+    val deferredTasks: List<GeneratedStudyBlock>,
+    val feasibleCount: Int,
+    val assignedDates: List<String>?,
+    val fitMode: ScheduleFitMode,
+    val fitMinutes: (GeneratedStudyBlock) -> Int,
+) {
+    val scheduledCount: Int get() = feasibleCount
+}
+
+private fun scheduleAttempt(
+    tasks: List<GeneratedStudyBlock>,
+    eligibleDates: List<String>,
+    remainingCapacity: Map<String, Int>,
+    existingDayTasks: Map<String, List<GeneratedStudyBlock>>,
+    fitMode: ScheduleFitMode,
+    fitMinutes: (GeneratedStudyBlock) -> Int,
+): ScheduleAttempt {
+    val (candidateTasks, deferredTasks) = trimSuffixToAvailableCapacity(
+        tasks = tasks,
+        availableMinutes = remainingCapacity.values.sumOf { it.coerceAtLeast(0) },
+        fitMinutes = fitMinutes,
+    )
+    val (feasibleCount, assignedDates) = largestFeasiblePrefixAssignments(
+        tasks = candidateTasks,
+        eligibleDates = eligibleDates,
+        remainingCapacity = remainingCapacity,
+        existingDayTasks = existingDayTasks,
+        fitMinutes = fitMinutes,
+    )
+    return ScheduleAttempt(candidateTasks, deferredTasks, feasibleCount, assignedDates, fitMode, fitMinutes)
+}
+
 private fun largestFeasiblePrefixAssignments(
     tasks: List<GeneratedStudyBlock>,
     eligibleDates: List<String>,
     remainingCapacity: Map<String, Int>,
     existingDayTasks: Map<String, List<GeneratedStudyBlock>>,
+    fitMinutes: (GeneratedStudyBlock) -> Int,
 ): Pair<Int, List<String>?> {
     if (tasks.isEmpty()) return 0 to emptyList()
     if (eligibleDates.isEmpty()) return 0 to null
@@ -170,6 +227,7 @@ private fun largestFeasiblePrefixAssignments(
             eligibleDates = eligibleDates,
             remainingCapacity = remainingCapacity,
             existingDayTasks = existingDayTasks,
+            fitMinutes = fitMinutes,
         )
         if (assignments != null) {
             bestCount = mid
@@ -185,12 +243,13 @@ private fun largestFeasiblePrefixAssignments(
 private fun trimSuffixToAvailableCapacity(
     tasks: List<GeneratedStudyBlock>,
     availableMinutes: Int,
+    fitMinutes: (GeneratedStudyBlock) -> Int,
 ): Pair<List<GeneratedStudyBlock>, List<GeneratedStudyBlock>> {
-    var remaining = tasks.sumOf { it.durationMinutes.coerceAtLeast(1) }
+    var remaining = tasks.sumOf { fitMinutes(it).coerceAtLeast(1) }
     var keepCount = tasks.size
     while (keepCount > 0 && remaining > availableMinutes) {
         keepCount -= 1
-        remaining -= tasks[keepCount].durationMinutes.coerceAtLeast(1)
+        remaining -= fitMinutes(tasks[keepCount]).coerceAtLeast(1)
     }
     return tasks.take(keepCount) to tasks.drop(keepCount)
 }
@@ -200,16 +259,17 @@ private fun orderedScheduleAssignments(
     eligibleDates: List<String>,
     remainingCapacity: Map<String, Int>,
     existingDayTasks: Map<String, List<GeneratedStudyBlock>>,
+    fitMinutes: (GeneratedStudyBlock) -> Int,
 ): List<String>? {
     if (tasks.isEmpty()) return emptyList()
     if (eligibleDates.isEmpty()) return null
 
     val taskCount = tasks.size
     val dayCount = eligibleDates.size
-    val durationPrefix = prefixSums(tasks.map { it.durationMinutes.coerceAtLeast(1) })
-    val robustPrefix = prefixSums(tasks.map { it.robustStudyMinutes })
+    val fitPrefix = prefixSums(tasks.map { fitMinutes(it).coerceAtLeast(1) })
+    val reservedPrefix = prefixSums(tasks.map { it.reservedScheduleMinutes })
     val cognitivePrefix = prefixSums(tasks.map { it.cognitiveStudyPoints })
-    val targetRobust = ceil(tasks.sumOf { it.robustStudyMinutes }.toDouble() / dayCount)
+    val targetReserved = ceil(tasks.sumOf { it.reservedScheduleMinutes }.toDouble() / dayCount)
         .toInt()
         .coerceAtLeast(1)
     val targetCognitive = ceil(tasks.sumOf { it.cognitiveStudyPoints }.toDouble() / dayCount)
@@ -224,27 +284,27 @@ private fun orderedScheduleAssignments(
     for (day in 1..dayCount) {
         val date = eligibleDates[day - 1]
         val existingTasks = existingDayTasks[date].orEmpty()
-        val existingRobust = existingTasks.sumOf { it.robustStudyMinutes }
+        val existingReserved = existingTasks.sumOf { it.reservedScheduleMinutes }
         val existingCognitive = existingTasks.sumOf { it.cognitiveStudyPoints }
         for (end in 0..taskCount) {
             for (start in 0..end) {
                 val priorCost = dp[day - 1][start]
                 if (priorCost.isInfinite()) continue
-                val duration = durationPrefix[end] - durationPrefix[start]
-                if (duration > (remainingCapacity[date] ?: 0)) continue
+                val fit = fitPrefix[end] - fitPrefix[start]
+                if (fit > (remainingCapacity[date] ?: 0)) continue
                 val blockCount = end - start
-                val robust = robustPrefix[end] - robustPrefix[start]
+                val reserved = reservedPrefix[end] - reservedPrefix[start]
                 val cognitive = cognitivePrefix[end] - cognitivePrefix[start]
                 var cost = dayScheduleCost(
                     dayIndex = day - 1,
                     blockCount = blockCount,
-                    robust = robust + existingRobust,
+                    reserved = reserved + existingReserved,
                     cognitive = cognitive + existingCognitive,
-                    segmentRobust = robust,
-                    targetRobust = targetRobust,
+                    segmentReserved = reserved,
+                    targetReserved = targetReserved,
                     targetCognitive = targetCognitive,
                 )
-                if (start > 0 && end > start && sameContinuityGroup(tasks[start - 1], tasks[start])) {
+                if (start > 0 && end > start && sameKeepTogetherGroup(tasks[start - 1], tasks[start])) {
                     cost += 250.0
                 }
                 val candidate = priorCost + cost
@@ -278,29 +338,29 @@ private fun prefixSums(values: List<Int>): List<Int> = buildList {
 private fun dayScheduleCost(
     dayIndex: Int,
     blockCount: Int,
-    robust: Int,
+    reserved: Int,
     cognitive: Int,
-    segmentRobust: Int,
-    targetRobust: Int,
+    segmentReserved: Int,
+    targetReserved: Int,
     targetCognitive: Int,
 ): Double {
     if (blockCount == 0) return 0.0
-    val robustDeviation = robust - targetRobust
+    val reservedDeviation = reserved - targetReserved
     val cognitiveDeviation = cognitive - targetCognitive
-    val balance = robustDeviation * robustDeviation + cognitiveDeviation * cognitiveDeviation
-    val lateRisk = dayIndex * segmentRobust * 2
+    val balance = reservedDeviation * reservedDeviation + cognitiveDeviation * cognitiveDeviation
+    val lateRisk = dayIndex * segmentReserved * 2
     val contextSwitch = maxOf(0, blockCount - 1) * 20
     return (balance + lateRisk + contextSwitch).toDouble()
 }
 
-private fun sameContinuityGroup(previous: GeneratedStudyBlock, current: GeneratedStudyBlock): Boolean =
-    !previous.continuityGroup.isNullOrBlank() && previous.continuityGroup == current.continuityGroup
+private fun sameKeepTogetherGroup(previous: GeneratedStudyBlock, current: GeneratedStudyBlock): Boolean =
+    !previous.keepTogetherGroup.isNullOrBlank() && previous.keepTogetherGroup == current.keepTogetherGroup
 
-internal val GeneratedStudyBlock.robustStudyMinutes: Int
+internal val GeneratedStudyBlock.reservedScheduleMinutes: Int
     get() = requiredBlockMinutes()
 
 internal val GeneratedStudyBlock.cognitiveStudyPoints: Int
-    get() = maxOf(effectiveCognitivePoints(), robustStudyMinutes, 1)
+    get() = maxOf(effectiveCognitivePoints(), reservedScheduleMinutes, 1)
 
 internal fun targetMinutesForCapacity(capacityMinutes: Int): Int =
     (capacityMinutes * 0.85).toInt().coerceAtLeast(1)
@@ -308,11 +368,11 @@ internal fun targetMinutesForCapacity(capacityMinutes: Int): Int =
 internal fun dayLoadIndex(tasks: List<GeneratedStudyBlock>, capacityMinutes: Int): Double {
     if (tasks.isEmpty() || capacityMinutes <= 0) return 0.0
     val target = targetMinutesForCapacity(capacityMinutes)
-    val robustRatio = tasks.sumOf { it.robustStudyMinutes }.toDouble() / target
+    val reservedRatio = tasks.sumOf { it.reservedScheduleMinutes }.toDouble() / target
     val cognitiveRatio = tasks.sumOf { it.cognitiveStudyPoints }.toDouble() / target
     val contextSwitchPenalty = maxOf(0, tasks.size - 3) * 0.03
-    val densePenalty = if (tasks.count { (it.difficultyScore ?: 3) >= 4 || it.difficulty == StudyBlockDifficulty.Heavy } >= 2) 0.05 else 0.0
-    return maxOf(robustRatio, cognitiveRatio) + contextSwitchPenalty + densePenalty
+    val densePenalty = if (tasks.count { (it.difficultyScore ?: 3) >= 4 } >= 2) 0.05 else 0.0
+    return maxOf(reservedRatio, cognitiveRatio) + contextSwitchPenalty + densePenalty
 }
 
 private fun dayLoad(loadIndex: Double): StudyBlockDifficulty = when {
@@ -325,11 +385,11 @@ internal fun dayReasonCodes(tasks: List<GeneratedStudyBlock>, capacityMinutes: I
     if (tasks.isEmpty() || capacityMinutes <= 0) return emptyList()
     val target = targetMinutesForCapacity(capacityMinutes)
     return buildList {
-        if (tasks.sumOf { it.robustStudyMinutes } >= target * 0.9) add("TIME_NEAR_CAPACITY")
+        if (tasks.sumOf { it.reservedScheduleMinutes } >= target * 0.9) add("TIME_NEAR_CAPACITY")
         if (tasks.sumOf { it.cognitiveStudyPoints } >= target * 0.9) add("COGNITIVE_LOAD_NEAR_CAPACITY")
-        if (tasks.count { (it.difficultyScore ?: 3) >= 4 || it.difficulty == StudyBlockDifficulty.Heavy } >= 2) add("MULTIPLE_DENSE_BLOCKS")
+        if (tasks.count { (it.difficultyScore ?: 3) >= 4 } >= 2) add("MULTIPLE_DENSE_BLOCKS")
         if (tasks.any { it.estimateConfidence == EstimateConfidence.Low }) add("LOW_CONFIDENCE_ESTIMATE")
-        if (tasks.any { !it.continuityGroup.isNullOrBlank() }) add("ORDER_CONTINUITY")
+        if (tasks.any { !it.keepTogetherGroup.isNullOrBlank() }) add("KEEP_TOGETHER")
     }
 }
 

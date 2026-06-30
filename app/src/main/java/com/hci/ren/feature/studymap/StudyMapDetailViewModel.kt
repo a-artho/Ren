@@ -191,49 +191,38 @@ class StudyMapDetailViewModel(application: Application) : AndroidViewModel(appli
     }
 
     fun reduceScope(strategy: ScopeReduction, selectedTopicIds: Set<String>) = mutate("Study map updated.") { project ->
-        val blocks = adjustmentService.applyScope(project.plan.blocks, strategy, selectedTopicIds)
-        project.copy(plan = project.plan.copy(
-            blocks = blocks,
-            totalEstimatedMinutes = blocks.filter(::isRequiredTask).sumOf { it.durationMinutes },
-        ))
+        val excludedIds = when (strategy) {
+            ScopeReduction.ChooseTopics -> project.plan.blocks
+                .filter { task -> selectedTopicIds.isNotEmpty() && task.topicIds.none(selectedTopicIds::contains) }
+                .mapTo(mutableSetOf()) { it.id }
+        }
+        val state = project.taskStateById.toMutableMap()
+        excludedIds.forEach { taskId ->
+            state[taskId] = StudyTaskState(status = StudyTaskStatus.ExcludedByUser)
+        }
+        project.copy(taskStateById = state)
     }
 
     fun continueAnyway() = mutate("Plan kept as requested.") { it.copy(acceptedTightPlan = true) }
 
-    fun updateTaskStatus(taskId: String, status: StudyTaskStatus) = updateTask(taskId) { task, plan ->
+    fun updateTaskStatus(taskId: String, status: StudyTaskStatus) = mutate("Study map updated.") { project ->
+        val task = project.plan.blocks.firstOrNull { it.id == taskId } ?: return@mutate project
         val unresolved = task.dependencies.any { dependency ->
-            plan.blocks.firstOrNull { it.id == dependency }?.status != StudyTaskStatus.Completed
+            project.taskStateById[dependency]?.status != StudyTaskStatus.Completed
         }
-        if (status == StudyTaskStatus.InProgress && unresolved) task else task.copy(status = status)
+        if (status == StudyTaskStatus.InProgress && unresolved) {
+            project
+        } else {
+            project.withTaskState(taskId, StudyTaskState(status = status))
+        }
     }
 
-    fun updateTaskDuration(taskId: String, minutes: Int) = updateTask(taskId) { task, _ ->
-        task.withLocalDuration(minutes)
+    fun excludeTask(taskId: String) = mutate("Study map updated.") {
+        it.withTaskState(taskId, StudyTaskState(status = StudyTaskStatus.ExcludedByUser))
     }
 
-    fun excludeTask(taskId: String) = updateTask(taskId) { task, _ ->
-        task.copy(
-            status = StudyTaskStatus.ExcludedByUser,
-            scheduledDate = null,
-        )
-    }
-
-    fun restoreTask(taskId: String) = updateTask(taskId) { task, _ ->
-        task.copy(
-            status = StudyTaskStatus.NotStarted,
-        )
-    }
-
-    private fun updateTask(
-        taskId: String,
-        transform: (GeneratedStudyBlock, com.hci.ren.feature.plangeneration.GeneratedStudyPlan) -> GeneratedStudyBlock,
-    ) = mutate("Study map updated.") { project ->
-        val plan = project.plan
-        val blocks = plan.blocks.map { task -> if (task.id == taskId) transform(task, plan) else task }
-        project.copy(plan = plan.copy(
-            blocks = blocks,
-            totalEstimatedMinutes = blocks.filter(::isRequiredTask).sumOf { it.durationMinutes },
-        ))
+    fun restoreTask(taskId: String) = mutate("Study map updated.") {
+        it.withTaskState(taskId, StudyTaskState())
     }
 
     private fun mutate(message: String, transform: (StudyProject) -> StudyProject) {
@@ -264,7 +253,7 @@ class StudyMapDetailViewModel(application: Application) : AndroidViewModel(appli
             preferences = project.preferences,
             dailyMinutesOverride = project.dailyMinutesOverride,
             dailyAvailableMinutesByDate = project.dailyAvailableMinutesByDate,
-            taskProgressById = project.taskProgressById,
+            taskStateById = project.taskStateById,
         )
         val required = activeData.plan.blocks.filter(::isRequiredTask)
         val feasibility = feasibilityChecker.check(
@@ -299,6 +288,17 @@ class StudyMapDetailViewModel(application: Application) : AndroidViewModel(appli
             else -> app.getString(R.string.today_wrapped_up_message)
         }
     }
+}
+
+private fun StudyProject.withTaskState(taskId: String, state: StudyTaskState): StudyProject {
+    if (taskId.isBlank() || plan.blocks.none { it.id == taskId }) return this
+    val updated = taskStateById.toMutableMap()
+    if (state.isDefault) {
+        updated.remove(taskId)
+    } else {
+        updated[taskId] = state
+    }
+    return copy(taskStateById = updated)
 }
 
 private fun isRequiredTask(task: GeneratedStudyBlock) =

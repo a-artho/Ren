@@ -219,9 +219,10 @@ def test_completed_plan_returns_title(tmp_path, monkeypatch):
             title="Test Subject Matter",
             topics=[{"id": "t1", "title": "Topic 1", "order": 1}],
             blocks=[{
-                "id": "b1", "title": "Block 1", "order": 1, "durationMinutes": 30,
+                "id": "b1", "title": "Block 1", "order": 1,
+                "effortMinMinutes": 20, "effortLikelyMinutes": 30, "effortMaxMinutes": 40,
                 "instructions": "Read", "topicIds": ["t1"],
-                "minimumUsefulMinutes": 10, "taskType": "REVIEW",
+                "taskType": "REVIEW",
             }],
             extractionWarnings=[{
                 "type": "SOURCE_ORDER_CONFLICT",
@@ -239,5 +240,5 @@ def test_completed_plan_returns_title(tmp_path, monkeypatch):
         assert "topics" in data
         assert "blocks" in data
         assert data["extractionWarnings"][0]["type"] == "SOURCE_ORDER_CONFLICT"
-        assert "totalEstimatedMinutes" in data
+        assert "totalEstimatedMinutes" not in data
 

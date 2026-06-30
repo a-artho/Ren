@@ -14,25 +14,22 @@ from uuid import uuid4
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from .models import (
-    Difficulty,
     EstimateConfidence,
     ExtractionWarning,
     GeneratedPlan,
     Setup,
     SourceRef,
     StudyBlock,
-    StudyTaskStatus,
     StudyTaskType,
-    TASK_TYPE_MINIMUMS,
     Topic,
 )
 from .pdf_parser import PdfPageAnchor
 
 logger = logging.getLogger("ren")
 BACKEND_ROOT = Path(__file__).parents[1]
-SEMANTIC_EXTRACTION_PROMPT_VERSION = "2026-06-29-semantic-material-groups-v4"
-SEMANTIC_EXTRACTION_SCHEMA_VERSION = "semantic-schema-v2"
-SEMANTIC_EXTRACTION_CACHE_VERSION = "semantic-cache-v2"
+SEMANTIC_EXTRACTION_PROMPT_VERSION = "2026-06-30-semantic-no-split-keep-together-v1"
+SEMANTIC_EXTRACTION_SCHEMA_VERSION = "semantic-schema-v4"
+SEMANTIC_EXTRACTION_CACHE_VERSION = "semantic-cache-v4"
 DOCUMENT_CONTEXT_VERSION = "document-context-v3"
 GLOBAL_EFFORT_CALIBRATION_PROMPT_VERSION = "2026-06-29-global-effort-calibration-v2"
 GLOBAL_EFFORT_CALIBRATION_SCHEMA_VERSION = "global-effort-calibration-schema-v1"
@@ -104,8 +101,7 @@ GEMINI_SEMANTIC_SCHEMA = {
                     "difficultyScore": {"type": "integer", "minimum": 1, "maximum": 5},
                     "densityScore": {"type": "integer", "minimum": 1, "maximum": 5},
                     "productionDemandScore": {"type": "integer", "minimum": 1, "maximum": 5},
-                    "splitAllowed": {"type": "boolean"},
-                    "continuityLabel": {"type": "string"},
+                    "keepTogetherLabel": {"type": "string"},
                     "prerequisiteLocalBlockIndexes": {
                         "type": "array",
                         "items": {"type": "integer", "minimum": 1},
@@ -116,7 +112,7 @@ GEMINI_SEMANTIC_SCHEMA = {
                     "sectionTitle", "materialGroupTitle", "taskType", "instructions", "completionCriteria",
                     "effortMinMinutes", "effortLikelyMinutes", "effortMaxMinutes",
                     "estimateConfidence", "difficultyScore", "densityScore",
-                    "productionDemandScore", "splitAllowed", "continuityLabel",
+                    "productionDemandScore", "keepTogetherLabel",
                     "prerequisiteLocalBlockIndexes",
                 ],
             },
@@ -192,8 +188,7 @@ class SemanticBlock(BaseModel):
     difficultyScore: int = Field(ge=1, le=5)
     densityScore: int = Field(ge=1, le=5)
     productionDemandScore: int = Field(ge=1, le=5)
-    splitAllowed: bool = True
-    continuityLabel: str = ""
+    keepTogetherLabel: str = ""
     prerequisiteLocalBlockIndexes: list[int] = Field(default_factory=list)
 
     @model_validator(mode="after")
@@ -347,7 +342,7 @@ def semantic_extractions_to_generated_plan(
                 if index in block_id_by_local
             ]
             section_title = block.sectionTitle.strip() or block.title.strip()
-            material_group_title = block.materialGroupTitle.strip() or section_title
+            material_group_title = block.materialGroupTitle.strip()
             source_ref = SourceRef(
                 documentId=source_id,
                 startPage=block.startPage,
@@ -361,27 +356,20 @@ def semantic_extractions_to_generated_plan(
                         "id": block_id,
                         "title": block.title.strip(),
                         "order": global_block_order,
-                        "durationMinutes": block.effortLikelyMinutes,
-                        "estimatedMinutes": block.effortLikelyMinutes,
                         "effortMinMinutes": block.effortMinMinutes,
                         "effortLikelyMinutes": block.effortLikelyMinutes,
                         "effortMaxMinutes": block.effortMaxMinutes,
-                        "minimumUsefulMinutes": minimum_minutes_for_task_type(block.taskType),
                         "taskType": block.taskType,
-                        "difficulty": difficulty_from_score(block.difficultyScore),
                         "difficultyScore": block.difficultyScore,
                         "densityScore": block.densityScore,
                         "productionDemandScore": block.productionDemandScore,
                         "estimateConfidence": block.estimateConfidence,
                         "instructions": block.instructions.strip(),
                         "completionCriteria": block.completionCriteria,
-                        "splitAllowed": block.splitAllowed,
-                        "continuityGroup": block.continuityLabel.strip(),
+                        "keepTogetherGroup": block.keepTogetherLabel.strip(),
                         "topicIds": topic_ids,
                         "dependencies": dependencies,
                         "sourceRefs": [source_ref.model_dump()],
-                        "status": StudyTaskStatus.NOT_STARTED,
-                        "scheduledDate": None,
                     }
                 )
             )
@@ -424,15 +412,10 @@ def apply_global_effort_calibration(
             calibrated_blocks.append(block)
             continue
 
-        likely = max(adjustment.effortLikelyMinutes, block.minimumUsefulMinutes)
-        min_minutes = min(
-            max(adjustment.effortMinMinutes, block.minimumUsefulMinutes),
-            likely,
-        )
+        likely = max(adjustment.effortLikelyMinutes, adjustment.effortMinMinutes)
+        min_minutes = min(adjustment.effortMinMinutes, likely)
         max_minutes = max(adjustment.effortMaxMinutes, likely)
         update = {
-            "durationMinutes": likely,
-            "estimatedMinutes": likely,
             "effortMinMinutes": min_minutes,
             "effortLikelyMinutes": likely,
             "effortMaxMinutes": max_minutes,
@@ -480,18 +463,6 @@ def with_global_calibration_failure_warning(plan: GeneratedPlan) -> GeneratedPla
             ]
         }
     )
-
-
-def difficulty_from_score(score: int) -> Difficulty:
-    if score <= 2:
-        return Difficulty.LIGHT
-    if score >= 4:
-        return Difficulty.HEAVY
-    return Difficulty.STANDARD
-
-
-def minimum_minutes_for_task_type(task_type: StudyTaskType) -> int:
-    return TASK_TYPE_MINIMUMS.get(task_type, 5)
 
 
 def gemini_concurrency() -> int:
@@ -823,9 +794,8 @@ def semantic_prompt() -> str:
         "Do not invent future revision tasks. "
         "Do not add a cumulative recap/review block that spans material already covered by earlier blocks. "
         "Each block's page range should move forward with the lecture; a later block should not reach back to earlier pages unless the source has an explicit later cross-reference section. "
-        "Prefer semantically coherent blocks of about 15-50 active minutes. If a section is dense, split it into natural source-ordered blocks rather than pretending it is tiny. "
-        "Set splitAllowed true when the block has natural sub-boundaries and false when splitting would make it confusing. "
-        "Use continuityLabel to keep adjacent blocks near each other when they form one concept; use an empty string otherwise. "
+        "Prefer semantically coherent blocks of about 15-50 active minutes. If a section is dense, create multiple natural source-ordered blocks rather than pretending it is tiny. "
+        "Use keepTogetherLabel to keep adjacent blocks near each other when they form one concept; use an empty string otherwise. "
         "For prerequisiteLocalBlockIndexes, include only obvious earlier local block indexes; otherwise use an empty array. "
         "Use warnings only for extraction uncertainty, such as missing readable text, unclear page spans, or ambiguous source structure. "
     )
@@ -845,7 +815,7 @@ def global_effort_calibration_prompt() -> str:
         "APPLICATION for examples/problems using earlier concepts; RECAP_REPETITION for substantial repeated/recap content; "
         "REFERENCE_ADMIN for admin/reference material that still exists but needs little study; UNCHANGED exists only as a no-op fallback. "
         "Return adjustments only for blocks whose effort or confidence should change; do not return UNCHANGED blocks. For every returned adjustment, use the exact blockId. "
-        "Set effortMinMinutes <= effortLikelyMinutes <= effortMaxMinutes, and never set likely effort below the block's minimumUsefulMinutes. "
+        "Set effortMinMinutes <= effortLikelyMinutes <= effortMaxMinutes. "
         "Keep reasons short and grounded in the relationship to earlier/later blocks. "
         "Return JSON matching the supplied schema. "
     )
@@ -876,7 +846,6 @@ def format_global_effort_context(plan: GeneratedPlan, documents: list[SourceDocu
                 "materialGroupTitle": ref.materialGroupTitle if ref else None,
                 "taskType": block.taskType,
                 "instructions": block.instructions,
-                "minimumUsefulMinutes": block.minimumUsefulMinutes,
                 "effortMinMinutes": block.effortMinMinutes,
                 "effortLikelyMinutes": block.effortLikelyMinutes,
                 "effortMaxMinutes": block.effortMaxMinutes,

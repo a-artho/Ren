@@ -1,4 +1,4 @@
-from app.models import ExtractionWarning, GeneratedPlan, SourceDocumentInfo, SourceRef, StudyTaskStatus
+from app.models import ExtractionWarning, GeneratedPlan, SourceDocumentInfo, SourceRef
 from app.planner import build_master_plan, normalize_plan
 from app.provider import SourceDocument
 
@@ -17,11 +17,10 @@ def raw_plan(block_minutes):
                 "id": f"old-{index}",
                 "title": f"Block {index}",
                 "order": index,
-                "durationMinutes": minutes,
-                "estimatedMinutes": minutes,
-                "minimumUsefulMinutes": 5,
+                "effortMinMinutes": max(1, minutes - 10),
+                "effortLikelyMinutes": minutes,
+                "effortMaxMinutes": minutes + 10,
                 "taskType": "CONCEPT",
-                "difficulty": "STANDARD",
                 "estimateConfidence": "MEDIUM",
                 "instructions": "Study this block.",
                 "topicIds": ["t-old"],
@@ -52,10 +51,8 @@ def test_master_plan_normalizes_sources_and_stable_ids_without_scheduling(tmp_pa
     assert all(block.sourceRefs[0].documentId == "doc1" for block in plan.blocks)
     assert plan.blocks[0].sourceRefs[0].sectionTitle == "Section 1"
     assert plan.blocks[0].sourceRefs[0].materialGroupTitle == "Parent section"
-    assert all(block.status == StudyTaskStatus.NOT_STARTED for block in plan.blocks)
-    assert all(block.scheduledDate is None for block in plan.blocks)
     assert not hasattr(plan, "schedule")
-    assert not hasattr(plan.blocks[0], "robustMinutes")
+    assert not hasattr(plan.blocks[0], "reservedMinutes")
     assert not hasattr(plan.blocks[0], "cognitivePoints")
 
 

@@ -105,7 +105,6 @@ class TodayImpactPreviewServiceTest {
             id = "plan",
             topics = emptyList(),
             blocks = tasks,
-            totalEstimatedMinutes = tasks.sumOf { it.durationMinutes },
             projectName = "Plan",
         ),
         preferences = PlanSetupSubmission(
@@ -122,10 +121,11 @@ class TodayImpactPreviewServiceTest {
         id = id,
         title = id,
         order = 1,
-        durationMinutes = minutes,
+        effortMinMinutes = minutes,
+        effortLikelyMinutes = minutes,
+        effortMaxMinutes = minutes,
         instructions = "Study $id",
         topicIds = listOf("topic"),
-        minimumUsefulMinutes = 10,
         taskType = StudyTaskType.Concept,
     )
 }

@@ -1,6 +1,6 @@
 package com.hci.ren.feature.studymap
 
-import com.hci.ren.feature.plangeneration.GeneratedStudyBlock
+import com.hci.ren.feature.plangeneration.StudyTaskStatus
 
 data class TodayWrapUpSummary(
     val completedTasks: Int,
@@ -27,7 +27,7 @@ class TodayWrapUpService {
             preferences = project.preferences,
             dailyMinutesOverride = project.dailyMinutesOverride,
             dailyAvailableMinutesByDate = project.dailyAvailableMinutesByDate,
-            taskProgressById = project.taskProgressById,
+            taskStateById = project.taskStateById,
             today = date.toStudyCalendar() ?: return null,
         )
         val baseAvailableMinutes = todayBaseAvailableMinutes(project, data, date)
@@ -39,27 +39,27 @@ class TodayWrapUpService {
             session = activeSession,
             hasAvailabilityOverride = activeSession.availableMinutes != null,
         )
-        val sourceTasksById = project.plan.blocks.associateBy { it.id }
-        val progress = project.taskProgressById.toMutableMap()
+        val sourceTaskIds = project.plan.blocks.mapTo(mutableSetOf()) { it.id }
+        val state = project.taskStateById.toMutableMap()
         var completedCount = 0
         var removedCount = 0
 
         todayPlan.doneTodayTasks
             .filter { it.id in activeSession.doneTodayTaskIds }
             .forEach { task ->
-                if (progress.addTaskProgress(task, sourceTasksById, completedMinutes = task.durationMinutes)) {
+                if (state.setTaskState(task.id, sourceTaskIds, StudyTaskState(status = StudyTaskStatus.Completed))) {
                     completedCount += 1
                 }
             }
 
         todayPlan.removedFromPlanTasks.forEach { task ->
-            if (progress.addTaskProgress(task, sourceTasksById, removedMinutes = task.durationMinutes)) {
+            if (state.setTaskState(task.id, sourceTaskIds, StudyTaskState(status = StudyTaskStatus.ExcludedByUser))) {
                 removedCount += 1
             }
         }
 
         val updatedProject = project.copy(
-            taskProgressById = progress,
+            taskStateById = state,
             dailyAvailableMinutesByDate = project.dailyAvailableMinutesByDate + (date to 0),
         )
         return TodayWrapUpResult(
@@ -74,28 +74,17 @@ class TodayWrapUpService {
     }
 }
 
-private fun MutableMap<String, StudyTaskProgress>.addTaskProgress(
-    task: GeneratedStudyBlock,
-    sourceTasksById: Map<String, GeneratedStudyBlock>,
-    completedMinutes: Int = 0,
-    removedMinutes: Int = 0,
+private fun MutableMap<String, StudyTaskState>.setTaskState(
+    taskId: String,
+    sourceTaskIds: Set<String>,
+    state: StudyTaskState,
 ): Boolean {
-    val sourceTaskId = task.id.takeIf { it in sourceTasksById } ?: return false
-    val sourceTask = sourceTasksById[sourceTaskId] ?: return false
-    val totalMinutes = sourceTask.durationMinutes.coerceAtLeast(1)
-    val current = this[sourceTaskId] ?: StudyTaskProgress()
-    val completed = (current.completedMinutes + completedMinutes.coerceAtLeast(0))
-        .coerceIn(0, totalMinutes)
-    val removed = (current.removedMinutes + removedMinutes.coerceAtLeast(0))
-        .coerceIn(0, totalMinutes - completed)
-    val updated = StudyTaskProgress(
-        completedMinutes = completed,
-        removedMinutes = removed,
-    )
-    if (updated.isEmpty) {
-        remove(sourceTaskId)
+    if (taskId !in sourceTaskIds) return false
+    val current = this[taskId] ?: StudyTaskState()
+    if (state.isDefault) {
+        remove(taskId)
     } else {
-        this[sourceTaskId] = updated
+        this[taskId] = state
     }
-    return updated != current
+    return state != current
 }
