@@ -53,7 +53,6 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -194,24 +193,13 @@ private fun ProcessingContent(
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
         val compact = maxHeight < 660.dp
         val animationHeight = if (compact) 330.dp else 430.dp
-        val topGap = if (compact) 4.dp else 10.dp
-        val animationTopGap = if (compact) 34.dp else 54.dp
+        val animationTopGap = if (compact) 38.dp else 64.dp
         val statusTopGap = if (compact) 12.dp else 18.dp
         val bottomGap = if (compact) 4.dp else 12.dp
 
         Column(
             modifier = Modifier.fillMaxSize(),
         ) {
-            Spacer(Modifier.height(topGap))
-
-            Text(
-                text = stringResource(R.string.ai_processing),
-                modifier = Modifier.fillMaxWidth(),
-                style = MaterialTheme.typography.headlineSmall,
-                color = MaterialTheme.colorScheme.onBackground,
-                fontWeight = FontWeight.Bold,
-            )
-
             Spacer(Modifier.height(animationTopGap))
 
             Box(

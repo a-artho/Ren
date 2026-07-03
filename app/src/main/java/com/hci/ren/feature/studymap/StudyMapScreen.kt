@@ -42,7 +42,6 @@ import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
-import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.School
 import androidx.compose.material.icons.filled.WarningAmber
@@ -60,7 +59,6 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
@@ -92,8 +90,11 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.boundsInWindow
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.semantics.heading
@@ -161,6 +162,7 @@ fun StudyMapScreen(
     val selectedView = StudyMapView.valueOf(selectedViewName)
     var adjustment by remember { mutableStateOf<AdjustmentSheet?>(null) }
     var deleteDialogOpen by remember { mutableStateOf(false) }
+    var autoCloseExpandedDays by rememberSaveable { mutableStateOf(true) }
 
     BackHandler(onBack = onBack)
 
@@ -196,12 +198,11 @@ fun StudyMapScreen(
             StudyMapHeader(
                 projectName = plan.projectName,
                 deadline = relativeDeadlineLabel(preferences),
-                progress = data.progress,
-                completedTasks = data.completedTasks,
-                totalTasks = data.activeTasks.size,
                 realismStatus = data.realism.status,
+                autoCloseExpandedDays = autoCloseExpandedDays,
                 onEditPlan = { adjustment = AdjustmentSheet.PlanEdit },
                 onDeletePlan = { deleteDialogOpen = true },
+                onToggleAutoCloseExpandedDays = { autoCloseExpandedDays = !autoCloseExpandedDays },
             )
         },
     ) { padding ->
@@ -225,15 +226,18 @@ fun StudyMapScreen(
                 }
             }
             item {
-                StudyMapViewSwitcher(
-                    selected = selectedView,
-                    onSelected = { selectedViewName = it.name },
-                )
+                Box(Modifier.padding(top = 6.dp)) {
+                    StudyMapViewSwitcher(
+                        selected = selectedView,
+                        onSelected = { selectedViewName = it.name },
+                    )
+                }
             }
             when (selectedView) {
                 StudyMapView.Schedule -> scheduleItems(
                     data = data,
                     onOpenToday = onOpenToday,
+                    autoCloseExpandedDays = autoCloseExpandedDays,
                 )
                 StudyMapView.Topics -> materialItems(data)
             }
@@ -303,12 +307,11 @@ fun StudyMapScreen(
 private fun StudyMapHeader(
     projectName: String,
     deadline: String? = null,
-    progress: Float? = null,
-    completedTasks: Int? = null,
-    totalTasks: Int? = null,
     realismStatus: PlanRealismStatus? = null,
+    autoCloseExpandedDays: Boolean,
     onEditPlan: (() -> Unit)? = null,
     onDeletePlan: (() -> Unit)? = null,
+    onToggleAutoCloseExpandedDays: () -> Unit,
 ) {
     var menuExpanded by remember { mutableStateOf(false) }
     val hasPlanActions = onEditPlan != null || onDeletePlan != null
@@ -328,43 +331,29 @@ private fun StudyMapHeader(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                StudyMapHeaderTitle(
-                    title = title,
-                    modifier = Modifier.weight(1f),
-                )
                 if (hasPlanActions) {
-                    Spacer(Modifier.width(2.dp))
-                    StudyPlanMenu(
+                    StudyPlanTitleMenu(
+                        title = title,
                         expanded = menuExpanded,
                         onExpandedChange = { menuExpanded = it },
+                        autoCloseExpandedDays = autoCloseExpandedDays,
                         onEditPlan = onEditPlan,
                         onDeletePlan = onDeletePlan,
-                        modifier = Modifier.offset(x = 10.dp),
-                    )
-                }
-            }
-            if (progress != null && realismStatus != null) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
-                    SubtlePlanProgressBar(
-                        progress = progress,
+                        onToggleAutoCloseExpandedDays = onToggleAutoCloseExpandedDays,
                         modifier = Modifier.weight(1f),
                     )
-                    if (completedTasks != null && totalTasks != null) {
-                        Text(
-                            text = stringResource(
-                                R.string.tasks_completed_compact,
-                                completedTasks,
-                                totalTasks,
-                            ),
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.74f),
-                            maxLines = 1,
-                        )
-                    }
+                } else {
+                    StudyMapHeaderTitle(
+                        title = title,
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+                realismStatus?.let { status ->
+                    Spacer(Modifier.width(10.dp))
+                    OutlinedStatusPill(
+                        label = realismLabel(status),
+                        color = realismPillColor(status),
+                    )
                 }
             }
         }
@@ -384,18 +373,25 @@ private fun StudyMapHeaderTitle(title: String, modifier: Modifier = Modifier) {
 }
 
 @Composable
-private fun StudyPlanMenu(
+private fun StudyPlanTitleMenu(
+    title: String,
     expanded: Boolean,
     onExpandedChange: (Boolean) -> Unit,
+    autoCloseExpandedDays: Boolean,
     onEditPlan: (() -> Unit)?,
     onDeletePlan: (() -> Unit)?,
+    onToggleAutoCloseExpandedDays: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Box(modifier = modifier) {
-        IconButton(onClick = { onExpandedChange(true) }) {
-            Icon(
-                imageVector = Icons.Default.MoreVert,
-                contentDescription = stringResource(R.string.study_plan_options),
+        Surface(
+            onClick = { onExpandedChange(true) },
+            color = Color.Transparent,
+            shape = RoundedCornerShape(8.dp),
+        ) {
+            StudyMapHeaderTitle(
+                title = "\u22EE $title",
+                modifier = Modifier.fillMaxWidth(),
             )
         }
         DropdownMenu(
@@ -416,6 +412,19 @@ private fun StudyPlanMenu(
                 onClick = {
                     onExpandedChange(false)
                     onDeletePlan?.invoke()
+                },
+            )
+            DropdownMenuItem(
+                text = { Text(stringResource(R.string.auto_close_days)) },
+                trailingIcon = {
+                    Checkbox(
+                        checked = autoCloseExpandedDays,
+                        onCheckedChange = null,
+                    )
+                },
+                onClick = {
+                    onToggleAutoCloseExpandedDays()
+                    onExpandedChange(false)
                 },
             )
         }
@@ -458,36 +467,6 @@ private fun RenamePlanDialog(
 }
 
 @Composable
-private fun SubtlePlanProgressBar(
-    progress: Float,
-    modifier: Modifier = Modifier,
-) {
-    val safeProgress = progress.coerceIn(0f, 1f)
-    Surface(
-        modifier = modifier
-            .fillMaxWidth()
-            .height(4.dp),
-        shape = RoundedCornerShape(999.dp),
-        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.24f),
-    ) {
-        Box(
-            modifier = Modifier.fillMaxSize(),
-            contentAlignment = Alignment.CenterStart,
-        ) {
-            if (safeProgress > 0f) {
-                Surface(
-                    modifier = Modifier
-                        .fillMaxWidth(safeProgress)
-                        .height(4.dp),
-                    shape = RoundedCornerShape(999.dp),
-                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.68f),
-                ) {}
-            }
-        }
-    }
-}
-
-@Composable
 private fun DeletePlanDialog(
     onDismiss: () -> Unit,
     onDelete: () -> Unit,
@@ -523,21 +502,13 @@ private fun ProjectSummaryCard(data: StudyMapData) {
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(18.dp),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
             SummaryMetric(
                 label = stringResource(R.string.planned_metric_label),
                 value = formatMinutes(data.remainingReservedMinutes),
                 modifier = Modifier.weight(1f),
             )
-            Box(
-                modifier = Modifier.weight(1f),
-                contentAlignment = Alignment.Center,
-            ) {
-                OutlinedStatusPill(
-                    label = realismLabel(data.realism.status),
-                    color = realismPillColor(data.realism.status),
-                )
-            }
             SummaryMetric(
                 label = stringResource(R.string.available_metric_label),
                 value = formatMinutes(data.realism.availableMinutes),
@@ -574,8 +545,8 @@ private fun SummaryMetric(
         Text(
             text = value,
             style = MaterialTheme.typography.titleLarge,
-            color = MaterialTheme.colorScheme.onSurface,
-            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.86f),
+            fontWeight = FontWeight.SemiBold,
             textAlign = textAlign,
         )
     }
@@ -703,6 +674,7 @@ private fun StudyMapViewSwitcher(selected: StudyMapView, onSelected: (StudyMapVi
 private fun androidx.compose.foundation.lazy.LazyListScope.scheduleItems(
     data: StudyMapData,
     onOpenToday: () -> Unit,
+    autoCloseExpandedDays: Boolean,
 ) {
     if (data.schedule.days.isNotEmpty()) {
         item(key = "schedule-timeline") {
@@ -711,6 +683,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.scheduleItems(
                 documents = data.plan.sourceDocuments,
                 studyToday = currentStudyCalendar(data.preferences).toStudyDate(),
                 onOpenToday = onOpenToday,
+                autoCloseExpandedDays = autoCloseExpandedDays,
                 modifier = Modifier.animateItem(),
             )
         }
@@ -748,24 +721,58 @@ private fun StudyScheduleTimeline(
     documents: List<StudySourceDocument>,
     studyToday: String,
     onOpenToday: () -> Unit,
+    autoCloseExpandedDays: Boolean,
     modifier: Modifier = Modifier,
 ) {
+    val dayStateKey = days.joinToString(separator = "|") { it.date }
+    var expandedDays by rememberSaveable(dayStateKey, studyToday) {
+        mutableStateOf(initialExpandedTimelineDays(days, studyToday))
+    }
+
+    LaunchedEffect(autoCloseExpandedDays) {
+        if (autoCloseExpandedDays && expandedDays.size > 1) {
+            expandedDays = expandedDays.takeLast(1)
+        }
+    }
+
     Column(
         modifier = modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(0.dp),
     ) {
+        val expandedFocusDates = expandedDays
+            .filter { date -> date != studyToday }
+            .toSet()
         days.forEachIndexed { index, day ->
+            val expanded = day.date in expandedFocusDates
             StudyDayMapCard(
                 day = day,
                 documents = documents,
                 studyToday = studyToday,
-                initiallyExpanded = index == 0,
+                expanded = expanded,
+                isFocused = expanded || (day.date == studyToday && expandedFocusDates.isEmpty()),
                 isFirst = index == 0,
                 isLast = index == days.lastIndex,
                 onOpenToday = onOpenToday,
+                onToggleExpanded = {
+                    expandedDays = if (day.date in expandedDays) {
+                        expandedDays - day.date
+                    } else if (autoCloseExpandedDays) {
+                        listOf(day.date)
+                    } else {
+                        expandedDays + day.date
+                    }
+                },
+                onExpandedLeftViewport = {
+                    expandedDays = expandedDays - day.date
+                },
             )
         }
     }
+}
+
+private fun initialExpandedTimelineDays(days: List<StudyScheduleDay>, studyToday: String): List<String> {
+    val firstDay = days.firstOrNull()?.date ?: return emptyList()
+    return if (firstDay == studyToday) emptyList() else listOf(firstDay)
 }
 
 @Composable
@@ -773,33 +780,50 @@ private fun StudyDayMapCard(
     day: StudyScheduleDay,
     documents: List<StudySourceDocument>,
     studyToday: String,
-    initiallyExpanded: Boolean,
+    expanded: Boolean,
+    isFocused: Boolean,
     isFirst: Boolean,
     isLast: Boolean,
     onOpenToday: () -> Unit,
+    onToggleExpanded: () -> Unit,
+    onExpandedLeftViewport: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val isToday = day.date == studyToday
     val isCompleted = day.tasks.isNotEmpty() && day.tasks.all { it.status == StudyTaskStatus.Completed }
-    var manuallyExpanded by remember(day.date) { mutableStateOf(if (isToday) false else initiallyExpanded) }
-    val expanded = !isToday && manuallyExpanded
+    val view = LocalView.current
+    var headerRowHeightPx by remember(day.date, expanded) { mutableIntStateOf(0) }
+    val defaultMarkerHeight = if (expanded) 48.dp else 108.dp
+    val measuredMarkerHeight = with(LocalDensity.current) { headerRowHeightPx.toDp() }
+    val markerHeight = if (headerRowHeightPx == 0) defaultMarkerHeight else maxOf(defaultMarkerHeight, measuredMarkerHeight)
 
     Column(
         modifier = modifier
             .fillMaxWidth()
+            .onGloballyPositioned { coordinates ->
+                if (expanded) {
+                    val viewportHeight = view.height.toFloat()
+                    val bounds = coordinates.boundsInWindow()
+                    if (viewportHeight > 0f && (bounds.bottom <= 0f || bounds.top >= viewportHeight)) {
+                        onExpandedLeftViewport()
+                    }
+                }
+            }
             .animateContentSize(),
         verticalArrangement = Arrangement.spacedBy(0.dp),
     ) {
         Row(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .onSizeChanged { headerRowHeightPx = it.height },
             verticalAlignment = Alignment.Top,
         ) {
             DayTimelineMarker(
                 isFirst = isFirst,
                 isLast = isLast && !expanded,
-                isToday = isToday,
+                isFocused = isFocused,
                 isCompleted = isCompleted,
-                expanded = expanded,
+                height = markerHeight,
             )
             Spacer(Modifier.width(12.dp))
             Surface(
@@ -807,7 +831,7 @@ private fun StudyDayMapCard(
                     if (isToday) {
                         onOpenToday()
                     } else {
-                        manuallyExpanded = !manuallyExpanded
+                        onToggleExpanded()
                     }
                 },
                 modifier = Modifier.weight(1f),
@@ -840,6 +864,7 @@ private fun StudyDayMapCard(
                                     style = MaterialTheme.typography.labelLarge,
                                     color = MaterialTheme.colorScheme.primary,
                                     fontWeight = FontWeight.SemiBold,
+                                    maxLines = 1,
                                 )
                             }
                         }
@@ -879,21 +904,21 @@ private fun StudyDayMapCard(
 private fun DayTimelineMarker(
     isFirst: Boolean,
     isLast: Boolean,
-    isToday: Boolean,
+    isFocused: Boolean,
     isCompleted: Boolean,
-    expanded: Boolean,
+    height: Dp,
     modifier: Modifier = Modifier,
 ) {
     val activeColor = MaterialTheme.colorScheme.primary
     val mutedColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.72f)
     val railColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.96f)
-    val nodeBorderColor = if (isToday) activeColor.copy(alpha = 0.72f) else mutedColor
-    val dotSize = if (isToday) 13.dp else 10.dp
+    val nodeBorderColor = if (isFocused) activeColor.copy(alpha = 0.72f) else mutedColor
+    val dotSize = if (isFocused) 13.dp else 10.dp
     val dotTop = 19.dp
     Box(
         modifier = modifier
             .width(18.dp)
-            .height(if (expanded) 48.dp else 88.dp),
+            .height(height),
         contentAlignment = Alignment.TopCenter,
     ) {
         Canvas(Modifier.fillMaxSize()) {
@@ -992,7 +1017,7 @@ private fun TimelineSourceDivider(
     showMainRail: Boolean,
     modifier: Modifier = Modifier,
 ) {
-    val mutedRail = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.96f)
+    val trunkRail = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.96f)
     Box(
         modifier = modifier
             .fillMaxWidth()
@@ -1007,7 +1032,7 @@ private fun TimelineSourceDivider(
             val nodeCenterX = 39.dp.toPx()
             if (showMainRail) {
                 drawLine(
-                    color = mutedRail,
+                    color = trunkRail,
                     start = Offset(branchX, 0f),
                     end = Offset(branchX, size.height),
                     strokeWidth = 1.dp.toPx(),
@@ -1016,7 +1041,7 @@ private fun TimelineSourceDivider(
             }
             if (continuesChildRail) {
                 drawLine(
-                    color = mutedRail,
+                    color = trunkRail,
                     start = Offset(nodeCenterX, 0f),
                     end = Offset(nodeCenterX, size.height),
                     strokeWidth = 1.dp.toPx(),
@@ -1039,8 +1064,8 @@ private fun SourceDividerLabel(
     text: String,
     modifier: Modifier = Modifier,
 ) {
-    val lineColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.37f)
-    val labelColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.76f)
+    val lineColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.28f)
+    val labelColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.58f)
     Row(
         modifier = modifier,
         verticalAlignment = Alignment.CenterVertically,
@@ -1083,7 +1108,7 @@ private fun TaskBranchConnector(
     isLastDay: Boolean,
     modifier: Modifier = Modifier,
 ) {
-    val mutedColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.96f)
+    val trunkColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.96f)
     Canvas(modifier) {
         val branchX = 9.dp.toPx()
         val nodeCenterX = 39.dp.toPx()
@@ -1092,7 +1117,7 @@ private fun TaskBranchConnector(
         if (isLastDay) {
             if (isFirstBranch) {
                 drawLine(
-                    color = mutedColor,
+                    color = trunkColor,
                     start = Offset(branchX, 0f),
                     end = Offset(branchX, nodeCenterY),
                     strokeWidth = 1.dp.toPx(),
@@ -1101,7 +1126,7 @@ private fun TaskBranchConnector(
             }
         } else {
             drawLine(
-                color = mutedColor,
+                color = trunkColor,
                 start = Offset(branchX, 0f),
                 end = Offset(branchX, exitY),
                 strokeWidth = 1.dp.toPx(),
@@ -1111,7 +1136,7 @@ private fun TaskBranchConnector(
 
         if (isFirstBranch) {
             drawLine(
-                color = mutedColor,
+                color = trunkColor,
                 start = Offset(branchX, nodeCenterY),
                 end = Offset(nodeCenterX, nodeCenterY),
                 strokeWidth = 1.dp.toPx(),
@@ -1123,7 +1148,7 @@ private fun TaskBranchConnector(
         val childRailEnd = if (isLastBranch) nodeCenterY else exitY
         if (childRailStart < childRailEnd) {
             drawLine(
-                color = mutedColor,
+                color = trunkColor,
                 start = Offset(nodeCenterX, childRailStart),
                 end = Offset(nodeCenterX, childRailEnd),
                 strokeWidth = 1.dp.toPx(),
@@ -1134,7 +1159,7 @@ private fun TaskBranchConnector(
 }
 
 @Composable
-private fun TimelineDayGap(height: Dp = 16.dp) {
+private fun TimelineDayGap(height: Dp = 22.dp) {
     val mutedColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.96f)
     Canvas(
         modifier = Modifier
@@ -1230,7 +1255,7 @@ private fun StudyDayTitle(
 ) {
     Text(
         text = text,
-        style = MaterialTheme.typography.labelLarge,
+        style = MaterialTheme.typography.titleMedium,
         fontWeight = FontWeight.Bold,
         maxLines = 1,
         overflow = TextOverflow.Ellipsis,
@@ -1350,7 +1375,7 @@ private fun MaterialTaskRowContent(
 ) {
     var rowHeightPx by remember { mutableIntStateOf(0) }
     val rowHeight = with(LocalDensity.current) { rowHeightPx.toDp() }
-    val connectorColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.48f)
+    val connectorColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.96f)
     Box(
         modifier = Modifier
             .fillMaxWidth()

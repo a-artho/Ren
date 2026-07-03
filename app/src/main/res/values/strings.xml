@@ -1,7 +1,6 @@
 <resources>
     <string name="app_name">Ren</string>
     <string name="back">Back</string>
-    <string name="ai_processing">Creating your plan</string>
     <string name="uploading_document">Uploading documents</string>
     <string name="reading_material">Reading materials</string>
     <string name="identifying_topics">Finding key topics</string>
@@ -74,6 +73,7 @@
     <string name="change_deadline_subtitle">Move the finish line and rebalance the work.</string>
     <string name="available_time_subtitle">Update how much each study day can hold.</string>
     <string name="delete_plan">Delete plan</string>
+    <string name="auto_close_days">Auto-close days</string>
     <string name="delete_plan_title">Delete this plan?</string>
     <string name="delete_plan_message">This removes the current study plan from this device. Tiny bit dramatic, but permanent.</string>
     <string name="delete">Delete</string>
