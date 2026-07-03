@@ -1423,7 +1423,7 @@ private fun MaterialTaskRowContent(
         if (rowHeightPx > 0 && (connectBefore || connectAfter)) {
             Canvas(
                 modifier = Modifier
-                    .width(30.dp)
+                    .width(20.dp)
                     .height(rowHeight),
             ) {
                 val centerX = size.width / 2f
