@@ -15,7 +15,7 @@ class PlanSetupUiStateTest {
         original.beginNewSession(listOf("content://ren/doc"))
         original.updatePlanTitle("HCI final")
         original.selectDeadline(StudyDeadline.InOneWeek)
-        original.selectDailyTime(DailyStudyTime.FiveHours)
+        original.selectDailyTime(DailyStudyTime.SixHours)
         original.toggleStudyDay(StudyDay.Monday)
         original.toggleStudyDay(StudyDay.Friday)
         original.goNext() // Goal -> Deadline
@@ -29,7 +29,7 @@ class PlanSetupUiStateTest {
         assertEquals(PlanSetupStep.Deadline, state.currentStep)
         assertEquals("HCI final", state.planTitle)
         assertEquals(StudyDeadline.InOneWeek, state.selectedDeadline)
-        assertEquals(DailyStudyTime.FiveHours, state.selectedDailyTime)
+        assertEquals(DailyStudyTime.SixHours, state.selectedDailyTime)
         assertEquals(setOf(StudyDay.Monday, StudyDay.Friday), state.selectedDays)
     }
 
@@ -84,7 +84,7 @@ class PlanSetupUiStateTest {
         assertTrue(
             PlanSetupUiState(
                 currentStep = PlanSetupStep.DailyTime,
-                selectedDailyTime = DailyStudyTime.OneHour,
+                selectedDailyTime = DailyStudyTime.TwoHours,
             ).canContinue,
         )
         assertTrue(
@@ -92,7 +92,7 @@ class PlanSetupUiStateTest {
                 currentStep = PlanSetupStep.StudyDays,
                 planTitle = "HCI final",
                 selectedDeadline = StudyDeadline.InOneWeek,
-                selectedDailyTime = DailyStudyTime.OneHour,
+                selectedDailyTime = DailyStudyTime.TwoHours,
                 selectedDays = setOf(StudyDay.Monday),
             ).canContinue,
         )
@@ -125,7 +125,7 @@ class PlanSetupUiStateTest {
             currentStep = PlanSetupStep.StudyDays,
             planTitle = "HCI final",
             selectedDeadline = StudyDeadline.Tomorrow,
-            selectedDailyTime = DailyStudyTime.OneHour,
+            selectedDailyTime = DailyStudyTime.TwoHours,
             selectedDays = setOf(StudyDay.Sunday),
         )
 

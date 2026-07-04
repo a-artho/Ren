@@ -133,7 +133,7 @@ class PlanSetupScreenTest {
                         currentStep = PlanSetupStep.StudyDays,
                         planTitle = "HCI final",
                         selectedDeadline = StudyDeadline.InOneWeek,
-                        selectedDailyTime = DailyStudyTime.OneHour,
+                        selectedDailyTime = DailyStudyTime.TwoHours,
                         selectedDays = setOf(
                             StudyDay.Monday,
                             StudyDay.Tuesday,
