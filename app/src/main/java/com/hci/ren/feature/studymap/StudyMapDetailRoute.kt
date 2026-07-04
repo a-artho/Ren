@@ -21,6 +21,7 @@ import com.hci.ren.R
 @Composable
 fun StudyMapDetailRoute(
     viewModel: StudyMapDetailViewModel,
+    navigationResetKey: Int,
     onBack: () -> Unit,
     onCreateProject: () -> Unit,
     onOpenToday: () -> Unit,
@@ -41,6 +42,7 @@ fun StudyMapDetailRoute(
         project == null -> StudyMapScreen(
             plan = null,
             preferences = null,
+            navigationResetKey = navigationResetKey,
             onBack = onBack,
             onCreateProject = onCreateProject,
             onOpenToday = onOpenToday,
@@ -64,6 +66,7 @@ fun StudyMapDetailRoute(
             suggestedDeadline = state.suggestedDeadline,
             recommendedDaysBalanced = state.recommendedDaysBalanced,
             recommendedDaysIntensive = state.recommendedDaysIntensive,
+            navigationResetKey = navigationResetKey,
             onBack = onBack,
             onCreateProject = onCreateProject,
             onOpenToday = onOpenToday,

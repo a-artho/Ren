@@ -6,6 +6,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -63,6 +64,7 @@ class MainActivity : ComponentActivity() {
                 var setupDocumentUris by rememberSaveable { mutableStateOf("") }
                 var openPickerOnStart by rememberSaveable { mutableStateOf(false) }
                 var setupStartedForUploadSession by rememberSaveable { mutableStateOf(false) }
+                var studyPlanNavigationResetKey by rememberSaveable { mutableIntStateOf(0) }
                 val pdfUploadViewModel: PdfUploadViewModel = viewModel()
                 val planSetupViewModel: PlanSetupViewModel = viewModel()
                 val planGenerationViewModel: PlanGenerationViewModel = viewModel()
@@ -108,13 +110,17 @@ class MainActivity : ComponentActivity() {
                                 onTabSelected = { tab ->
                                     if (!hasActiveStudyPlan && tab != 0) return@AppNavigationBar
                                     if (!TodayNavigationEnabled && tab == TodayTabIndex) return@AppNavigationBar
-                                    forward = tab >= selectedTab
-                                    screen = when (tab) {
+                                    val targetScreen = when (tab) {
                                         0 -> ScreenStudyMapDetail
                                         1 -> ScreenToday
                                         2 -> ScreenProgress
                                         else -> ScreenStudyMapDetail
                                     }
+                                    if (targetScreen != screen && screen in tabScreens && targetScreen in tabScreens) {
+                                        studyPlanNavigationResetKey++
+                                    }
+                                    forward = tab >= selectedTab
+                                    screen = targetScreen
                                 },
                             )
                         }
@@ -195,6 +201,7 @@ class MainActivity : ComponentActivity() {
 
                         ScreenStudyMapDetail -> StudyMapDetailRoute(
                             viewModel = studyMapDetailViewModel,
+                            navigationResetKey = studyPlanNavigationResetKey,
                             modifier = if (hasActiveStudyPlan) {
                                 Modifier.padding(scaffoldPadding)
                             } else {

@@ -150,6 +150,7 @@ fun StudyMapScreen(
     suggestedDeadline: String? = null,
     recommendedDaysBalanced: Int = 0,
     recommendedDaysIntensive: Int = 0,
+    navigationResetKey: Int = 0,
     onBack: () -> Unit,
     onCreateProject: () -> Unit,
     onOpenToday: () -> Unit,
@@ -168,6 +169,7 @@ fun StudyMapScreen(
     var adjustment by remember { mutableStateOf<AdjustmentSheet?>(null) }
     var deleteDialogOpen by remember { mutableStateOf(false) }
     var autoCloseExpandedDays by rememberSaveable { mutableStateOf(true) }
+    var collapseScheduleKey by rememberSaveable { mutableIntStateOf(0) }
 
     BackHandler(onBack = onBack)
 
@@ -196,8 +198,8 @@ fun StudyMapScreen(
     )
     val materialGroups = remember(data.plan) { materialGroups(data.plan) }
     val materialGroupStateKey = materialGroups.joinToString(separator = "|") { it.id }
-    var expandedMaterialGroupId by rememberSaveable(materialGroupStateKey) {
-        mutableStateOf(materialGroups.firstOrNull()?.id)
+    var expandedMaterialGroupId by rememberSaveable(materialGroupStateKey, navigationResetKey) {
+        mutableStateOf(if (navigationResetKey == 0) materialGroups.firstOrNull()?.id else null)
     }
 
     Scaffold(
@@ -245,7 +247,13 @@ fun StudyMapScreen(
                     ) {
                         StudyMapViewSwitcher(
                             selected = selectedView,
-                            onSelected = { selectedViewName = it.name },
+                            onSelected = { view ->
+                                if (view != selectedView) {
+                                    selectedViewName = view.name
+                                    expandedMaterialGroupId = null
+                                    collapseScheduleKey++
+                                }
+                            },
                         )
                     }
                 }
@@ -255,6 +263,7 @@ fun StudyMapScreen(
                     data = data,
                     onOpenToday = onOpenToday,
                     autoCloseExpandedDays = autoCloseExpandedDays,
+                    collapseKey = collapseScheduleKey + navigationResetKey,
                 )
                 StudyMapView.Topics -> materialItems(
                     groups = materialGroups,
@@ -762,6 +771,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.scheduleItems(
     data: StudyMapData,
     onOpenToday: () -> Unit,
     autoCloseExpandedDays: Boolean,
+    collapseKey: Int,
 ) {
     if (data.schedule.days.isNotEmpty()) {
         item(key = "schedule-timeline") {
@@ -771,6 +781,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.scheduleItems(
                 studyToday = currentStudyCalendar(data.preferences).toStudyDate(),
                 onOpenToday = onOpenToday,
                 autoCloseExpandedDays = autoCloseExpandedDays,
+                collapseKey = collapseKey,
                 modifier = Modifier.animateItem(),
             )
         }
@@ -814,11 +825,12 @@ private fun StudyScheduleTimeline(
     studyToday: String,
     onOpenToday: () -> Unit,
     autoCloseExpandedDays: Boolean,
+    collapseKey: Int,
     modifier: Modifier = Modifier,
 ) {
     val dayStateKey = days.joinToString(separator = "|") { it.date }
-    var expandedDays by rememberSaveable(dayStateKey, studyToday) {
-        mutableStateOf(initialExpandedTimelineDays(days, studyToday))
+    var expandedDays by rememberSaveable(dayStateKey, studyToday, collapseKey) {
+        mutableStateOf(if (collapseKey == 0) initialExpandedTimelineDays(days, studyToday) else emptyList())
     }
 
     LaunchedEffect(autoCloseExpandedDays) {
@@ -1567,6 +1579,10 @@ private fun MaterialTaskRowContent(
     var rowHeightPx by remember { mutableIntStateOf(0) }
     val rowHeight = with(LocalDensity.current) { rowHeightPx.toDp() }
     val connectorColor = treeLineColor(0.24f)
+    val nodeContainerSize = 20.dp
+    val nodeSize = 10.dp
+    val nodeClearance = 8.dp
+    val rowVerticalPadding = 8.dp
     Box(
         modifier = Modifier
             .fillMaxWidth()
@@ -1579,8 +1595,8 @@ private fun MaterialTaskRowContent(
                     .height(rowHeight),
             ) {
                 val centerX = size.width / 2f
-                val centerY = 18.dp.toPx()
-                val nodeGap = 6.dp.toPx()
+                val centerY = rowVerticalPadding.toPx() + nodeContainerSize.toPx() / 2f
+                val nodeGap = nodeClearance.toPx()
                 if (connectBefore) {
                     val endY = centerY - nodeGap
                     drawLine(
@@ -1588,7 +1604,7 @@ private fun MaterialTaskRowContent(
                         start = Offset(centerX, 0f),
                         end = Offset(centerX, endY.coerceAtLeast(0f)),
                         strokeWidth = 1.dp.toPx(),
-                        cap = StrokeCap.Round,
+                        cap = StrokeCap.Butt,
                     )
                 }
                 if (connectAfter) {
@@ -1598,7 +1614,7 @@ private fun MaterialTaskRowContent(
                         start = Offset(centerX, startY.coerceAtMost(size.height)),
                         end = Offset(centerX, size.height),
                         strokeWidth = 1.dp.toPx(),
-                        cap = StrokeCap.Round,
+                        cap = StrokeCap.Butt,
                     )
                 }
             }
@@ -1606,15 +1622,15 @@ private fun MaterialTaskRowContent(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(vertical = 8.dp),
+                .padding(vertical = rowVerticalPadding),
             verticalAlignment = Alignment.Top,
         ) {
             TaskBullet(
                 status = task.status,
-                nodeSize = 10.dp,
+                nodeSize = nodeSize,
                 completeIconSize = 12.dp,
                 borderWidth = 1.25.dp,
-                containerSize = 20.dp,
+                containerSize = nodeContainerSize,
             )
             Spacer(Modifier.width(10.dp))
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(5.dp)) {
