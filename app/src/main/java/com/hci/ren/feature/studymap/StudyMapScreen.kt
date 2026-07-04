@@ -10,6 +10,7 @@ import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -22,6 +23,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -934,47 +936,43 @@ private fun StudyDayMapCard(
                 height = markerHeight,
             )
             Spacer(Modifier.width(12.dp))
-            Surface(
-                onClick = {
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .clickable {
                     if (isToday) {
                         onOpenToday()
                     } else {
                         onToggleExpanded()
                     }
-                },
-                modifier = Modifier.weight(1f),
-                shape = RoundedCornerShape(12.dp),
-                color = Color.Transparent,
+                    }
+                    .padding(vertical = 10.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                Column(
-                    modifier = Modifier.padding(vertical = 10.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    StudyDayCardHeader(
-                        day = day,
-                        studyToday = studyToday,
-                        isToday = isToday,
-                        expanded = expanded,
-                    )
+                StudyDayCardHeader(
+                    day = day,
+                    studyToday = studyToday,
+                    isToday = isToday,
+                    expanded = expanded,
+                )
 
-                    if (!expanded && day.tasks.isNotEmpty()) {
-                        Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
+                if (!expanded && day.tasks.isNotEmpty()) {
+                    Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
+                        Text(
+                            text = stringResource(R.string.next_task_preview, day.tasks.first().title),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        if (isToday) {
                             Text(
-                                text = stringResource(R.string.next_task_preview, day.tasks.first().title),
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                text = stringResource(R.string.open_today),
+                                style = MaterialTheme.typography.labelLarge,
+                                color = MaterialTheme.colorScheme.primary,
+                                fontWeight = FontWeight.SemiBold,
                                 maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
                             )
-                            if (isToday) {
-                                Text(
-                                    text = stringResource(R.string.open_today),
-                                    style = MaterialTheme.typography.labelLarge,
-                                    color = MaterialTheme.colorScheme.primary,
-                                    fontWeight = FontWeight.SemiBold,
-                                    maxLines = 1,
-                                )
-                            }
                         }
                     }
                 }
@@ -982,9 +980,19 @@ private fun StudyDayMapCard(
         }
 
         if (expanded) {
+            val timelineItems = remember(day.tasks, documents) {
+                day.tasks.toTimelineStudyItems(documents)
+            }
+            val timelineStateKey = remember(timelineItems) {
+                timelineItems.joinToString("|") { it.timelineKey() }
+            }
+            var expandedItemKey by rememberSaveable(day.date, timelineStateKey) {
+                mutableStateOf<String?>(null)
+            }
             var previousSourceId: String? = null
-            day.tasks.forEachIndexed { index, task ->
-                val sourceDocument = task.primarySourceDocument(documents)
+            timelineItems.forEachIndexed { index, item ->
+                val itemKey = item.timelineKey()
+                val sourceDocument = item.sourceDocument
                 if (sourceDocument != null && sourceDocument.id != previousSourceId) {
                     TimelineSourceDivider(
                         source = stringResource(R.string.pdf_order_label, sourceDocument.order),
@@ -993,11 +1001,15 @@ private fun StudyDayMapCard(
                     )
                 }
                 previousSourceId = sourceDocument?.id
-                TimelineTaskBranchRow(
-                    task = task,
-                    pageLabel = taskPageLabel(task),
+                TimelineStudyItemBranchRow(
+                    item = item,
+                    meta = timelineStudyItemMeta(item),
+                    expanded = expandedItemKey == itemKey,
+                    onToggleExpanded = {
+                        expandedItemKey = if (expandedItemKey == itemKey) null else itemKey
+                    },
                     isFirstBranch = index == 0,
-                    isLastBranch = index == day.tasks.lastIndex,
+                    isLastBranch = index == timelineItems.lastIndex,
                     isLastDay = isLast,
                 )
             }
@@ -1066,60 +1078,101 @@ private fun DayTimelineMarker(
 }
 
 @Composable
-private fun TimelineTaskBranchRow(
-    task: GeneratedStudyBlock,
-    pageLabel: String?,
+private fun TimelineStudyItemBranchRow(
+    item: TimelineStudyItem,
+    meta: String,
+    expanded: Boolean,
+    onToggleExpanded: () -> Unit,
     isFirstBranch: Boolean,
     isLastBranch: Boolean,
     isLastDay: Boolean,
 ) {
     var rowHeightPx by remember { mutableIntStateOf(0) }
     val rowHeight = with(LocalDensity.current) { rowHeightPx.toDp() }
+    val status = item.timelineStatus()
+    val grouped = item.tasks.size > 1
 
-    Box(modifier = Modifier.fillMaxWidth()) {
-        if (rowHeightPx > 0) {
-            TaskBranchConnector(
-                isFirstBranch = isFirstBranch,
-                isLastBranch = isLastBranch,
-                isLastDay = isLastDay,
-                modifier = Modifier
-                    .width(54.dp)
-                    .height(rowHeight),
-            )
-        }
+    Column(Modifier.fillMaxWidth().animateContentSize()) {
+        Box(modifier = Modifier.fillMaxWidth()) {
+            if (rowHeightPx > 0) {
+                TaskBranchConnector(
+                    isFirstBranch = isFirstBranch,
+                    isLastBranch = isLastBranch && !expanded,
+                    isLastDay = isLastDay,
+                    modifier = Modifier
+                        .width(54.dp)
+                        .height(rowHeight),
+                )
+            }
 
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .onSizeChanged { rowHeightPx = it.height },
-            verticalAlignment = Alignment.Top,
-        ) {
-            Spacer(Modifier.width(54.dp))
-            TaskRowTextContent(
-                task = task,
-                pageLabel = pageLabel,
-                modifier = Modifier
-                    .weight(1f)
-                    .padding(vertical = 8.dp),
-            )
-            if (task.status != StudyTaskStatus.NotStarted) {
-                Spacer(Modifier.width(10.dp))
-                Box(Modifier.padding(top = 10.dp)) {
-                    StatusPill(statusLabel(task.status), statusContainer(task.status), statusContent(task.status))
+            val rowModifier = if (grouped) {
+                Modifier
+                    .fillMaxWidth()
+                    .clickable(onClick = onToggleExpanded)
+                    .onSizeChanged { rowHeightPx = it.height }
+            } else {
+                Modifier
+                    .fillMaxWidth()
+                    .onSizeChanged { rowHeightPx = it.height }
+            }
+
+            Row(
+                modifier = rowModifier,
+                verticalAlignment = Alignment.Top,
+            ) {
+                Spacer(Modifier.width(54.dp))
+                TimelineStudyItemTextContent(
+                    item = item,
+                    meta = meta,
+                    showMeta = !expanded || !grouped,
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(vertical = 8.dp),
+                )
+                if (status != StudyTaskStatus.NotStarted) {
+                    Spacer(Modifier.width(10.dp))
+                    Box(Modifier.padding(top = 10.dp)) {
+                        StatusPill(statusLabel(status), statusContainer(status), statusContent(status))
+                    }
+                }
+                if (grouped) {
+                    Spacer(Modifier.width(8.dp))
+                    Icon(
+                        imageVector = if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                        contentDescription = null,
+                        modifier = Modifier
+                            .padding(top = 10.dp)
+                            .size(18.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.72f),
+                    )
                 }
             }
+
+            TreeTaskLeafNode(
+                status = status,
+                isParent = grouped,
+                modifier = Modifier.padding(start = 24.dp, top = 3.dp),
+            )
         }
 
-        TreeTaskLeafNode(
-            status = task.status,
-            modifier = Modifier.padding(start = 24.dp, top = 3.dp),
-        )
+        if (grouped && expanded) {
+            item.tasks.forEachIndexed { index, task ->
+                TimelineNestedTaskBranchRow(
+                    task = task,
+                    pageLabel = taskPageLabel(task),
+                    isFirstLeaf = index == 0,
+                    isLastLeaf = index == item.tasks.lastIndex,
+                    continuesMainRail = !isLastBranch || !isLastDay,
+                )
+            }
+        }
     }
 }
 
 @Composable
 private fun TreeTaskLeafNode(
     status: StudyTaskStatus,
+    isParent: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
     val complete = status == StudyTaskStatus.Completed
@@ -1134,6 +1187,16 @@ private fun TreeTaskLeafNode(
                 modifier = Modifier.size(12.dp),
                 tint = MaterialTheme.colorScheme.primary,
             )
+        } else if (isParent) {
+            Surface(
+                modifier = Modifier.size(10.dp),
+                shape = CircleShape,
+                color = Color.Transparent,
+                border = BorderStroke(
+                    width = 1.25.dp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.48f),
+                ),
+            ) {}
         } else {
             Icon(
                 Icons.Default.Eco,
@@ -1142,6 +1205,59 @@ private fun TreeTaskLeafNode(
                 tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.48f),
             )
         }
+    }
+}
+
+@Composable
+private fun TimelineNestedTaskBranchRow(
+    task: GeneratedStudyBlock,
+    pageLabel: String?,
+    isFirstLeaf: Boolean,
+    isLastLeaf: Boolean,
+    continuesMainRail: Boolean,
+) {
+    var rowHeightPx by remember { mutableIntStateOf(0) }
+    val rowHeight = with(LocalDensity.current) { rowHeightPx.toDp() }
+
+    Box(modifier = Modifier.fillMaxWidth()) {
+        if (rowHeightPx > 0) {
+            NestedTaskBranchConnector(
+                isFirstLeaf = isFirstLeaf,
+                isLastLeaf = isLastLeaf,
+                continuesMainRail = continuesMainRail,
+                modifier = Modifier
+                    .width(82.dp)
+                    .height(rowHeight),
+            )
+        }
+
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .onSizeChanged { rowHeightPx = it.height },
+            verticalAlignment = Alignment.Top,
+        ) {
+            Spacer(Modifier.width(82.dp))
+            TaskRowTextContent(
+                task = task,
+                pageLabel = pageLabel,
+                muted = true,
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(vertical = 8.dp),
+            )
+            if (task.status != StudyTaskStatus.NotStarted) {
+                Spacer(Modifier.width(10.dp))
+                Box(Modifier.padding(top = 10.dp)) {
+                    StatusPill(statusLabel(task.status), statusContainer(task.status), statusContent(task.status))
+                }
+            }
+        }
+
+        TreeTaskLeafNode(
+            status = task.status,
+            modifier = Modifier.padding(start = 50.dp, top = 3.dp),
+        )
     }
 }
 
@@ -1353,6 +1469,60 @@ private fun TaskBranchConnector(
                 color = trunkColor,
                 start = Offset(nodeCenterX, lowerRailStart),
                 end = Offset(nodeCenterX, exitY),
+                strokeWidth = 1.dp.toPx(),
+                cap = StrokeCap.Butt,
+            )
+        }
+    }
+}
+
+@Composable
+private fun NestedTaskBranchConnector(
+    isFirstLeaf: Boolean,
+    isLastLeaf: Boolean,
+    continuesMainRail: Boolean,
+    modifier: Modifier = Modifier,
+) {
+    val mainRailColor = treeLineColor(0.10f)
+    val childRailColor = treeLineColor(0.20f)
+    Canvas(modifier) {
+        val mainBranchX = 9.dp.toPx()
+        val parentNodeX = 39.dp.toPx()
+        val childBranchX = 65.dp.toPx()
+        val leafCenterY = 18.dp.toPx()
+
+        if (continuesMainRail) {
+            drawLine(
+                color = mainRailColor,
+                start = Offset(mainBranchX, 0f),
+                end = Offset(mainBranchX, size.height),
+                strokeWidth = 1.dp.toPx(),
+                cap = StrokeCap.Butt,
+            )
+        }
+
+        if (isFirstLeaf) {
+            drawLine(
+                color = childRailColor,
+                start = Offset(parentNodeX, 0f),
+                end = Offset(childBranchX, 0f),
+                strokeWidth = 1.dp.toPx(),
+                cap = StrokeCap.Round,
+            )
+        }
+
+        drawLine(
+            color = childRailColor,
+            start = Offset(childBranchX, 0f),
+            end = Offset(childBranchX, leafCenterY),
+            strokeWidth = 1.dp.toPx(),
+            cap = if (isFirstLeaf) StrokeCap.Round else StrokeCap.Butt,
+        )
+        if (!isLastLeaf) {
+            drawLine(
+                color = childRailColor,
+                start = Offset(childBranchX, leafCenterY),
+                end = Offset(childBranchX, size.height),
                 strokeWidth = 1.dp.toPx(),
                 cap = StrokeCap.Butt,
             )
@@ -1656,9 +1826,46 @@ private fun MaterialTaskRowContent(
 }
 
 @Composable
+private fun TimelineStudyItemTextContent(
+    item: TimelineStudyItem,
+    meta: String,
+    showMeta: Boolean = true,
+    modifier: Modifier = Modifier,
+) {
+    val textModifier = if (showMeta) {
+        modifier.heightIn(min = 46.dp)
+    } else {
+        modifier
+    }
+    Column(
+        modifier = textModifier,
+        verticalArrangement = Arrangement.Top,
+    ) {
+        Text(
+            text = item.title,
+            style = MaterialTheme.typography.labelLarge,
+            fontWeight = FontWeight.SemiBold,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+        )
+        if (showMeta) {
+            Spacer(Modifier.height(5.dp))
+            Text(
+                text = meta,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+    }
+}
+
+@Composable
 private fun TaskRowTextContent(
     task: GeneratedStudyBlock,
     pageLabel: String?,
+    muted: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
     val meta = listOfNotNull(
@@ -1666,18 +1873,33 @@ private fun TaskRowTextContent(
         formatMinutes(task.likelyStudyMinutes),
         taskTypeLabel(task.taskType),
     ).joinToString(" \u2022 ")
-    Column(modifier, verticalArrangement = Arrangement.spacedBy(5.dp)) {
+    val titleColor = if (muted) {
+        MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.84f)
+    } else {
+        MaterialTheme.colorScheme.onSurface
+    }
+    val metaColor = if (muted) {
+        MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.74f)
+    } else {
+        MaterialTheme.colorScheme.onSurfaceVariant
+    }
+    Column(
+        modifier = modifier.heightIn(min = 46.dp),
+        verticalArrangement = Arrangement.Top,
+    ) {
         Text(
             text = task.title,
             style = MaterialTheme.typography.labelLarge,
+            color = titleColor,
             fontWeight = FontWeight.SemiBold,
             maxLines = 2,
             overflow = TextOverflow.Ellipsis,
         )
+        Spacer(Modifier.height(5.dp))
         Text(
             text = meta,
             style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            color = metaColor,
         )
     }
 }
@@ -1746,6 +1968,37 @@ private fun taskPageLabel(task: GeneratedStudyBlock): String? {
     return when {
         ref.startPage != null && ref.endPage != null && ref.endPage != ref.startPage -> stringResource(R.string.source_page_range, ref.startPage, ref.endPage)
         ref.startPage != null -> stringResource(R.string.source_page, ref.startPage)
+        else -> null
+    }
+}
+
+@Composable
+private fun timelineStudyItemMeta(item: TimelineStudyItem): String {
+    if (item.tasks.size == 1) {
+        val task = item.tasks.first()
+        return listOfNotNull(
+            taskPageLabel(task),
+            formatMinutes(task.likelyStudyMinutes),
+            taskTypeLabel(task.taskType),
+        ).joinToString(" \u2022 ")
+    }
+
+    val leafCount = item.tasks.size
+    return listOfNotNull(
+        timelineStudyItemPageLabel(item),
+        pluralStringResource(R.plurals.study_leaf_count, leafCount, leafCount),
+        formatMinutes(item.tasks.sumOf { it.likelyStudyMinutes }),
+    ).joinToString(" \u2022 ")
+}
+
+@Composable
+private fun timelineStudyItemPageLabel(item: TimelineStudyItem): String? {
+    val refs = item.tasks.mapNotNull { it.sourceRefForTimeline(item.sourceDocument) }
+    val start = refs.mapNotNull { it.startPage }.minOrNull()
+    val end = refs.mapNotNull { it.endPage ?: it.startPage }.maxOrNull()
+    return when {
+        start != null && end != null && end != start -> stringResource(R.string.source_page_range, start, end)
+        start != null -> stringResource(R.string.source_page, start)
         else -> null
     }
 }
@@ -1874,6 +2127,20 @@ private data class MaterialSourceGroup(
     val tasks: List<GeneratedStudyBlock>,
 )
 
+private data class TimelineStudyItem(
+    val sourceDocument: StudySourceDocument?,
+    val title: String,
+    val tasks: List<GeneratedStudyBlock>,
+)
+
+private fun TimelineStudyItem.timelineKey(): String = listOf(
+    sourceDocument?.id.orEmpty(),
+    title,
+    tasks.firstOrNull()?.id.orEmpty(),
+    tasks.lastOrNull()?.id.orEmpty(),
+    tasks.size.toString(),
+).joinToString("|")
+
 private data class UnscheduledSourceGroup(
     val source: String?,
     val tasks: List<GeneratedStudyBlock>,
@@ -1903,6 +2170,72 @@ private fun unscheduledSourceGroups(
         groups += UnscheduledSourceGroup(currentSource, currentTasks)
     }
     return groups
+}
+
+private fun List<GeneratedStudyBlock>.toTimelineStudyItems(
+    documents: List<StudySourceDocument>,
+): List<TimelineStudyItem> {
+    val items = mutableListOf<TimelineStudyItem>()
+    var currentSource: StudySourceDocument? = null
+    var currentTitle: String? = null
+    var currentTasks = mutableListOf<GeneratedStudyBlock>()
+
+    fun flushCurrent() {
+        if (currentTasks.isEmpty()) return
+        items += currentTasks.toTimelineStudyItem(currentSource, currentTitle)
+        currentTasks = mutableListOf()
+        currentSource = null
+        currentTitle = null
+    }
+
+    sortedBy { it.order }.forEach { task ->
+        val source = task.primarySourceDocument(documents)
+        val title = task.sourceRefForTimeline(source)?.materialGroupDisplayTitle()
+        if (title == null) {
+            flushCurrent()
+            items += TimelineStudyItem(
+                sourceDocument = source,
+                title = task.title,
+                tasks = listOf(task),
+            )
+        } else if (currentTasks.isEmpty() || (source?.id == currentSource?.id && title == currentTitle)) {
+            currentSource = source
+            currentTitle = title
+            currentTasks += task
+        } else {
+            flushCurrent()
+            currentSource = source
+            currentTitle = title
+            currentTasks += task
+        }
+    }
+
+    flushCurrent()
+    return items
+}
+
+private fun List<GeneratedStudyBlock>.toTimelineStudyItem(
+    sourceDocument: StudySourceDocument?,
+    materialGroupTitle: String?,
+): TimelineStudyItem {
+    val first = first()
+    return TimelineStudyItem(
+        sourceDocument = sourceDocument,
+        title = if (size == 1) first.title else materialGroupTitle ?: first.title,
+        tasks = this,
+    )
+}
+
+private fun TimelineStudyItem.timelineStatus(): StudyTaskStatus = when {
+    tasks.size == 1 -> tasks.first().status
+    tasks.all { it.status == StudyTaskStatus.Completed } -> StudyTaskStatus.Completed
+    tasks.any { it.status == StudyTaskStatus.OverCapacity } -> StudyTaskStatus.OverCapacity
+    tasks.any { it.status == StudyTaskStatus.Unscheduled } -> StudyTaskStatus.Unscheduled
+    tasks.any { it.status == StudyTaskStatus.InProgress || it.status == StudyTaskStatus.Completed || it.status == StudyTaskStatus.Rescheduled } -> StudyTaskStatus.InProgress
+    tasks.any { it.status == StudyTaskStatus.DeferredByUser } -> StudyTaskStatus.DeferredByUser
+    tasks.any { it.status == StudyTaskStatus.ExcludedByUser } -> StudyTaskStatus.ExcludedByUser
+    tasks.any { it.status == StudyTaskStatus.Locked } -> StudyTaskStatus.Locked
+    else -> StudyTaskStatus.NotStarted
 }
 
 private fun materialGroups(plan: GeneratedStudyPlan): List<MaterialGroup> {
@@ -1944,6 +2277,11 @@ private fun GeneratedStudyBlock.primarySourceDocument(documents: List<StudySourc
     }
     return null
 }
+
+private fun GeneratedStudyBlock.sourceRefForTimeline(sourceDocument: StudySourceDocument?): StudySourceRef? =
+    sourceDocument
+        ?.let { document -> sourceRefs.firstOrNull { document.matchesSourceDocumentId(it.documentId) } }
+        ?: sourceRefs.firstOrNull()
 
 private fun StudySourceDocument.matchesSourceDocumentId(value: String): Boolean =
     id == value || uploadDocumentId == value

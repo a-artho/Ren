@@ -212,6 +212,10 @@
         <item quantity="one">%1$d task</item>
         <item quantity="other">%1$d tasks</item>
     </plurals>
+    <plurals name="study_leaf_count">
+        <item quantity="one">%1$d leaf</item>
+        <item quantity="other">%1$d leaves</item>
+    </plurals>
     <string name="load_light">Light</string>
     <string name="load_standard">Manageable</string>
     <string name="load_tight">Tight</string>
