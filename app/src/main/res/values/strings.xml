@@ -199,6 +199,10 @@
         <item quantity="one">in %1$d day</item>
         <item quantity="other">in %1$d days</item>
     </plurals>
+    <plurals name="deadline_in_hours">
+        <item quantity="one">in %1$d hour</item>
+        <item quantity="other">in %1$d hours</item>
+    </plurals>
     <string name="deadline_past">past deadline</string>
     <string name="planned_metric_label">Likely workload</string>
     <string name="available_metric_label">Available time</string>

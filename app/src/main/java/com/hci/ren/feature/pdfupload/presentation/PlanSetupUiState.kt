@@ -180,10 +180,10 @@ enum class StudyDeadline {
 }
 
 enum class DailyStudyTime(val minutes: Int?) {
-    OneHour(60),
     TwoHours(120),
-    ThreeHours(180),
-    FiveHours(300),
+    FourHours(240),
+    SixHours(360),
+    EightHours(480),
     Custom(null),
 }
 

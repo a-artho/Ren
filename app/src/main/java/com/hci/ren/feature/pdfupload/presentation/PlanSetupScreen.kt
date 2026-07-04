@@ -30,6 +30,7 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Event
 import androidx.compose.material.icons.filled.PendingActions
 import androidx.compose.material.icons.filled.Schedule
+import androidx.compose.material.icons.filled.WbSunny
 import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -59,8 +60,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.graphics.vector.path
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -677,7 +681,13 @@ private fun StudyDayResetOffsetSwitcher(
                     inactiveContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
                     inactiveBorderColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.72f),
                 ),
-                icon = {},
+                icon = {
+                    Icon(
+                        imageVector = studyDayResetOffsetIcon(offsetHours),
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp),
+                    )
+                },
             ) {
                 Text(
                     text = label,
@@ -688,6 +698,66 @@ private fun StudyDayResetOffsetSwitcher(
         }
     }
 }
+
+private fun studyDayResetOffsetIcon(offsetHours: Int) =
+    if (offsetHours == 0) Icons.Default.WbSunny else NightOwlIcon
+
+private val NightOwlIcon: ImageVector = ImageVector.Builder(
+    name = "NightOwl",
+    defaultWidth = 24.dp,
+    defaultHeight = 24.dp,
+    viewportWidth = 24f,
+    viewportHeight = 24f,
+).apply {
+    path(
+        fill = null,
+        stroke = SolidColor(Color.Black),
+        strokeLineWidth = 1.7f,
+        strokeLineCap = StrokeCap.Round,
+        strokeLineJoin = StrokeJoin.Round,
+    ) {
+        moveTo(7.1f, 5.8f)
+        curveTo(5.8f, 7.0f, 5.0f, 8.8f, 5.0f, 11.1f)
+        curveTo(5.0f, 15.5f, 8.1f, 19.0f, 12.0f, 19.0f)
+        curveTo(15.9f, 19.0f, 19.0f, 15.5f, 19.0f, 11.1f)
+        curveTo(19.0f, 8.8f, 18.2f, 7.0f, 16.9f, 5.8f)
+        curveTo(16.2f, 6.6f, 15.5f, 7.2f, 14.8f, 7.6f)
+        curveTo(13.9f, 7.1f, 13.0f, 6.8f, 12.0f, 6.8f)
+        curveTo(11.0f, 6.8f, 10.1f, 7.1f, 9.2f, 7.6f)
+        curveTo(8.5f, 7.2f, 7.8f, 6.6f, 7.1f, 5.8f)
+        close()
+    }
+    path(
+        fill = null,
+        stroke = SolidColor(Color.Black),
+        strokeLineWidth = 2.1f,
+        strokeLineCap = StrokeCap.Round,
+    ) {
+        moveTo(9.5f, 10.8f)
+        lineTo(9.52f, 10.8f)
+        moveTo(14.48f, 10.8f)
+        lineTo(14.5f, 10.8f)
+    }
+    path(
+        fill = SolidColor(Color.Black),
+    ) {
+        moveTo(12.0f, 12.0f)
+        lineTo(10.85f, 13.45f)
+        lineTo(13.15f, 13.45f)
+        close()
+    }
+    path(
+        fill = null,
+        stroke = SolidColor(Color.Black),
+        strokeLineWidth = 1.45f,
+        strokeLineCap = StrokeCap.Round,
+        strokeLineJoin = StrokeJoin.Round,
+    ) {
+        moveTo(8.8f, 16.0f)
+        curveTo(10.0f, 16.8f, 11.0f, 17.15f, 12.0f, 17.15f)
+        curveTo(13.0f, 17.15f, 14.0f, 16.8f, 15.2f, 16.0f)
+    }
+}.build()
 
 private fun studyDayResetOffsetMessage(offsetHours: Int): String =
     if (offsetHours == 0) {
@@ -762,10 +832,10 @@ private val setupDeadlines = listOf(
 )
 
 private val setupDailyStudyTimes = listOf(
-    DailyStudyTime.OneHour,
     DailyStudyTime.TwoHours,
-    DailyStudyTime.ThreeHours,
-    DailyStudyTime.FiveHours,
+    DailyStudyTime.FourHours,
+    DailyStudyTime.SixHours,
+    DailyStudyTime.EightHours,
     DailyStudyTime.Custom,
 )
 
@@ -787,10 +857,10 @@ private val StudyDeadline.icon: ImageVector
 
 private val DailyStudyTime.label: String
     get() = when (this) {
-        DailyStudyTime.OneHour -> "1 hour"
         DailyStudyTime.TwoHours -> "2 hours"
-        DailyStudyTime.ThreeHours -> "3 hours"
-        DailyStudyTime.FiveHours -> "5 hours"
+        DailyStudyTime.FourHours -> "4 hours"
+        DailyStudyTime.SixHours -> "6 hours"
+        DailyStudyTime.EightHours -> "8 hours"
         DailyStudyTime.Custom -> "Custom"
     }
 
@@ -799,9 +869,8 @@ private fun dailyTimeComment(state: PlanSetupUiState): String? {
     return when {
         state.selectedDailyTime == null -> null
         minutes == null -> null
-        minutes < 60 -> "Tiny session. Cute. The plan will have to be ruthless."
-        minutes == 60 -> "One hour. Respectable, but we may need to be picky."
-        minutes >= 300 -> "Five hours. Ah, the exam-season personality has arrived."
+        minutes < 120 -> "Tiny session. Cute. The plan will have to be ruthless."
+        minutes >= 480 -> "Eight hours. Ah, the exam-season personality has arrived."
         else -> null
     }
 }
