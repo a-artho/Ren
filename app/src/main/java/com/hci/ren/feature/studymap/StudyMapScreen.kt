@@ -1038,8 +1038,8 @@ private fun DayTimelineMarker(
 ) {
     val activeColor = MaterialTheme.colorScheme.primary
     val mutedColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.72f)
-    val railColor = treeLineColor(0.24f)
-    val fadedRailColor = treeLineColor(0.10f)
+    val railColor = treeLineColor(0.20f)
+    val fadedRailColor = treeLineColor(0.08f)
     val nodeBorderColor = if (isFocused) activeColor.copy(alpha = 0.72f) else mutedColor
     val dotSize = if (isFocused) 13.dp else 10.dp
     val dotTop = 19.dp
@@ -1059,7 +1059,7 @@ private fun DayTimelineMarker(
                     start = Offset(centerX, 0f),
                     end = Offset(centerX, dotCenterY - dotRadius),
                     strokeWidth = 1.dp.toPx(),
-                    cap = StrokeCap.Round,
+                    cap = StrokeCap.Butt,
                 )
             }
             if (!isLast) {
@@ -1068,7 +1068,7 @@ private fun DayTimelineMarker(
                     start = Offset(centerX, dotCenterY + dotRadius),
                     end = Offset(centerX, size.height),
                     strokeWidth = 1.dp.toPx(),
-                    cap = StrokeCap.Round,
+                    cap = StrokeCap.Butt,
                 )
             }
         }
@@ -1170,6 +1170,7 @@ private fun TimelineStudyItemBranchRow(
                     isLastLeaf = index == item.tasks.lastIndex,
                     continuesMainRail = !isLastBranch || !isLastDay,
                     continuesChildRailAfterGroup = !isLastBranch,
+                    onCollapseParent = onToggleExpanded,
                 )
             }
         }
@@ -1223,11 +1224,16 @@ private fun TimelineNestedTaskBranchRow(
     isLastLeaf: Boolean,
     continuesMainRail: Boolean,
     continuesChildRailAfterGroup: Boolean,
+    onCollapseParent: () -> Unit,
 ) {
     var rowHeightPx by remember { mutableIntStateOf(0) }
     val rowHeight = with(LocalDensity.current) { rowHeightPx.toDp() }
 
-    Box(modifier = Modifier.fillMaxWidth()) {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onCollapseParent),
+    ) {
         if (rowHeightPx > 0) {
             NestedTaskBranchConnector(
                 isFirstLeaf = isFirstLeaf,
@@ -1277,8 +1283,8 @@ private fun TimelineSourceDivider(
     showMainRail: Boolean,
     modifier: Modifier = Modifier,
 ) {
-    val trunkRail = treeLineColor(0.24f)
-    val fadedTrunkRail = treeLineColor(0.10f)
+    val trunkRail = treeLineColor(0.20f)
+    val fadedTrunkRail = treeLineColor(0.08f)
     val dividerHeight = if (continuesChildRail) 40.dp else 24.dp
     Box(
         modifier = modifier
@@ -1326,16 +1332,11 @@ private fun TimelineSourceDividerLabel(
     text: String,
     modifier: Modifier = Modifier,
 ) {
-    val lineColor = treeLineColor(0.09f)
-    Row(
+    Box(
         modifier = modifier,
-        verticalAlignment = Alignment.CenterVertically,
+        contentAlignment = Alignment.Center,
     ) {
-        SourceDividerLine(color = lineColor)
-        Spacer(Modifier.width(8.dp))
         SourceDividerPill(text = text)
-        Spacer(Modifier.width(8.dp))
-        SourceDividerLine(color = lineColor)
     }
 }
 
@@ -1368,9 +1369,9 @@ private fun SourceDividerLabel(
 private fun SourceDividerPill(text: String) {
     Surface(
         shape = RoundedCornerShape(999.dp),
-        color = MaterialTheme.colorScheme.surface,
-        contentColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.78f),
-        border = BorderStroke(1.dp, treeLineColor(0.14f)),
+        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.42f),
+        contentColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.56f),
+        border = BorderStroke(1.dp, treeLineColor(0.08f)),
     ) {
         Text(
             text = text,
@@ -1395,7 +1396,7 @@ private fun RowScope.SourceDividerLine(color: Color) {
             start = Offset.Zero,
             end = Offset(size.width, 0f),
             strokeWidth = 1.dp.toPx(),
-            cap = StrokeCap.Round,
+            cap = StrokeCap.Butt,
         )
     }
 }
@@ -1407,38 +1408,33 @@ private fun TaskBranchConnector(
     isLastDay: Boolean,
     modifier: Modifier = Modifier,
 ) {
-    val trunkColor = treeLineColor(0.24f)
-    val fadedTrunkColor = treeLineColor(0.10f)
+    val trunkColor = treeLineColor(0.20f)
+    val fadedTrunkColor = treeLineColor(0.08f)
     Canvas(modifier) {
         val branchX = 9.dp.toPx()
         val nodeCenterX = 39.dp.toPx()
         val nodeCenterY = 18.dp.toPx()
         val nodeGap = 6.dp.toPx()
+        val strokeWidth = 1.dp.toPx()
         val exitY = size.height
-        if (isLastDay) {
+        if (isFirstBranch) {
+            drawPath(
+                path = Path().apply {
+                    moveTo(branchX, 0f)
+                    lineTo(branchX, nodeCenterY)
+                    lineTo(nodeCenterX - nodeGap, nodeCenterY)
+                },
+                color = trunkColor,
+                style = Stroke(width = strokeWidth, cap = StrokeCap.Butt),
+            )
+        }
+        if (!isLastDay) {
             if (isFirstBranch) {
-                drawLine(
-                    color = trunkColor,
-                    start = Offset(branchX, 0f),
-                    end = Offset(branchX, nodeCenterY),
-                    strokeWidth = 1.dp.toPx(),
-                    cap = StrokeCap.Round,
-                )
-            }
-        } else {
-            if (isFirstBranch) {
-                drawLine(
-                    color = trunkColor,
-                    start = Offset(branchX, 0f),
-                    end = Offset(branchX, nodeCenterY),
-                    strokeWidth = 1.dp.toPx(),
-                    cap = StrokeCap.Round,
-                )
                 drawLine(
                     color = fadedTrunkColor,
-                    start = Offset(branchX, nodeCenterY),
+                    start = Offset(branchX, nodeCenterY + strokeWidth / 2f),
                     end = Offset(branchX, exitY),
-                    strokeWidth = 1.dp.toPx(),
+                    strokeWidth = strokeWidth,
                     cap = StrokeCap.Butt,
                 )
             } else {
@@ -1446,20 +1442,10 @@ private fun TaskBranchConnector(
                     color = fadedTrunkColor,
                     start = Offset(branchX, 0f),
                     end = Offset(branchX, exitY),
-                    strokeWidth = 1.dp.toPx(),
+                    strokeWidth = strokeWidth,
                     cap = StrokeCap.Butt,
                 )
             }
-        }
-
-        if (isFirstBranch) {
-            drawLine(
-                color = trunkColor,
-                start = Offset(branchX, nodeCenterY),
-                end = Offset(nodeCenterX - nodeGap, nodeCenterY),
-                strokeWidth = 1.dp.toPx(),
-                cap = StrokeCap.Round,
-            )
         }
 
         val upperRailEnd = nodeCenterY - nodeGap
@@ -1469,7 +1455,7 @@ private fun TaskBranchConnector(
                 color = trunkColor,
                 start = Offset(nodeCenterX, 0f),
                 end = Offset(nodeCenterX, upperRailEnd),
-                strokeWidth = 1.dp.toPx(),
+                strokeWidth = strokeWidth,
                 cap = StrokeCap.Butt,
             )
         }
@@ -1478,7 +1464,7 @@ private fun TaskBranchConnector(
                 color = trunkColor,
                 start = Offset(nodeCenterX, lowerRailStart),
                 end = Offset(nodeCenterX, exitY),
-                strokeWidth = 1.dp.toPx(),
+                strokeWidth = strokeWidth,
                 cap = StrokeCap.Butt,
             )
         }
@@ -1493,55 +1479,50 @@ private fun NestedTaskBranchConnector(
     continuesChildRailAfterGroup: Boolean,
     modifier: Modifier = Modifier,
 ) {
-    val mainRailColor = treeLineColor(0.10f)
-    val childRailColor = treeLineColor(0.20f)
+    val mainRailColor = treeLineColor(0.08f)
+    val childRailColor = treeLineColor(0.17f)
     Canvas(modifier) {
         val mainBranchX = 9.dp.toPx()
         val childBranchX = 39.dp.toPx()
         val leafCenterX = 65.dp.toPx()
         val leafCenterY = 18.dp.toPx()
         val nodeGap = 6.dp.toPx()
+        val strokeWidth = 1.dp.toPx()
 
         if (continuesMainRail) {
             drawLine(
                 color = mainRailColor,
                 start = Offset(mainBranchX, 0f),
                 end = Offset(mainBranchX, size.height),
-                strokeWidth = 1.dp.toPx(),
+                strokeWidth = strokeWidth,
                 cap = StrokeCap.Butt,
             )
         }
 
-        drawLine(
+        drawPath(
+            path = Path().apply {
+                moveTo(childBranchX, 0f)
+                lineTo(childBranchX, leafCenterY)
+                lineTo(leafCenterX - nodeGap, leafCenterY)
+            },
             color = childRailColor,
-            start = Offset(childBranchX, 0f),
-            end = Offset(childBranchX, leafCenterY),
-            strokeWidth = 1.dp.toPx(),
-            cap = if (isFirstLeaf) StrokeCap.Round else StrokeCap.Butt,
+            style = Stroke(width = strokeWidth, cap = StrokeCap.Butt),
         )
         if (!isLastLeaf || continuesChildRailAfterGroup) {
             drawLine(
                 color = childRailColor,
-                start = Offset(childBranchX, leafCenterY),
+                start = Offset(childBranchX, leafCenterY + strokeWidth / 2f),
                 end = Offset(childBranchX, size.height),
-                strokeWidth = 1.dp.toPx(),
+                strokeWidth = strokeWidth,
                 cap = StrokeCap.Butt,
             )
         }
-
-        drawLine(
-            color = childRailColor,
-            start = Offset(childBranchX, leafCenterY),
-            end = Offset(leafCenterX - nodeGap, leafCenterY),
-            strokeWidth = 1.dp.toPx(),
-            cap = StrokeCap.Round,
-        )
     }
 }
 
 @Composable
 private fun TimelineDayGap(height: Dp = 28.dp) {
-    val mutedColor = treeLineColor(0.10f)
+    val mutedColor = treeLineColor(0.08f)
     Canvas(
         modifier = Modifier
             .width(54.dp)
@@ -1553,7 +1534,7 @@ private fun TimelineDayGap(height: Dp = 28.dp) {
             start = Offset(branchX, 0f),
             end = Offset(branchX, size.height),
             strokeWidth = 1.dp.toPx(),
-            cap = StrokeCap.Round,
+            cap = StrokeCap.Butt,
         )
     }
 }
@@ -1567,7 +1548,7 @@ private fun StudyDayCardHeader(
     modifier: Modifier = Modifier,
 ) {
     val loadMeta = listOf(
-        pluralStringResource(R.plurals.study_day_task_count, day.tasks.size, day.tasks.size),
+        pluralStringResource(R.plurals.study_leaf_count, day.tasks.size, day.tasks.size),
         formatMinutes(day.totalScheduledMinutes),
         dayLoadLabel(day),
     ).joinToString(" \u2022 ")
@@ -1661,7 +1642,7 @@ private fun UnscheduledWorkCard(
 ) {
     val sourceGroups = remember(tasks, documents) { unscheduledSourceGroups(tasks, documents) }
     val meta = listOf(
-        pluralStringResource(R.plurals.study_day_task_count, tasks.size, tasks.size),
+        pluralStringResource(R.plurals.study_leaf_count, tasks.size, tasks.size),
         formatMinutes(tasks.sumOf { it.likelyStudyMinutes }),
     ).joinToString(" \u2022 ")
     Card(
@@ -1757,7 +1738,7 @@ private fun MaterialTaskRowContent(
 ) {
     var rowHeightPx by remember { mutableIntStateOf(0) }
     val rowHeight = with(LocalDensity.current) { rowHeightPx.toDp() }
-    val connectorColor = treeLineColor(0.24f)
+    val connectorColor = treeLineColor(0.20f)
     val nodeContainerSize = 20.dp
     val nodeSize = 10.dp
     val nodeClearance = 8.dp

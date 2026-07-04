@@ -55,7 +55,7 @@
     <string name="crammed_plan_title">This plan is crammed</string>
     <string name="crammed_plan_message">Some days are packed past their budget.</string>
     <string name="overloaded_plan_title">This plan is overloaded</string>
-    <string name="overloaded_plan_message">Some tasks are still outside the scheduled days.</string>
+    <string name="overloaded_plan_message">Some leaves are still outside the scheduled days.</string>
     <string name="choose_material">Choose material</string>
     <string name="choose_material_subtitle">Decide what stays in this plan.</string>
     <string name="increase_daily_time">Increase daily time</string>
@@ -168,7 +168,7 @@
     <string name="today_complete_empty_message">You can wrap up now or pull in more work if you want to keep going.</string>
     <string name="tomorrow">Tomorrow</string>
     <string name="unscheduled_tasks">Needs room</string>
-    <string name="unscheduled_explanation">These tasks do not fit in the time budget.</string>
+    <string name="unscheduled_explanation">These leaves do not fit in the time budget.</string>
     <string name="not_scheduled">Not scheduled</string>
     <string name="current_deadline">Current deadline</string>
     <string name="apply_changes">Apply changes</string>
@@ -187,10 +187,10 @@
     <string name="go_back">Go back</string>
     <string name="study_plan_intro_message">Add your notes or slides. We will keep the order, split the work across days, and adapt when things go sideways.</string>
     <string name="start_planning">Start planning</string>
-    <string name="no_tasks_yet">No tasks yet</string>
-    <string name="generate_tasks">Generate tasks</string>
+    <string name="no_tasks_yet">No leaves yet</string>
+    <string name="generate_tasks">Generate leaves</string>
     <string name="finished_study_map">You finished this study plan</string>
-    <string name="all_tasks_complete_message">Every included task is complete.</string>
+    <string name="all_tasks_complete_message">Every included leaf is complete.</string>
     <string name="over_capacity">Overloaded</string>
     <string name="study_plan_title_with_deadline">%1$s · %2$s</string>
     <string name="deadline_today">due today</string>
@@ -209,8 +209,8 @@
     <string name="next_task_preview">Next: %1$s</string>
     <string name="open_today">Tap to view</string>
     <plurals name="study_day_task_count">
-        <item quantity="one">%1$d task</item>
-        <item quantity="other">%1$d tasks</item>
+        <item quantity="one">%1$d leaf</item>
+        <item quantity="other">%1$d leaves</item>
     </plurals>
     <plurals name="study_leaf_count">
         <item quantity="one">%1$d leaf</item>
@@ -221,7 +221,7 @@
     <string name="load_tight">Tight</string>
     <string name="load_heavy">Dense</string>
     <string name="source_page">page %1$d</string>
-    <string name="source_page_range">pages %1$d–%2$d</string>
+    <string name="source_page_range">pages %1$d to %2$d</string>
     <string name="pdf_order_label">PDF %1$d</string>
     <plurals name="source_page_count">
         <item quantity="one">%1$d page</item>
