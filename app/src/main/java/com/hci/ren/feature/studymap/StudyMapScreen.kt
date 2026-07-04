@@ -848,9 +848,11 @@ private fun StudyScheduleTimeline(
         val expandedFocusDates = expandedDays
             .filter { date -> date != studyToday }
             .toSet()
+        val firstExpandedIndex = days.indexOfFirst { day -> day.date in expandedFocusDates }
         days.forEachIndexed { index, day ->
             val expanded = day.date in expandedFocusDates
-            val previousDayExpanded = index > 0 && days[index - 1].date in expandedFocusDates
+            val fadeIncomingLine = firstExpandedIndex >= 0 && index > firstExpandedIndex
+            val fadeOutgoingLine = firstExpandedIndex >= 0 && index > firstExpandedIndex
             StudyDayMapCard(
                 day = day,
                 documents = documents,
@@ -859,7 +861,8 @@ private fun StudyScheduleTimeline(
                 isFocused = expanded || (day.date == studyToday && expandedFocusDates.isEmpty()),
                 isFirst = index == 0,
                 isLast = index == days.lastIndex,
-                fadeIncomingLine = previousDayExpanded,
+                fadeIncomingLine = fadeIncomingLine,
+                fadeOutgoingLine = fadeOutgoingLine,
                 onOpenToday = onOpenToday,
                 onToggleExpanded = {
                     expandedDays = if (day.date in expandedDays) {
@@ -893,6 +896,7 @@ private fun StudyDayMapCard(
     isFirst: Boolean,
     isLast: Boolean,
     fadeIncomingLine: Boolean,
+    fadeOutgoingLine: Boolean,
     onOpenToday: () -> Unit,
     onToggleExpanded: () -> Unit,
     onExpandedLeftViewport: () -> Unit,
@@ -933,6 +937,7 @@ private fun StudyDayMapCard(
                 isFocused = isFocused,
                 isCompleted = isCompleted,
                 fadeIncomingLine = fadeIncomingLine,
+                fadeOutgoingLine = fadeOutgoingLine,
                 height = markerHeight,
             )
             Spacer(Modifier.width(12.dp))
@@ -1027,6 +1032,7 @@ private fun DayTimelineMarker(
     isFocused: Boolean,
     isCompleted: Boolean,
     fadeIncomingLine: Boolean,
+    fadeOutgoingLine: Boolean,
     height: Dp,
     modifier: Modifier = Modifier,
 ) {
@@ -1058,7 +1064,7 @@ private fun DayTimelineMarker(
             }
             if (!isLast) {
                 drawLine(
-                    color = railColor,
+                    color = if (fadeOutgoingLine) fadedRailColor else railColor,
                     start = Offset(centerX, dotCenterY + dotRadius),
                     end = Offset(centerX, size.height),
                     strokeWidth = 1.dp.toPx(),
@@ -1163,6 +1169,7 @@ private fun TimelineStudyItemBranchRow(
                     isFirstLeaf = index == 0,
                     isLastLeaf = index == item.tasks.lastIndex,
                     continuesMainRail = !isLastBranch || !isLastDay,
+                    continuesChildRailAfterGroup = !isLastBranch,
                 )
             }
         }
@@ -1215,6 +1222,7 @@ private fun TimelineNestedTaskBranchRow(
     isFirstLeaf: Boolean,
     isLastLeaf: Boolean,
     continuesMainRail: Boolean,
+    continuesChildRailAfterGroup: Boolean,
 ) {
     var rowHeightPx by remember { mutableIntStateOf(0) }
     val rowHeight = with(LocalDensity.current) { rowHeightPx.toDp() }
@@ -1225,6 +1233,7 @@ private fun TimelineNestedTaskBranchRow(
                 isFirstLeaf = isFirstLeaf,
                 isLastLeaf = isLastLeaf,
                 continuesMainRail = continuesMainRail,
+                continuesChildRailAfterGroup = continuesChildRailAfterGroup,
                 modifier = Modifier
                     .width(82.dp)
                     .height(rowHeight),
@@ -1481,15 +1490,17 @@ private fun NestedTaskBranchConnector(
     isFirstLeaf: Boolean,
     isLastLeaf: Boolean,
     continuesMainRail: Boolean,
+    continuesChildRailAfterGroup: Boolean,
     modifier: Modifier = Modifier,
 ) {
     val mainRailColor = treeLineColor(0.10f)
     val childRailColor = treeLineColor(0.20f)
     Canvas(modifier) {
         val mainBranchX = 9.dp.toPx()
-        val parentNodeX = 39.dp.toPx()
-        val childBranchX = 65.dp.toPx()
+        val childBranchX = 39.dp.toPx()
+        val leafCenterX = 65.dp.toPx()
         val leafCenterY = 18.dp.toPx()
+        val nodeGap = 6.dp.toPx()
 
         if (continuesMainRail) {
             drawLine(
@@ -1501,16 +1512,6 @@ private fun NestedTaskBranchConnector(
             )
         }
 
-        if (isFirstLeaf) {
-            drawLine(
-                color = childRailColor,
-                start = Offset(parentNodeX, 0f),
-                end = Offset(childBranchX, 0f),
-                strokeWidth = 1.dp.toPx(),
-                cap = StrokeCap.Round,
-            )
-        }
-
         drawLine(
             color = childRailColor,
             start = Offset(childBranchX, 0f),
@@ -1518,7 +1519,7 @@ private fun NestedTaskBranchConnector(
             strokeWidth = 1.dp.toPx(),
             cap = if (isFirstLeaf) StrokeCap.Round else StrokeCap.Butt,
         )
-        if (!isLastLeaf) {
+        if (!isLastLeaf || continuesChildRailAfterGroup) {
             drawLine(
                 color = childRailColor,
                 start = Offset(childBranchX, leafCenterY),
@@ -1527,6 +1528,14 @@ private fun NestedTaskBranchConnector(
                 cap = StrokeCap.Butt,
             )
         }
+
+        drawLine(
+            color = childRailColor,
+            start = Offset(childBranchX, leafCenterY),
+            end = Offset(leafCenterX - nodeGap, leafCenterY),
+            strokeWidth = 1.dp.toPx(),
+            cap = StrokeCap.Round,
+        )
     }
 }
 
