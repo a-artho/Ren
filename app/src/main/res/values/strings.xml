@@ -50,7 +50,7 @@
     <string name="plan_is_tight">Plan is tight</string>
     <string name="plan_is_crammed">Crammed</string>
     <string name="plan_is_overloaded">Overloaded</string>
-    <string name="tasks_completed_compact">%1$d / %2$d</string>
+    <string name="leaf_progress_count">%1$d/%2$d</string>
     <string name="tight_plan_message">Little room for surprises: about %1$s estimated for %2$s available.</string>
     <string name="crammed_plan_title">This plan is crammed</string>
     <string name="crammed_plan_message">Some days are packed past their budget.</string>
@@ -216,8 +216,9 @@
     <string name="load_standard">Manageable</string>
     <string name="load_tight">Tight</string>
     <string name="load_heavy">Dense</string>
-    <string name="source_page">p. %1$d</string>
-    <string name="source_page_range">pp. %1$d–%2$d</string>
+    <string name="source_page">page %1$d</string>
+    <string name="source_page_range">pages %1$d–%2$d</string>
+    <string name="pdf_order_label">PDF %1$d</string>
     <plurals name="source_page_count">
         <item quantity="one">%1$d page</item>
         <item quantity="other">%1$d pages</item>

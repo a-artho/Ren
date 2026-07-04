@@ -208,6 +208,8 @@ fun StudyMapScreen(
             StudyMapHeader(
                 projectName = plan.projectName,
                 deadline = relativeDeadlineLabel(preferences),
+                completedTasks = data.completedTasks,
+                totalTasks = data.requiredTasks.size,
                 autoCloseExpandedDays = autoCloseExpandedDays,
                 onEditPlan = { adjustment = AdjustmentSheet.PlanEdit },
                 onDeletePlan = { deleteDialogOpen = true },
@@ -234,12 +236,18 @@ fun StudyMapScreen(
                     )
                 }
             }
-            item {
-                Box(Modifier.padding(top = 6.dp)) {
-                    StudyMapViewSwitcher(
-                        selected = selectedView,
-                        onSelected = { selectedViewName = it.name },
-                    )
+            item(key = "study-map-view-switcher") {
+                Surface(color = MaterialTheme.colorScheme.background) {
+                    Box(
+                        Modifier
+                            .fillMaxWidth()
+                            .padding(top = 6.dp, bottom = 8.dp),
+                    ) {
+                        StudyMapViewSwitcher(
+                            selected = selectedView,
+                            onSelected = { selectedViewName = it.name },
+                        )
+                    }
                 }
             }
             when (selectedView) {
@@ -322,6 +330,8 @@ fun StudyMapScreen(
 private fun StudyMapHeader(
     projectName: String,
     deadline: String? = null,
+    completedTasks: Int,
+    totalTasks: Int,
     autoCloseExpandedDays: Boolean,
     onEditPlan: (() -> Unit)? = null,
     onDeletePlan: (() -> Unit)? = null,
@@ -362,6 +372,13 @@ private fun StudyMapHeader(
                         modifier = Modifier.weight(1f),
                     )
                 }
+                if (totalTasks > 0) {
+                    Spacer(Modifier.width(10.dp))
+                    HeaderLeafProgress(
+                        completedTasks = completedTasks,
+                        totalTasks = totalTasks,
+                    )
+                }
             }
         }
     }
@@ -377,6 +394,31 @@ private fun StudyMapHeaderTitle(title: String, modifier: Modifier = Modifier) {
         maxLines = 1,
         overflow = TextOverflow.Ellipsis,
     )
+}
+
+@Composable
+private fun HeaderLeafProgress(
+    completedTasks: Int,
+    totalTasks: Int,
+) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        Icon(
+            imageVector = Icons.Default.Eco,
+            contentDescription = null,
+            modifier = Modifier.size(14.dp),
+            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.52f),
+        )
+        Text(
+            text = stringResource(R.string.leaf_progress_count, completedTasks, totalTasks),
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.68f),
+            fontWeight = FontWeight.SemiBold,
+            maxLines = 1,
+        )
+    }
 }
 
 @Composable
@@ -683,9 +725,9 @@ private fun StudyMapViewSwitcher(selected: StudyMapView, onSelected: (StudyMapVi
                     count = StudyMapView.entries.size,
                 ),
                 colors = SegmentedButtonDefaults.colors(
-                    activeContainerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.10f),
+                    activeContainerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.08f),
                     activeContentColor = MaterialTheme.colorScheme.primary,
-                    activeBorderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.42f),
+                    activeBorderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.34f),
                     inactiveContainerColor = Color.Transparent,
                     inactiveContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
                     inactiveBorderColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.72f),
@@ -846,7 +888,7 @@ private fun StudyDayMapCard(
     val isCompleted = day.tasks.isNotEmpty() && day.tasks.all { it.status == StudyTaskStatus.Completed }
     val view = LocalView.current
     var headerRowHeightPx by remember(day.date, expanded) { mutableIntStateOf(0) }
-    val defaultMarkerHeight = if (expanded) 48.dp else 108.dp
+    val defaultMarkerHeight = if (expanded) 52.dp else 112.dp
     val measuredMarkerHeight = with(LocalDensity.current) { headerRowHeightPx.toDp() }
     val markerHeight = if (headerRowHeightPx == 0) defaultMarkerHeight else maxOf(defaultMarkerHeight, measuredMarkerHeight)
 
@@ -894,7 +936,7 @@ private fun StudyDayMapCard(
             ) {
                 Column(
                     modifier = Modifier.padding(vertical = 10.dp),
-                    verticalArrangement = Arrangement.spacedBy(9.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     StudyDayCardHeader(
                         day = day,
@@ -904,7 +946,7 @@ private fun StudyDayMapCard(
                     )
 
                     if (!expanded && day.tasks.isNotEmpty()) {
-                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
                             Text(
                                 text = stringResource(R.string.next_task_preview, day.tasks.first().title),
                                 style = MaterialTheme.typography.bodyMedium,
@@ -928,17 +970,17 @@ private fun StudyDayMapCard(
         }
 
         if (expanded) {
-            var previousSource: String? = null
+            var previousSourceId: String? = null
             day.tasks.forEachIndexed { index, task ->
-                val sourceDocument = taskSourceDocumentLabel(task, documents)
-                if (sourceDocument != null && sourceDocument != previousSource) {
+                val sourceDocument = task.primarySourceDocument(documents)
+                if (sourceDocument != null && sourceDocument.id != previousSourceId) {
                     TimelineSourceDivider(
-                        source = sourceDocument,
+                        source = stringResource(R.string.pdf_order_label, sourceDocument.order),
                         continuesChildRail = index > 0,
                         showMainRail = !isLast || index == 0,
                     )
                 }
-                previousSource = sourceDocument
+                previousSourceId = sourceDocument?.id
                 TimelineTaskBranchRow(
                     task = task,
                     pageLabel = taskPageLabel(task),
@@ -1046,7 +1088,7 @@ private fun TimelineTaskBranchRow(
                 pageLabel = pageLabel,
                 modifier = Modifier
                     .weight(1f)
-                    .padding(vertical = 10.dp),
+                    .padding(vertical = 8.dp),
             )
             if (task.status != StudyTaskStatus.NotStarted) {
                 Spacer(Modifier.width(10.dp))
@@ -1056,13 +1098,38 @@ private fun TimelineTaskBranchRow(
             }
         }
 
-        TaskBullet(
+        TreeTaskLeafNode(
             status = task.status,
-            nodeSize = 10.dp,
-            completeIconSize = 12.dp,
-            borderWidth = 1.25.dp,
-            modifier = Modifier.padding(start = 24.dp, top = 5.dp),
+            modifier = Modifier.padding(start = 24.dp, top = 3.dp),
         )
+    }
+}
+
+@Composable
+private fun TreeTaskLeafNode(
+    status: StudyTaskStatus,
+    modifier: Modifier = Modifier,
+) {
+    val complete = status == StudyTaskStatus.Completed
+    Box(
+        modifier = modifier.size(30.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        if (complete) {
+            Icon(
+                Icons.Default.CheckCircle,
+                contentDescription = null,
+                modifier = Modifier.size(12.dp),
+                tint = MaterialTheme.colorScheme.primary,
+            )
+        } else {
+            Icon(
+                Icons.Default.Eco,
+                contentDescription = null,
+                modifier = Modifier.size(13.dp),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.48f),
+            )
+        }
     }
 }
 
@@ -1075,10 +1142,11 @@ private fun TimelineSourceDivider(
 ) {
     val trunkRail = treeLineColor(0.24f)
     val fadedTrunkRail = treeLineColor(0.10f)
+    val dividerHeight = if (continuesChildRail) 40.dp else 24.dp
     Box(
         modifier = modifier
             .fillMaxWidth()
-            .height(24.dp),
+            .height(dividerHeight),
     ) {
         Canvas(
             modifier = Modifier
@@ -1093,7 +1161,7 @@ private fun TimelineSourceDivider(
                     start = Offset(branchX, 0f),
                     end = Offset(branchX, size.height),
                     strokeWidth = 1.dp.toPx(),
-                    cap = StrokeCap.Round,
+                    cap = StrokeCap.Butt,
                 )
             }
             if (continuesChildRail) {
@@ -1102,17 +1170,35 @@ private fun TimelineSourceDivider(
                     start = Offset(nodeCenterX, 0f),
                     end = Offset(nodeCenterX, size.height),
                     strokeWidth = 1.dp.toPx(),
-                    cap = StrokeCap.Round,
+                    cap = StrokeCap.Butt,
                 )
             }
         }
-        SourceDividerLabel(
+        TimelineSourceDividerLabel(
             text = source,
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(start = 44.dp, end = 24.dp)
                 .align(Alignment.CenterStart),
         )
+    }
+}
+
+@Composable
+private fun TimelineSourceDividerLabel(
+    text: String,
+    modifier: Modifier = Modifier,
+) {
+    val lineColor = treeLineColor(0.09f)
+    Row(
+        modifier = modifier,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        SourceDividerLine(color = lineColor)
+        Spacer(Modifier.width(8.dp))
+        SourceDividerPill(text = text)
+        Spacer(Modifier.width(8.dp))
+        SourceDividerLine(color = lineColor)
     }
 }
 
@@ -1142,21 +1228,37 @@ private fun SourceDividerLabel(
 }
 
 @Composable
+private fun SourceDividerPill(text: String) {
+    Surface(
+        shape = RoundedCornerShape(999.dp),
+        color = MaterialTheme.colorScheme.surface,
+        contentColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.78f),
+        border = BorderStroke(1.dp, treeLineColor(0.14f)),
+    ) {
+        Text(
+            text = text,
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
+            style = MaterialTheme.typography.labelSmall,
+            fontWeight = FontWeight.SemiBold,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
+}
+
+@Composable
 private fun RowScope.SourceDividerLine(color: Color) {
     Canvas(
         modifier = Modifier
             .weight(1f)
             .height(1.dp),
     ) {
-        val dash = 4.dp.toPx()
-        val gap = 5.dp.toPx()
         drawLine(
             color = color,
             start = Offset.Zero,
             end = Offset(size.width, 0f),
             strokeWidth = 1.dp.toPx(),
             cap = StrokeCap.Round,
-            pathEffect = PathEffect.dashPathEffect(floatArrayOf(dash, gap), 0f),
         )
     }
 }
@@ -1173,7 +1275,7 @@ private fun TaskBranchConnector(
     Canvas(modifier) {
         val branchX = 9.dp.toPx()
         val nodeCenterX = 39.dp.toPx()
-        val nodeCenterY = 20.dp.toPx()
+        val nodeCenterY = 18.dp.toPx()
         val nodeGap = 6.dp.toPx()
         val exitY = size.height
         if (isLastDay) {
@@ -1200,7 +1302,7 @@ private fun TaskBranchConnector(
                     start = Offset(branchX, nodeCenterY),
                     end = Offset(branchX, exitY),
                     strokeWidth = 1.dp.toPx(),
-                    cap = StrokeCap.Round,
+                    cap = StrokeCap.Butt,
                 )
             } else {
                 drawLine(
@@ -1208,7 +1310,7 @@ private fun TaskBranchConnector(
                     start = Offset(branchX, 0f),
                     end = Offset(branchX, exitY),
                     strokeWidth = 1.dp.toPx(),
-                    cap = StrokeCap.Round,
+                    cap = StrokeCap.Butt,
                 )
             }
         }
@@ -1231,7 +1333,7 @@ private fun TaskBranchConnector(
                 start = Offset(nodeCenterX, 0f),
                 end = Offset(nodeCenterX, upperRailEnd),
                 strokeWidth = 1.dp.toPx(),
-                cap = StrokeCap.Round,
+                cap = StrokeCap.Butt,
             )
         }
         if (!isLastBranch && lowerRailStart < exitY) {
@@ -1240,14 +1342,14 @@ private fun TaskBranchConnector(
                 start = Offset(nodeCenterX, lowerRailStart),
                 end = Offset(nodeCenterX, exitY),
                 strokeWidth = 1.dp.toPx(),
-                cap = StrokeCap.Round,
+                cap = StrokeCap.Butt,
             )
         }
     }
 }
 
 @Composable
-private fun TimelineDayGap(height: Dp = 22.dp) {
+private fun TimelineDayGap(height: Dp = 28.dp) {
     val mutedColor = treeLineColor(0.10f)
     Canvas(
         modifier = Modifier
@@ -1575,6 +1677,7 @@ private fun TaskBullet(
     borderColor: Color? = null,
 ) {
     val complete = status == StudyTaskStatus.Completed
+    val defaultBorderColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.42f)
     Box(modifier = modifier.size(containerSize), contentAlignment = Alignment.Center) {
         Box(contentAlignment = Alignment.Center) {
             if (complete) {
@@ -1591,7 +1694,7 @@ private fun TaskBullet(
                     color = Color.Transparent,
                     border = BorderStroke(
                         width = borderWidth,
-                        color = borderColor ?: MaterialTheme.colorScheme.primary.copy(alpha = 0.72f),
+                        color = borderColor ?: defaultBorderColor,
                     ),
                 ) {}
             }
@@ -1704,7 +1807,7 @@ private fun MaterialSection(
                     if (groupIndex == 0) {
                         Spacer(Modifier.height(8.dp))
                     } else {
-                        Spacer(Modifier.height(6.dp))
+                        Spacer(Modifier.height(12.dp))
                     }
                     val connectsGroup = sourceGroup.tasks.size > 1
                     sourceGroup.tasks.forEachIndexed { taskIndex, task ->
