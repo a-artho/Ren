@@ -63,7 +63,6 @@ import com.hci.ren.ui.motion.RenEmphasizedEasing
 import com.hci.ren.ui.motion.isReducedMotionEnabled
 import kotlin.math.PI
 import kotlin.math.cos
-import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.sin
 
@@ -208,7 +207,7 @@ private fun ProcessingContent(
                     .weight(1f),
                 contentAlignment = Alignment.Center,
             ) {
-                RadiatingPlanAnimation(
+                BreathingPlanAnimation(
                     stepIndex = activeStepIndex,
                     reducedMotion = reducedMotion,
                     modifier = Modifier
@@ -283,135 +282,132 @@ private fun ProcessingContent(
 }
 
 @Composable
-private fun RadiatingPlanAnimation(
+private fun BreathingPlanAnimation(
     stepIndex: Int,
     reducedMotion: Boolean,
     modifier: Modifier = Modifier,
 ) {
     val primary = MaterialTheme.colorScheme.primary
     val muted = MaterialTheme.colorScheme.outlineVariant
-    val profile = animationProfile(stepIndex)
-    val transition = rememberInfiniteTransition(label = "plan-radiating-animation")
-    val phaseAnimated by transition.animateFloat(
-        initialValue = 0f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = profile.waveDurationMillis, easing = LinearEasing),
-            repeatMode = RepeatMode.Restart,
-        ),
-        label = "radiating-wave-phase",
-    )
+    val profile = planAnimationProfile
+    val transition = rememberInfiniteTransition(label = "plan-breathing-animation")
     val breatheAnimated by transition.animateFloat(
         initialValue = 0f,
         targetValue = 1f,
         animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = profile.breatheDurationMillis, easing = RenEmphasizedEasing),
-            repeatMode = RepeatMode.Reverse,
+            animation = tween(durationMillis = PLAN_BREATH_DURATION_MILLIS, easing = LinearEasing),
+            repeatMode = RepeatMode.Restart,
         ),
-        label = "radiating-core-breathe",
+        label = "plan-breath-motion",
     )
-    val scanAnimated by transition.animateFloat(
+    val centerMotionAnimated by transition.animateFloat(
         initialValue = 0f,
         targetValue = 1f,
         animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = profile.scanDurationMillis, easing = RenEmphasizedEasing),
+            animation = tween(durationMillis = PLAN_INNER_MOTION_DURATION_MILLIS, easing = RenEmphasizedEasing),
             repeatMode = RepeatMode.Reverse,
         ),
-        label = "radiating-inner-motion",
+        label = "plan-center-motion",
     )
-    val phase = if (reducedMotion) 0.18f else phaseAnimated
-    val breathe = if (reducedMotion) 0.55f else breatheAnimated
-    val scan = if (reducedMotion) 0.5f else scanAnimated
+    val centerPhaseAnimated by transition.animateFloat(
+        initialValue = 0f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = PLAN_CENTER_ROTATION_DURATION_MILLIS, easing = LinearEasing),
+            repeatMode = RepeatMode.Restart,
+        ),
+        label = "plan-center-phase",
+    )
+    val breatheProgress = if (reducedMotion) 0.5f else breatheAnimated
+    val breath = planGenerationBreathMotion(breatheProgress)
+    val centerMotion = if (reducedMotion) 0.5f else centerMotionAnimated
+    val centerPhase = if (reducedMotion) 0.18f else centerPhaseAnimated
 
     Canvas(modifier = modifier) {
         val center = Offset(size.width / 2f, size.height / 2f)
         val minDimension = min(size.width, size.height)
-        val maxDimension = max(size.width, size.height)
-        val coreRadius = minDimension * (profile.coreScale + breathe * 0.01f)
-        val waveReach = maxDimension * profile.waveReach
+        val coreRadius = minDimension * profile.coreScale
+        val waveReach = minDimension * profile.waveReach
         val motionProfile = WaveMotionProfile(
             waveReach = profile.waveReach,
-            drift = profile.drift,
             scaleXBase = profile.scaleXBase,
             scaleYBase = profile.scaleYBase,
         )
 
         repeat(profile.waveCount) { index ->
-            val progress = (phase + index * profile.waveDelay) % 1f
-            val angle = profile.angleOffset + index * profile.angleStep
+            val progress = planGenerationRippleProgress(breatheProgress, index, profile.waveCount)
             val motion = planGenerationWaveMotion(motionProfile, index, progress)
-            val expansionProgress = motion.progress
-            val drift = maxDimension * (profile.drift + index * 0.004f) * expansionProgress
-            val radius = coreRadius * profile.waveStart + waveReach * expansionProgress
-            val waveCenter = Offset(
-                x = center.x + cos(angle).toFloat() * drift,
-                y = center.y + sin(angle).toFloat() * drift * 0.78f,
-            )
+            val radius = (coreRadius * profile.waveStart + waveReach * motion.progress) * breath.scale
             drawOval(
-                color = primary.copy(alpha = motion.alphaMultiplier * profile.waveAlpha),
-                topLeft = Offset(waveCenter.x - radius * motion.scaleX, waveCenter.y - radius * motion.scaleY),
+                color = primary.copy(alpha = motion.alphaMultiplier * profile.waveAlpha * breath.auraAlphaMultiplier),
+                topLeft = Offset(center.x - radius * motion.scaleX, center.y - radius * motion.scaleY),
                 size = Size(radius * 2f * motion.scaleX, radius * 2f * motion.scaleY),
             )
         }
 
-        val ambientLean = if (reducedMotion) 0.35f else breathe
-        drawOval(
-            color = primary.copy(alpha = profile.ambientAlpha * 0.42f + ambientLean * 0.014f),
-            topLeft = Offset(center.x - maxDimension * 0.62f, center.y - maxDimension * 0.38f),
-            size = Size(maxDimension * 1.24f, maxDimension * 0.76f),
+        drawCenteredOval(
+            color = primary.copy(alpha = profile.ambientAlpha * breath.auraAlphaMultiplier),
+            center = center,
+            width = minDimension * 0.86f * breath.scale,
+            height = minDimension * 0.52f * breath.scale,
         )
-        drawOval(
-            color = primary.copy(alpha = profile.ambientAlpha * 0.36f + ambientLean * 0.012f),
-            topLeft = Offset(center.x - maxDimension * 0.34f, center.y - maxDimension * 0.58f),
-            size = Size(maxDimension * 0.86f, maxDimension * 1.08f),
-        )
-        drawOval(
-            color = primary.copy(alpha = profile.ambientAlpha + ambientLean * 0.028f),
-            topLeft = Offset(center.x - maxDimension * 0.42f, center.y - maxDimension * 0.27f),
-            size = Size(maxDimension * 0.84f, maxDimension * 0.54f),
-        )
-        drawOval(
-            color = primary.copy(alpha = profile.ambientAlpha * 0.72f + ambientLean * 0.02f),
-            topLeft = Offset(center.x - maxDimension * 0.33f, center.y - maxDimension * 0.36f),
-            size = Size(maxDimension * 0.66f, maxDimension * 0.72f),
+        drawCenteredOval(
+            color = primary.copy(alpha = profile.ambientAlpha * 0.72f * breath.auraAlphaMultiplier),
+            center = center,
+            width = minDimension * 0.58f * breath.scale,
+            height = minDimension * 0.66f * breath.scale,
         )
 
         drawCircle(
-            color = primary.copy(alpha = 0.038f + breathe * 0.038f),
-            radius = coreRadius * 2.7f,
+            color = primary.copy(alpha = 0.06f * breath.coreAlphaMultiplier),
+            radius = coreRadius * 2.7f * breath.scale,
             center = center,
         )
         drawCircle(
-            color = primary.copy(alpha = 0.105f + breathe * 0.035f),
-            radius = coreRadius * 1.48f,
+            color = primary.copy(alpha = 0.118f * breath.coreAlphaMultiplier),
+            radius = coreRadius * 1.48f * breath.scale,
             center = center,
         )
         drawCircle(
-            color = primary.copy(alpha = 0.18f),
-            radius = coreRadius * 1.02f,
+            color = primary.copy(alpha = 0.18f * breath.coreAlphaMultiplier),
+            radius = coreRadius * 1.02f * breath.scale,
             center = center,
         )
         drawCircle(
-            color = primary.copy(alpha = 0.36f),
-            radius = coreRadius * 1.46f,
+            color = primary.copy(alpha = 0.36f * breath.coreAlphaMultiplier),
+            radius = coreRadius * 1.46f * breath.scale,
             center = center,
             style = Stroke(width = 1.35.dp.toPx(), cap = StrokeCap.Round),
         )
         drawCircle(
-            color = primary.copy(alpha = 0.08f),
-            radius = coreRadius * 0.62f,
+            color = primary.copy(alpha = 0.08f * breath.coreAlphaMultiplier),
+            radius = coreRadius * 0.62f * breath.scale,
             center = center,
         )
 
         drawPlanGlyph(
             stepIndex = stepIndex,
             center = center,
-            coreRadius = coreRadius * 1.08f,
+            coreRadius = coreRadius * 1.08f * breath.scale,
             primary = primary,
             muted = muted,
-            motion = scan,
+            motion = centerMotion,
+            phase = centerPhase,
         )
     }
+}
+
+private fun DrawScope.drawCenteredOval(
+    color: Color,
+    center: Offset,
+    width: Float,
+    height: Float,
+) {
+    drawOval(
+        color = color,
+        topLeft = Offset(center.x - width / 2f, center.y - height / 2f),
+        size = Size(width, height),
+    )
 }
 
 private fun DrawScope.drawPlanGlyph(
@@ -421,36 +417,53 @@ private fun DrawScope.drawPlanGlyph(
     primary: Color,
     muted: Color,
     motion: Float,
+    phase: Float,
 ) {
     when (stepIndex) {
-        0 -> drawDocumentStack(center, coreRadius, primary)
+        0 -> drawDocumentStack(center, coreRadius, primary, motion)
         1 -> drawReadingLines(center, coreRadius, primary, muted, motion)
-        2 -> drawTopicNodes(center, coreRadius, primary, muted, motion)
-        3 -> drawStudyBlocks(center, coreRadius, primary)
-        else -> drawCalendarMark(center, coreRadius, primary, muted)
+        2 -> drawTopicNodes(center, coreRadius, primary, muted, phase)
+        3 -> drawStudyBlocks(center, coreRadius, primary, phase)
+        else -> drawCalendarMark(center, coreRadius, primary, muted, motion)
     }
 }
 
-private fun DrawScope.drawDocumentStack(center: Offset, radius: Float, color: Color) {
+private fun DrawScope.drawDocumentStack(
+    center: Offset,
+    radius: Float,
+    color: Color,
+    motion: Float,
+) {
     val pageWidth = radius * 0.94f
     val pageHeight = radius * 1.1f
     val corner = CornerRadius(7.dp.toPx(), 7.dp.toPx())
+    val lift = (motion - 0.5f) * 4.dp.toPx()
     repeat(2) { index ->
-        val offset = (index - 0.5f) * 6.dp.toPx()
+        val layer = index - 0.5f
+        val offset = layer * 6.dp.toPx()
+        val yOffset = -offset + lift * layer
         drawRoundRect(
             color = color.copy(alpha = 0.14f + index * 0.18f),
-            topLeft = Offset(center.x - pageWidth / 2f + offset, center.y - pageHeight / 2f - offset),
+            topLeft = Offset(center.x - pageWidth / 2f + offset, center.y - pageHeight / 2f + yOffset),
             size = Size(pageWidth, pageHeight),
             cornerRadius = corner,
         )
         drawRoundRect(
             color = color.copy(alpha = 0.42f + index * 0.16f),
-            topLeft = Offset(center.x - pageWidth / 2f + offset, center.y - pageHeight / 2f - offset),
+            topLeft = Offset(center.x - pageWidth / 2f + offset, center.y - pageHeight / 2f + yOffset),
             size = Size(pageWidth, pageHeight),
             cornerRadius = corner,
             style = Stroke(width = 1.45.dp.toPx(), cap = StrokeCap.Round),
         )
     }
+    val scanY = center.y + pageHeight * (-0.2f + motion * 0.4f)
+    drawLine(
+        color = color.copy(alpha = 0.72f),
+        start = Offset(center.x - pageWidth * 0.28f, scanY),
+        end = Offset(center.x + pageWidth * 0.28f, scanY),
+        strokeWidth = 2.dp.toPx(),
+        cap = StrokeCap.Round,
+    )
 }
 
 private fun DrawScope.drawReadingLines(
@@ -489,10 +502,11 @@ private fun DrawScope.drawTopicNodes(
     radius: Float,
     color: Color,
     muted: Color,
-    motion: Float,
+    phase: Float,
 ) {
+    val rotation = phase.toDouble() * TOPIC_NODE_TURN
     val points = List(5) { index ->
-        val angle = -PI / 2.0 + index * (2.0 * PI / 5.0)
+        val angle = -PI / 2.0 + index * (TOPIC_NODE_TURN / 5.0) + rotation
         val distance = radius * (0.62f + if (index % 2 == 0) 0.1f else 0f)
         Offset(
             x = center.x + cos(angle).toFloat() * distance,
@@ -500,6 +514,7 @@ private fun DrawScope.drawTopicNodes(
         )
     }
     points.forEachIndexed { index, point ->
+        val emphasis = 0.58f + 0.26f * ((1f + cos(rotation - index * TOPIC_NODE_TURN / points.size).toFloat()) / 2f)
         drawLine(
             color = muted.copy(alpha = 0.34f),
             start = center,
@@ -508,30 +523,43 @@ private fun DrawScope.drawTopicNodes(
             cap = StrokeCap.Round,
         )
         drawCircle(
-            color = color.copy(alpha = if (index == ((motion * points.size).toInt() % points.size)) 0.9f else 0.48f),
-            radius = if (index == ((motion * points.size).toInt() % points.size)) 4.6.dp.toPx() else 3.4.dp.toPx(),
+            color = color.copy(alpha = emphasis),
+            radius = (3.4f + emphasis * 0.8f).dp.toPx(),
             center = point,
         )
     }
     drawCircle(color = color, radius = 4.6.dp.toPx(), center = center)
 }
 
-private fun DrawScope.drawStudyBlocks(center: Offset, radius: Float, color: Color) {
+private fun DrawScope.drawStudyBlocks(
+    center: Offset,
+    radius: Float,
+    color: Color,
+    phase: Float,
+) {
     val width = radius * 1.32f
     val height = radius * 0.3f
     val corner = CornerRadius(7.dp.toPx(), 7.dp.toPx())
     repeat(3) { index ->
         val y = center.y - height * 1.55f + index * height * 1.2f
+        val emphasis = ((1f + sin(phase.toDouble() * TOPIC_NODE_TURN + index * TOPIC_NODE_TURN / 3.0).toFloat()) / 2f)
+        val rowWidth = width * (0.82f + emphasis * 0.16f - index * 0.06f)
         drawRoundRect(
-            color = color.copy(alpha = 0.28f + index * 0.18f),
-            topLeft = Offset(center.x - width / 2f, y),
-            size = Size(width * (1f - index * 0.1f), height),
+            color = color.copy(alpha = 0.28f + index * 0.14f + emphasis * 0.12f),
+            topLeft = Offset(center.x - rowWidth / 2f, y),
+            size = Size(rowWidth, height),
             cornerRadius = corner,
         )
     }
 }
 
-private fun DrawScope.drawCalendarMark(center: Offset, radius: Float, color: Color, muted: Color) {
+private fun DrawScope.drawCalendarMark(
+    center: Offset,
+    radius: Float,
+    color: Color,
+    muted: Color,
+    motion: Float,
+) {
     val width = radius * 1.24f
     val height = radius * 1.0f
     val topLeft = Offset(center.x - width / 2f, center.y - height / 2f)
@@ -553,8 +581,8 @@ private fun DrawScope.drawCalendarMark(center: Offset, radius: Float, color: Col
     repeat(2) { row ->
         repeat(3) { column ->
             drawCircle(
-                color = if (row == 1 && column == 2) color else muted.copy(alpha = 0.48f),
-                radius = 2.4.dp.toPx(),
+                color = if (row == 1 && column == 2) color.copy(alpha = 0.66f + motion * 0.28f) else muted.copy(alpha = 0.48f),
+                radius = (2.4f + if (row == 1 && column == 2) motion * 0.7f else 0f).dp.toPx(),
                 center = Offset(
                     x = topLeft.x + width * (0.25f + column * 0.25f),
                     y = topLeft.y + height * (0.54f + row * 0.22f),
@@ -598,106 +626,27 @@ private fun stepSubtitle(step: Step): String = stringResource(step.subtitleRes)
 
 private data class AnimationProfile(
     val waveCount: Int,
-    val waveDelay: Float,
     val waveReach: Float,
     val waveStart: Float,
     val waveAlpha: Float,
     val ambientAlpha: Float,
     val coreScale: Float,
-    val drift: Float,
-    val angleOffset: Float,
-    val angleStep: Float,
     val scaleXBase: Float,
     val scaleYBase: Float,
-    val waveDurationMillis: Int,
-    val breatheDurationMillis: Int,
-    val scanDurationMillis: Int,
 )
 
-private fun animationProfile(stepIndex: Int): AnimationProfile = when (stepIndex) {
-    0 -> AnimationProfile(
-        waveCount = 6,
-        waveDelay = 0.165f,
-        waveReach = 0.7f,
-        waveStart = 1.34f,
-        waveAlpha = 0.034f,
-        ambientAlpha = 0.024f,
-        coreScale = 0.124f,
-        drift = 0.04f,
-        angleOffset = -0.72f,
-        angleStep = 1.18f,
-        scaleXBase = 0.68f,
-        scaleYBase = 0.44f,
-        waveDurationMillis = 4400,
-        breatheDurationMillis = 3300,
-        scanDurationMillis = 2500,
-    )
-    1 -> AnimationProfile(
-        waveCount = 7,
-        waveDelay = 0.143f,
-        waveReach = 0.78f,
-        waveStart = 1.42f,
-        waveAlpha = 0.038f,
-        ambientAlpha = 0.028f,
-        coreScale = 0.126f,
-        drift = 0.045f,
-        angleOffset = -0.95f,
-        angleStep = 1.08f,
-        scaleXBase = 0.74f,
-        scaleYBase = 0.46f,
-        waveDurationMillis = 4600,
-        breatheDurationMillis = 3400,
-        scanDurationMillis = 2800,
-    )
-    2 -> AnimationProfile(
-        waveCount = 8,
-        waveDelay = 0.125f,
-        waveReach = 0.84f,
-        waveStart = 1.32f,
-        waveAlpha = 0.04f,
-        ambientAlpha = 0.03f,
-        coreScale = 0.122f,
-        drift = 0.052f,
-        angleOffset = -1.2f,
-        angleStep = 0.92f,
-        scaleXBase = 0.66f,
-        scaleYBase = 0.5f,
-        waveDurationMillis = 4100,
-        breatheDurationMillis = 3200,
-        scanDurationMillis = 2300,
-    )
-    3 -> AnimationProfile(
-        waveCount = 6,
-        waveDelay = 0.155f,
-        waveReach = 0.74f,
-        waveStart = 1.5f,
-        waveAlpha = 0.036f,
-        ambientAlpha = 0.026f,
-        coreScale = 0.132f,
-        drift = 0.034f,
-        angleOffset = -0.55f,
-        angleStep = 1.05f,
-        scaleXBase = 0.8f,
-        scaleYBase = 0.42f,
-        waveDurationMillis = 5000,
-        breatheDurationMillis = 3600,
-        scanDurationMillis = 3000,
-    )
-    else -> AnimationProfile(
-        waveCount = 5,
-        waveDelay = 0.18f,
-        waveReach = 0.66f,
-        waveStart = 1.58f,
-        waveAlpha = 0.032f,
-        ambientAlpha = 0.022f,
-        coreScale = 0.13f,
-        drift = 0.028f,
-        angleOffset = -0.42f,
-        angleStep = 1.24f,
-        scaleXBase = 0.72f,
-        scaleYBase = 0.48f,
-        waveDurationMillis = 5200,
-        breatheDurationMillis = 3700,
-        scanDurationMillis = 3200,
-    )
-}
+private val planAnimationProfile = AnimationProfile(
+    waveCount = 4,
+    waveReach = 0.48f,
+    waveStart = 1.38f,
+    waveAlpha = 0.024f,
+    ambientAlpha = 0.017f,
+    coreScale = 0.126f,
+    scaleXBase = 0.64f,
+    scaleYBase = 0.36f,
+)
+
+private const val PLAN_BREATH_DURATION_MILLIS = 2600
+private const val PLAN_INNER_MOTION_DURATION_MILLIS = 900
+private const val PLAN_CENTER_ROTATION_DURATION_MILLIS = 2400
+private const val TOPIC_NODE_TURN = 6.283185307179586
