@@ -1105,7 +1105,7 @@ private fun PlanEditMenuContent(
         )
         Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.End,
+            horizontalArrangement = Arrangement.Center,
         ) {
             PlanEditDeleteAction(onClick = onDeletePlan)
         }

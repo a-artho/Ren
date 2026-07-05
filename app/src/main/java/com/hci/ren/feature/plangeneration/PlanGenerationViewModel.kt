@@ -379,7 +379,7 @@ class PlanGenerationViewModel(application: Application) : AndroidViewModel(appli
                         )
                     }
                 } else {
-                    delay(VISUAL_STEP_MINIMUM_DURATION)
+                    delay(planGenerationVisualStepMinimumDuration(step))
                 }
             }
         }
@@ -654,7 +654,6 @@ class PlanGenerationViewModel(application: Application) : AndroidViewModel(appli
         const val KEY_PREPARED_DOCUMENTS = "prepared_documents"
         const val MAX_TRANSIENT_FAILURE_MILLIS = 5 * 60 * 1000L
         private const val MAX_DOCUMENT_PREPARATION_UPLOADS = 5
-        private val VISUAL_STEP_MINIMUM_DURATION = 2.seconds
         private val COMPLETION_SETTLE_DURATION = 650.milliseconds
     }
 }

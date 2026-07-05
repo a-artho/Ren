@@ -329,23 +329,28 @@ private fun RadiatingPlanAnimation(
         val maxDimension = max(size.width, size.height)
         val coreRadius = minDimension * (profile.coreScale + breathe * 0.01f)
         val waveReach = maxDimension * profile.waveReach
+        val motionProfile = WaveMotionProfile(
+            waveReach = profile.waveReach,
+            drift = profile.drift,
+            scaleXBase = profile.scaleXBase,
+            scaleYBase = profile.scaleYBase,
+        )
 
         repeat(profile.waveCount) { index ->
             val progress = (phase + index * profile.waveDelay) % 1f
-            val fade = (1f - progress) * (1f - progress)
             val angle = profile.angleOffset + index * profile.angleStep
-            val drift = maxDimension * (profile.drift + index * 0.004f) * progress
-            val radius = coreRadius * profile.waveStart + waveReach * progress
-            val scaleX = profile.scaleXBase + (index % 4) * 0.11f
-            val scaleY = profile.scaleYBase + ((index + 2) % 4) * 0.09f
+            val motion = planGenerationWaveMotion(motionProfile, index, progress)
+            val expansionProgress = motion.progress
+            val drift = maxDimension * (profile.drift + index * 0.004f) * expansionProgress
+            val radius = coreRadius * profile.waveStart + waveReach * expansionProgress
             val waveCenter = Offset(
                 x = center.x + cos(angle).toFloat() * drift,
                 y = center.y + sin(angle).toFloat() * drift * 0.78f,
             )
             drawOval(
-                color = primary.copy(alpha = fade * profile.waveAlpha),
-                topLeft = Offset(waveCenter.x - radius * scaleX, waveCenter.y - radius * scaleY),
-                size = Size(radius * 2f * scaleX, radius * 2f * scaleY),
+                color = primary.copy(alpha = motion.alphaMultiplier * profile.waveAlpha),
+                topLeft = Offset(waveCenter.x - radius * motion.scaleX, waveCenter.y - radius * motion.scaleY),
+                size = Size(radius * 2f * motion.scaleX, radius * 2f * motion.scaleY),
             )
         }
 
