@@ -292,7 +292,7 @@ private val tabs = listOf(
 private val tabScreens = setOf(ScreenStudyMapDetail, ScreenToday, ScreenProgress)
 private val lockedPlanTabs = setOf(ScreenToday, ScreenProgress)
 private const val TodayTabIndex = 1
-private const val TodayNavigationEnabled = false
+private const val TodayNavigationEnabled = true
 
 private fun tabIndexForScreen(screen: String): Int = when (screen) {
     ScreenStudyMapDetail -> 0

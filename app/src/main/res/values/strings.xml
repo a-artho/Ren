@@ -136,6 +136,9 @@
     <string name="moving_later_metric_label">Moving later</string>
     <string name="moving_forward_metric_label">Moving forward</string>
     <string name="removed_metric_label">Removed</string>
+    <string name="adjusted_for_your_pace">Adjusted for your pace</string>
+    <string name="time_budget">Time budget</string>
+    <string name="over_budget_metric_label">Over budget</string>
     <string name="wrap_up_today">Wrap up today</string>
     <string name="nothing_to_wrap_up">Nothing to wrap up</string>
     <string name="today_wrapped_up_button">Today wrapped up</string>

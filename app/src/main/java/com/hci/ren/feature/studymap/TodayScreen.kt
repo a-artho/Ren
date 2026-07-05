@@ -1,5 +1,7 @@
 package com.hci.ren.feature.studymap
 
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -17,13 +19,19 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.CalendarMonth
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.RestartAlt
+import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Timer
+import androidx.compose.material.icons.filled.WarningAmber
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -31,6 +39,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -40,10 +49,15 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.graphics.vector.path
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
 import com.hci.ren.R
 import com.hci.ren.feature.plangeneration.GeneratedStudyBlock
 import com.hci.ren.feature.plangeneration.StudyTaskStatus
@@ -86,6 +100,7 @@ fun TodayScreen(
         hasAvailabilityOverride = hasAvailabilityOverride,
     )
     var showWrapUpDialog by remember(today, todayPlan) { mutableStateOf(false) }
+    var showTimeBudgetDialog by remember(today) { mutableStateOf(false) }
     var visibleWrapUpResult by rememberSaveable(today) { mutableStateOf<String?>(null) }
     var visibleNotice by rememberSaveable(today) { mutableStateOf<String?>(null) }
     val emptyState = todayPlan.emptyState(data, isTodayClosed)
@@ -131,6 +146,20 @@ fun TodayScreen(
             },
         )
     }
+    if (showTimeBudgetDialog) {
+        TimeBudgetDialog(
+            availableMinutes = todayPlan.availableMinutes,
+            baseAvailableMinutes = todayPlan.baseAvailableMinutes,
+            onDecrease = {
+                updateAvailableMinutes(todayPlan.availableMinutes - TimeAdjustmentStepMinutes)
+            },
+            onIncrease = {
+                updateAvailableMinutes(todayPlan.availableMinutes + TimeAdjustmentStepMinutes)
+            },
+            onReset = { onAvailableTimeChanged(today, null) },
+            onDismiss = { showTimeBudgetDialog = false },
+        )
+    }
 
     LazyColumn(
         modifier = modifier
@@ -139,11 +168,16 @@ fun TodayScreen(
         contentPadding = androidx.compose.foundation.layout.PaddingValues(
             start = 20.dp,
             end = 20.dp,
-            top = 22.dp,
-            bottom = 28.dp,
+            top = 10.dp,
+            bottom = 20.dp,
         ),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
+        item {
+            TodayHeader(
+                onTimeBudgetClick = { showTimeBudgetDialog = true },
+            )
+        }
         item {
             TodayBudgetCard(todayPlan, isTodayClosed)
         }
@@ -156,19 +190,6 @@ fun TodayScreen(
             item {
                 TodayNoticeCard(message = visibleNotice.orEmpty())
             }
-        }
-        item {
-            AvailableTimeCard(
-                availableMinutes = todayPlan.availableMinutes,
-                baseAvailableMinutes = todayPlan.baseAvailableMinutes,
-                onDecrease = {
-                    updateAvailableMinutes(todayPlan.availableMinutes - TimeAdjustmentStepMinutes)
-                },
-                onIncrease = {
-                    updateAvailableMinutes(todayPlan.availableMinutes + TimeAdjustmentStepMinutes)
-                },
-                onReset = { onAvailableTimeChanged(today, null) },
-            )
         }
         if (todayPlan.hasPendingChanges) {
             item {
@@ -358,147 +379,203 @@ fun TodayScreen(
     }
 }
 
+private val SparklesIcon: ImageVector = ImageVector.Builder(
+    name = "Sparkles",
+    defaultWidth = 24.dp,
+    defaultHeight = 24.dp,
+    viewportWidth = 24f,
+    viewportHeight = 24f,
+).apply {
+    path(
+        fill = SolidColor(Color.Black),
+    ) {
+        moveTo(10f, 4f)
+        quadTo(10f, 13f, 19f, 13f)
+        quadTo(10f, 13f, 10f, 22f)
+        quadTo(10f, 13f, 1f, 13f)
+        quadTo(10f, 13f, 10f, 4f)
+        close()
+    }
+    path(
+        fill = SolidColor(Color.Black),
+    ) {
+        moveTo(18f, 1f)
+        quadTo(18f, 5f, 22f, 5f)
+        quadTo(18f, 5f, 18f, 9f)
+        quadTo(18f, 5f, 14f, 5f)
+        quadTo(18f, 5f, 18f, 1f)
+        close()
+    }
+}.build()
+
+@Composable
+private fun TodayHeader(
+    onTimeBudgetClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        modifier = modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Text(
+                text = stringResource(R.string.adjusted_for_your_pace),
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+            Icon(
+                imageVector = SparklesIcon,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(24.dp),
+            )
+        }
+        Surface(
+            onClick = onTimeBudgetClick,
+            shape = RoundedCornerShape(50),
+            color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.25f),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.8f)),
+        ) {
+            Row(
+                modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Timer,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(18.dp),
+                )
+                Text(
+                    text = stringResource(R.string.time_budget),
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+            }
+        }
+    }
+}
+
 @Composable
 private fun TodayBudgetCard(
     todayPlan: TodaySessionPlan,
     isTodayClosed: Boolean,
 ) {
     val pressureMinutes = maxOf(todayPlan.overPlannedMinutes, todayPlan.overflowMinutes)
-    val title = when {
-        isTodayClosed -> stringResource(R.string.today_time_closed)
-        pressureMinutes > 0 -> stringResource(
-            R.string.today_time_overflow,
-            formatTodayMinutes(pressureMinutes),
-        )
-        todayPlan.remainingMinutes > 0 -> stringResource(
-            R.string.today_time_free,
-            formatTodayMinutes(todayPlan.remainingMinutes),
-        )
-        else -> stringResource(R.string.today_time_exact)
+    val remainingOrOverLabel = if (pressureMinutes > 0) {
+        stringResource(R.string.over_budget_metric_label)
+    } else {
+        stringResource(R.string.remaining_metric_label)
     }
-    val message = when {
-        isTodayClosed -> stringResource(R.string.today_time_closed_message)
-        pressureMinutes > 0 -> stringResource(R.string.today_time_overflow_message)
-        todayPlan.remainingMinutes > 0 -> stringResource(R.string.today_time_free_message)
-        else -> stringResource(R.string.today_time_exact_message)
+    val remainingOrOverValue = if (pressureMinutes > 0) {
+        formatTodayMinutes(pressureMinutes)
+    } else {
+        formatTodayMinutes(todayPlan.remainingMinutes)
     }
-    val summary = when {
-        isTodayClosed -> stringResource(
-            R.string.today_budget_summary_closed,
-            formatTodayMinutes(todayPlan.availableMinutes),
-        )
-        pressureMinutes > 0 -> stringResource(
-            R.string.today_budget_summary_overflow,
-            formatTodayMinutes(todayPlan.availableMinutes),
-            formatTodayMinutes(todayPlan.plannedMinutes),
-            formatTodayMinutes(pressureMinutes),
-        )
-        todayPlan.remainingMinutes > 0 -> stringResource(
-            R.string.today_budget_summary_free,
-            formatTodayMinutes(todayPlan.availableMinutes),
-            formatTodayMinutes(todayPlan.plannedMinutes),
-            formatTodayMinutes(todayPlan.remainingMinutes),
-        )
-        else -> stringResource(
-            R.string.today_budget_summary_exact,
-            formatTodayMinutes(todayPlan.availableMinutes),
-            formatTodayMinutes(todayPlan.plannedMinutes),
-        )
+    val remainingOrOverColor = if (pressureMinutes > 0) {
+        MaterialTheme.colorScheme.error
+    } else {
+        MaterialTheme.colorScheme.primary
     }
+
     Card(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(18.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        border = CardDefaults.outlinedCardBorder(),
+        shape = RoundedCornerShape(24.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+        ),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
     ) {
         Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
+            modifier = Modifier.padding(vertical = 18.dp, horizontal = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            Text(
-                text = stringResource(R.string.today),
-                style = MaterialTheme.typography.headlineSmall,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onSurface,
-            )
-            Text(
-                text = stringResource(R.string.today_time_budget_title),
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.primary,
-                fontWeight = FontWeight.SemiBold,
-            )
-            Text(
-                text = title,
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onSurface,
-            )
-            Text(
-                text = message,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            Text(
-                text = summary,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurface,
-                fontWeight = FontWeight.Medium,
-            )
-            Text(
-                text = stringResource(R.string.today_budget_method_note),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
-                    TodayBudgetMetric(
-                        label = stringResource(R.string.available_metric_label),
-                        value = formatTodayMinutes(todayPlan.availableMinutes),
-                        modifier = Modifier.weight(1f),
-                    )
-                    TodayBudgetMetric(
-                        label = stringResource(R.string.planned_metric_label),
-                        value = formatTodayMinutes(todayPlan.plannedMinutes),
-                        modifier = Modifier.weight(1f),
-                    )
-                }
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
-                    TodayBudgetMetric(
-                        label = stringResource(R.string.completed),
-                        value = formatTodayMinutes(todayPlan.completedMinutes),
-                        modifier = Modifier.weight(1f),
-                    )
-                    TodayBudgetMetric(
-                        label = if (pressureMinutes > 0) {
-                            stringResource(R.string.overflow_metric_label)
-                        } else {
-                            stringResource(R.string.remaining_metric_label)
-                        },
-                        value = formatTodayMinutes(maxOf(todayPlan.remainingMinutes, pressureMinutes)),
-                        modifier = Modifier.weight(1f),
-                    )
-                }
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
-                    TodayBudgetMetric(
-                        label = stringResource(R.string.moving_later_metric_label),
-                        value = formatTodayMinutes(todayPlan.overflowMinutes + todayPlan.movedLaterMinutes),
-                        modifier = Modifier.weight(1f),
-                    )
-                    TodayBudgetMetric(
-                        label = stringResource(R.string.removed_metric_label),
-                        value = formatTodayMinutes(todayPlan.removedMinutes),
-                        modifier = Modifier.weight(1f),
-                    )
-                }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                TodayBudgetMetric(
+                    label = stringResource(R.string.available_metric_label),
+                    value = formatTodayMinutes(todayPlan.availableMinutes),
+                    icon = Icons.Default.Timer,
+                    iconTint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.weight(1f),
+                )
+                VerticalDivider(
+                    modifier = Modifier
+                        .height(36.dp)
+                        .padding(horizontal = 4.dp),
+                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
+                )
+                TodayBudgetMetric(
+                    label = stringResource(R.string.planned_metric_label),
+                    value = formatTodayMinutes(todayPlan.plannedMinutes),
+                    icon = Icons.Default.CalendarMonth,
+                    iconTint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.weight(1f),
+                )
+                VerticalDivider(
+                    modifier = Modifier
+                        .height(36.dp)
+                        .padding(horizontal = 4.dp),
+                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
+                )
+                TodayBudgetMetric(
+                    label = remainingOrOverLabel,
+                    value = remainingOrOverValue,
+                    icon = Icons.Default.WarningAmber,
+                    iconTint = remainingOrOverColor,
+                    valueColor = remainingOrOverColor,
+                    modifier = Modifier.weight(1f),
+                )
+            }
+
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                TodayBudgetMetric(
+                    label = stringResource(R.string.completed),
+                    value = formatTodayMinutes(todayPlan.completedMinutes),
+                    icon = Icons.Default.CheckCircle,
+                    iconTint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.weight(1f),
+                )
+                VerticalDivider(
+                    modifier = Modifier
+                        .height(36.dp)
+                        .padding(horizontal = 4.dp),
+                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
+                )
+                TodayBudgetMetric(
+                    label = stringResource(R.string.moving_later_metric_label),
+                    value = formatTodayMinutes(todayPlan.overflowMinutes + todayPlan.movedLaterMinutes),
+                    icon = Icons.Default.Schedule,
+                    iconTint = MaterialTheme.colorScheme.tertiary,
+                    modifier = Modifier.weight(1f),
+                )
+                VerticalDivider(
+                    modifier = Modifier
+                        .height(36.dp)
+                        .padding(horizontal = 4.dp),
+                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
+                )
+                TodayBudgetMetric(
+                    label = stringResource(R.string.removed_metric_label),
+                    value = formatTodayMinutes(todayPlan.removedMinutes),
+                    icon = Icons.Default.Close,
+                    iconTint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.weight(1f),
+                )
             }
         }
     }
@@ -508,24 +585,39 @@ private fun TodayBudgetCard(
 private fun TodayBudgetMetric(
     label: String,
     value: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    iconTint: androidx.compose.ui.graphics.Color,
     modifier: Modifier = Modifier,
+    valueColor: androidx.compose.ui.graphics.Color = MaterialTheme.colorScheme.onSurface,
 ) {
     Column(
-        modifier = modifier,
-        verticalArrangement = Arrangement.spacedBy(2.dp),
+        modifier = modifier.padding(horizontal = 6.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+        horizontalAlignment = Alignment.Start,
     ) {
-        Text(
-            text = label,
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = iconTint,
+                modifier = Modifier.size(14.dp),
+            )
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
         Text(
             text = value,
             style = MaterialTheme.typography.titleMedium,
             fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.onSurface,
+            color = valueColor,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
@@ -533,84 +625,108 @@ private fun TodayBudgetMetric(
 }
 
 @Composable
-private fun AvailableTimeCard(
+private fun TimeBudgetDialog(
     availableMinutes: Int,
     baseAvailableMinutes: Int,
     onDecrease: () -> Unit,
     onIncrease: () -> Unit,
     onReset: () -> Unit,
+    onDismiss: () -> Unit,
 ) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(18.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        border = CardDefaults.outlinedCardBorder(),
-    ) {
-        Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp),
+    Dialog(onDismissRequest = onDismiss) {
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(24.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            border = CardDefaults.outlinedCardBorder(),
         ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
+            Column(
+                modifier = Modifier.padding(20.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp),
             ) {
-                Surface(
-                    modifier = Modifier.size(42.dp),
-                    shape = RoundedCornerShape(14.dp),
-                    color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.32f),
-                    contentColor = MaterialTheme.colorScheme.primary,
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        Icon(Icons.Default.Timer, contentDescription = null)
+                    Text(
+                        text = stringResource(R.string.today_time_budget_title),
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface,
+                    )
+                    IconButton(onClick = onDismiss, modifier = Modifier.size(32.dp)) {
+                        Icon(Icons.Default.Close, contentDescription = stringResource(R.string.mark_done))
                     }
                 }
-                Spacer(Modifier.width(12.dp))
-                Column(modifier = Modifier.weight(1f)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Surface(
+                        modifier = Modifier.size(42.dp),
+                        shape = RoundedCornerShape(14.dp),
+                        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.32f),
+                        contentColor = MaterialTheme.colorScheme.primary,
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(Icons.Default.Timer, contentDescription = null)
+                        }
+                    }
+                    Spacer(Modifier.width(12.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = stringResource(R.string.today_available_time),
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                        )
+                        Text(
+                            text = stringResource(R.string.today_available_time_subtitle),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    IconButton(
+                        onClick = onDecrease,
+                        enabled = availableMinutes > 0,
+                    ) {
+                        Icon(Icons.Default.Remove, contentDescription = stringResource(R.string.decrease_available_time))
+                    }
                     Text(
-                        text = stringResource(R.string.today_available_time),
-                        style = MaterialTheme.typography.titleMedium,
+                        text = formatTodayMinutes(availableMinutes),
+                        modifier = Modifier.weight(1f),
+                        style = MaterialTheme.typography.headlineSmall,
                         fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface,
                     )
-                    Text(
-                        text = stringResource(R.string.today_available_time_subtitle),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
+                    IconButton(
+                        onClick = onIncrease,
+                        enabled = availableMinutes < MaxTodaySessionMinutes,
+                    ) {
+                        Icon(Icons.Default.Add, contentDescription = stringResource(R.string.increase_available_time))
+                    }
                 }
-            }
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                IconButton(
-                    onClick = onDecrease,
-                    enabled = availableMinutes > 0,
-                ) {
-                    Icon(Icons.Default.Remove, contentDescription = stringResource(R.string.decrease_available_time))
+                if (availableMinutes != baseAvailableMinutes) {
+                    OutlinedButton(
+                        onClick = onReset,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Icon(Icons.Default.RestartAlt, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text(stringResource(R.string.reset_to_plan_time))
+                    }
                 }
-                Text(
-                    text = formatTodayMinutes(availableMinutes),
-                    modifier = Modifier.weight(1f),
-                    style = MaterialTheme.typography.headlineSmall,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface,
-                )
-                IconButton(
-                    onClick = onIncrease,
-                    enabled = availableMinutes < MaxTodaySessionMinutes,
-                ) {
-                    Icon(Icons.Default.Add, contentDescription = stringResource(R.string.increase_available_time))
-                }
-            }
-            if (availableMinutes != baseAvailableMinutes) {
-                OutlinedButton(
-                    onClick = onReset,
+                Button(
+                    onClick = onDismiss,
                     modifier = Modifier.fillMaxWidth(),
                 ) {
-                    Icon(Icons.Default.RestartAlt, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(8.dp))
-                    Text(stringResource(R.string.reset_to_plan_time))
+                    Text(stringResource(R.string.mark_done))
                 }
             }
         }
