@@ -5,6 +5,7 @@ import com.hci.ren.feature.plangeneration.GeneratedStudyBlock
 import com.hci.ren.feature.plangeneration.GeneratedStudyPlan
 import com.hci.ren.feature.plangeneration.StudyTaskStatus
 import com.hci.ren.feature.plangeneration.StudyTaskType
+import com.hci.ren.feature.plangeneration.likelyStudyMinutes
 import com.hci.ren.feature.plangeneration.requiredStudyMinutes
 import java.util.Calendar
 
@@ -23,11 +24,11 @@ data class StudyMapData(
         get() = plan.blocks.filter(::countsTowardRequiredTime)
     val totalLikelyMinutes: Int
         get() = requiredTasks
-            .sumOf { it.effortLikelyMinutes.coerceAtLeast(1) }
+            .sumOf { it.likelyStudyMinutes.coerceAtLeast(1) }
     val remainingLikelyMinutes: Int
         get() = requiredTasks
             .filter { it.status != StudyTaskStatus.Completed }
-            .sumOf { it.effortLikelyMinutes.coerceAtLeast(1) }
+            .sumOf { it.likelyStudyMinutes.coerceAtLeast(1) }
     val totalReservedMinutes: Int get() = requiredStudyMinutes(requiredTasks, includeCompleted = true)
     val remainingReservedMinutes: Int get() = requiredStudyMinutes(requiredTasks)
     val completedTasks: Int get() = requiredTasks.count { it.status == StudyTaskStatus.Completed }

@@ -4,6 +4,7 @@ import com.hci.ren.feature.pdfupload.presentation.PlanSetupSubmission
 import com.hci.ren.feature.pdfupload.presentation.StudyDay
 import com.hci.ren.feature.pdfupload.presentation.StudyDeadline
 import com.hci.ren.feature.pdfupload.presentation.StudyGoal
+import com.hci.ren.feature.plangeneration.EstimateConfidence
 import com.hci.ren.feature.plangeneration.GeneratedStudyBlock
 import com.hci.ren.feature.plangeneration.GeneratedStudyPlan
 import com.hci.ren.feature.plangeneration.StudyBlockDifficulty
@@ -11,6 +12,7 @@ import com.hci.ren.feature.plangeneration.StudyTaskStatus
 import com.hci.ren.feature.plangeneration.StudyTaskType
 import com.hci.ren.feature.plangeneration.effectiveCognitivePoints
 import com.hci.ren.feature.plangeneration.effectiveReservedMinutes
+import com.hci.ren.feature.plangeneration.likelyStudyMinutes
 import com.hci.ren.feature.plangeneration.reservedStudyMinutes
 import java.util.Calendar
 import java.util.GregorianCalendar
@@ -34,7 +36,7 @@ class StudyMapModelsTest {
         assertEquals(360, result.availableMinutes)
     }
 
-    @Test fun slightlyOverCapacityPlanIsTight() {
+    @Test fun nearCapacityPlanIsTight() {
         val tasks = listOf(task("one", 60).copy(effortMaxMinutes = 68))
         val preferences = submission(60, StudyDeadline.ChooseDate, "2026-06-23")
         val schedule = StudyScheduleCalculator().calculate(tasks, preferences, monday)
@@ -45,11 +47,11 @@ class StudyMapModelsTest {
             schedule = schedule,
         )
 
-        assertEquals(ScheduleFitMode.LikelyFallback, schedule.fitMode)
+        assertEquals(ScheduleFitMode.Reserved, schedule.fitMode)
         assertEquals(PlanRealismStatus.Tight, result.status)
-        assertEquals(2, result.shortageMinutes)
+        assertEquals(0, result.shortageMinutes)
         assertEquals(0, result.likelyShortageMinutes)
-        assertEquals(2, result.reservedShortageMinutes)
+        assertEquals(0, result.reservedShortageMinutes)
     }
 
     @Test fun farOverCapacityPlanIsOverloadedWhenItCannotBeScheduled() {
@@ -160,36 +162,54 @@ class StudyMapModelsTest {
         assertEquals(StudyTaskStatus.Unscheduled, schedule.unscheduledTasks.single().status)
     }
 
-    @Test fun scheduleReportsLikelyFallbackWhenReservedDoesNotFit() {
+    @Test fun lowConfidenceWorkloadUsesSourceLikelyMinutes() {
         val tasks = listOf(
-            task("first", 50).copy(order = 1, effortMaxMinutes = 90),
-            task("second", 50).copy(order = 2, effortMaxMinutes = 90),
+            task("first", 100).copy(
+                order = 1,
+                effortMinMinutes = 60,
+                effortMaxMinutes = 130,
+                estimateConfidence = EstimateConfidence.Low,
+            ),
+            task("second", 100).copy(
+                order = 2,
+                effortMinMinutes = 60,
+                effortMaxMinutes = 130,
+                estimateConfidence = EstimateConfidence.Low,
+            ),
         )
 
         val schedule = StudyScheduleCalculator().calculate(
             tasks,
-            submission(100, StudyDeadline.ChooseDate, "2026-06-23"),
+            submission(200, StudyDeadline.ChooseDate, "2026-06-23"),
             monday,
         )
         val day = schedule.days.single()
 
-        assertEquals(ScheduleFitMode.LikelyFallback, schedule.fitMode)
-        assertEquals(100, day.fittedMinutes)
-        assertEquals(120, day.reservedMinutes)
-        assertTrue(day.isRisky)
+        assertEquals(ScheduleFitMode.Reserved, schedule.fitMode)
+        assertEquals(200, day.fittedMinutes)
+        assertEquals(200, day.reservedMinutes)
+        assertEquals(200, day.likelyMinutes)
+        assertFalse(day.isRisky)
         assertFalse(day.isOverCapacity)
         assertTrue(schedule.unscheduledTasks.isEmpty())
     }
 
-    @Test fun likelyFallbackSubtractsFixedTasksUsingLikelyMinutes() {
+    @Test fun fixedTasksSubtractAdjustedWorkloadFromCapacity() {
         val tasks = listOf(
-            task("locked", 50).copy(
+            task("locked", 100).copy(
                 order = 1,
-                effortMaxMinutes = 90,
+                effortMinMinutes = 60,
+                effortMaxMinutes = 130,
+                estimateConfidence = EstimateConfidence.Low,
                 status = StudyTaskStatus.Locked,
                 scheduledDate = "2026-06-22",
             ),
-            task("auto", 50).copy(order = 2, effortMaxMinutes = 90),
+            task("auto", 100).copy(
+                order = 2,
+                effortMinMinutes = 60,
+                effortMaxMinutes = 130,
+                estimateConfidence = EstimateConfidence.Low,
+            ),
         )
 
         val schedule = StudyScheduleCalculator().calculate(
@@ -199,37 +219,41 @@ class StudyMapModelsTest {
         )
         val day = schedule.days.single()
 
-        assertEquals(ScheduleFitMode.LikelyFallback, schedule.fitMode)
-        assertEquals(listOf("locked", "auto"), day.tasks.map { it.id })
+        assertEquals(ScheduleFitMode.Reserved, schedule.fitMode)
+        assertEquals(listOf("locked"), day.tasks.map { it.id })
         assertEquals(100, day.fittedMinutes)
-        assertEquals(120, day.reservedMinutes)
-        assertTrue(day.isRisky)
-        assertTrue(schedule.unscheduledTasks.isEmpty())
+        assertEquals(100, day.reservedMinutes)
+        assertFalse(day.isRisky)
+        assertEquals(listOf("auto"), schedule.unscheduledTasks.map { it.id })
     }
 
-    @Test fun likelyFallbackHandlesFixedOnlyDayWhenLikelyFits() {
+    @Test fun highConfidenceReducesWorkloadBelowSourceLikely() {
         val tasks = listOf(
-            task("locked", 50).copy(
+            task("discounted", 100).copy(
                 order = 1,
-                effortMaxMinutes = 94,
-                status = StudyTaskStatus.Locked,
-                scheduledDate = "2026-06-22",
+                effortMinMinutes = 60,
+                estimateConfidence = EstimateConfidence.High,
             ),
         )
 
         val data = buildStudyMapData(
             plan(tasks),
-            submission(60, StudyDeadline.ChooseDate, "2026-06-23"),
+            submission(80, StudyDeadline.ChooseDate, "2026-06-23"),
             today = monday,
         )
         val day = data.schedule.days.single()
 
-        assertEquals(ScheduleFitMode.LikelyFallback, data.schedule.fitMode)
-        assertEquals(50, day.fittedMinutes)
-        assertEquals(61, day.reservedMinutes)
-        assertTrue(day.isRisky)
+        assertEquals(ScheduleFitMode.Reserved, data.schedule.fitMode)
+        assertEquals(100, data.plan.blocks.single().effortLikelyMinutes)
+        assertEquals(65, data.plan.blocks.single().likelyStudyMinutes)
+        assertEquals(65, data.totalLikelyMinutes)
+        assertEquals(65, data.remainingLikelyMinutes)
+        assertEquals(65, data.remainingReservedMinutes)
+        assertEquals(65, day.fittedMinutes)
+        assertEquals(65, day.reservedMinutes)
+        assertFalse(day.isRisky)
         assertFalse(day.isOverCapacity)
-        assertEquals(PlanRealismStatus.Tight, data.realism.status)
+        assertEquals(PlanRealismStatus.OnTrack, data.realism.status)
     }
 
     @Test fun scheduleAllowsDependenciesAfterEarlierBlocksAreScheduled() {
@@ -410,16 +434,18 @@ class StudyMapModelsTest {
         assertEquals(30, data.realism.remainingMinutes)
     }
 
-    @Test fun workloadEngineUsesEffortRangeWithoutChangingSourceEstimate() {
-        val updated = task("edited", 50).copy(
-            effortMinMinutes = 35,
-            effortLikelyMinutes = 50,
-            effortMaxMinutes = 80,
+    @Test fun workloadEngineUsesConfidenceAdjustedLikelyWithoutChangingSourceEstimate() {
+        val updated = task("edited", 100).copy(
+            effortMinMinutes = 60,
+            effortLikelyMinutes = 100,
+            effortMaxMinutes = 130,
+            estimateConfidence = EstimateConfidence.Medium,
         )
 
-        assertEquals(50, updated.effortLikelyMinutes)
-        assertEquals(58, updated.effectiveReservedMinutes())
-        assertEquals(71, updated.effectiveCognitivePoints())
+        assertEquals(100, updated.effortLikelyMinutes)
+        assertEquals(85, updated.likelyStudyMinutes)
+        assertEquals(85, updated.effectiveReservedMinutes())
+        assertEquals(104, updated.effectiveCognitivePoints())
     }
 
     @Test fun lockedTaskIsNotSelectedAsNextTask() {

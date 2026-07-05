@@ -23,4 +23,4 @@ internal fun requiredLikelyStudyMinutes(
 }
 
 internal fun GeneratedStudyBlock.requiredBlockMinutes(): Int =
-    maxOf(effortLikelyMinutes, effectiveReservedMinutes(), 1)
+    effectiveReservedMinutes().coerceAtLeast(1)

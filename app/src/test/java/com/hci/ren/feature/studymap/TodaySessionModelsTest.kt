@@ -4,10 +4,12 @@ import com.hci.ren.feature.pdfupload.presentation.PlanSetupSubmission
 import com.hci.ren.feature.pdfupload.presentation.StudyDay
 import com.hci.ren.feature.pdfupload.presentation.StudyDeadline
 import com.hci.ren.feature.pdfupload.presentation.StudyGoal
+import com.hci.ren.feature.plangeneration.EstimateConfidence
 import com.hci.ren.feature.plangeneration.GeneratedStudyBlock
 import com.hci.ren.feature.plangeneration.GeneratedStudyPlan
 import com.hci.ren.feature.plangeneration.StudyTaskStatus
 import com.hci.ren.feature.plangeneration.StudyTaskType
+import com.hci.ren.feature.plangeneration.likelyStudyMinutes
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -54,9 +56,9 @@ class TodaySessionModelsTest {
         assertEquals(0, session.remainingMinutes)
     }
 
-    @Test fun reducedTodayAvailabilityCanUseLikelyFallbackLocally() {
-        val first = task("first", 30).copy(order = 1, effortMaxMinutes = 60)
-        val second = task("second", 30).copy(order = 2, effortMaxMinutes = 60)
+    @Test fun reducedTodayAvailabilityUsesAdjustedWorkload() {
+        val first = task("first", 40).copy(order = 1, effortMinMinutes = 20, estimateConfidence = EstimateConfidence.High)
+        val second = task("second", 40).copy(order = 2, effortMinMinutes = 20, estimateConfidence = EstimateConfidence.High)
         val data = dataFor(todayTasks = listOf(first, second), dailyMinutes = 90)
 
         val session = TodaySessionPlanner().plan(
@@ -66,10 +68,10 @@ class TodaySessionModelsTest {
             hasAvailabilityOverride = true,
         )
 
-        assertEquals(ScheduleFitMode.LikelyFallback, session.fitMode)
+        assertEquals(ScheduleFitMode.Reserved, session.fitMode)
         assertEquals(listOf("first", "second"), session.doTodayTasks.map { it.id })
         assertEquals(emptyList<String>(), session.wontFitTodayTasks.map { it.id })
-        assertEquals(60, session.plannedMinutes)
+        assertEquals(52, session.plannedMinutes)
         assertEquals(0, session.overflowMinutes)
     }
 
@@ -123,8 +125,8 @@ class TodaySessionModelsTest {
         assertEquals(0, session.remainingMinutes)
     }
 
-    @Test fun pulledInWorkCanUseLikelyFallbackLocally() {
-        val future = task("future", 30).copy(order = 1, effortMaxMinutes = 60)
+    @Test fun pulledInWorkUsesAdjustedWorkload() {
+        val future = task("future", 40).copy(order = 1, effortMinMinutes = 20, estimateConfidence = EstimateConfidence.High)
         val data = dataFor(
             todayTasks = emptyList(),
             futureTasks = listOf(future),
@@ -140,9 +142,9 @@ class TodaySessionModelsTest {
             session = state,
         )
 
-        assertEquals(ScheduleFitMode.LikelyFallback, session.fitMode)
+        assertEquals(ScheduleFitMode.Reserved, session.fitMode)
         assertEquals(listOf("future"), session.pulledInTasks.map { it.id })
-        assertEquals(30, session.plannedMinutes)
+        assertEquals(26, session.plannedMinutes)
         assertEquals(0, session.overPlannedMinutes)
     }
 
@@ -563,7 +565,7 @@ class TodaySessionModelsTest {
         preferences = submission(dailyMinutes),
         realism = PlanRealism(
             status = PlanRealismStatus.OnTrack,
-            remainingMinutes = todayTasks.sumOf { it.effortLikelyMinutes } + futureTasks.sumOf { it.effortLikelyMinutes },
+            remainingMinutes = todayTasks.sumOf { it.likelyStudyMinutes } + futureTasks.sumOf { it.likelyStudyMinutes },
             availableMinutes = dailyMinutes * 3,
             shortageMinutes = 0,
         ),

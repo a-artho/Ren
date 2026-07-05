@@ -174,7 +174,8 @@ private const val UnscheduledAutoCollapseLeafThreshold = 3
 private val PlanEditSheetMenuHeight = 468.dp
 private val PlanEditSheetTopicHeight = 640.dp
 private val PlanEditMenuHeaderHeight = 76.dp
-private val PlanEditActionRowHeight = 62.dp
+private val PlanEditActionRowHeight = 68.dp
+private val PlanEditActionTextStartPadding = 56.dp
 private val PlanEditSheetSurface = RenContextMenuSurface
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -1069,40 +1070,42 @@ private fun PlanEditMenuContent(
 ) {
     Column(
         modifier = modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
-        PlanEditActionRow(
-            title = R.string.change_plan_name,
-            subtitle = R.string.change_plan_name_subtitle,
-            icon = Icons.Default.Edit,
-        ) {
-            onNavigate(PlanEditPage.Rename)
+        Column(modifier = Modifier.fillMaxWidth()) {
+            PlanEditActionRow(
+                title = R.string.change_plan_name,
+                subtitle = R.string.change_plan_name_subtitle,
+                icon = Icons.Default.Edit,
+                showDivider = true,
+            ) {
+                onNavigate(PlanEditPage.Rename)
+            }
+            PlanEditActionRow(
+                title = R.string.change_deadline,
+                subtitle = R.string.change_deadline_subtitle,
+                icon = Icons.Default.Event,
+                showDivider = true,
+            ) {
+                onChangeDeadline()
+            }
+            PlanEditActionRow(
+                title = R.string.available_time,
+                subtitle = R.string.available_time_subtitle,
+                icon = Icons.Default.Timer,
+                showDivider = true,
+            ) {
+                onNavigate(PlanEditPage.DailyTime)
+            }
+            PlanEditActionRow(
+                title = R.string.choose_material,
+                subtitle = R.string.choose_material_subtitle,
+                icon = Icons.AutoMirrored.Filled.LibraryBooks,
+            ) {
+                onNavigate(PlanEditPage.Scope)
+            }
         }
-        PlanEditActionRow(
-            title = R.string.change_deadline,
-            subtitle = R.string.change_deadline_subtitle,
-            icon = Icons.Default.Event,
-        ) {
-            onChangeDeadline()
-        }
-        PlanEditActionRow(
-            title = R.string.available_time,
-            subtitle = R.string.available_time_subtitle,
-            icon = Icons.Default.Timer,
-        ) {
-            onNavigate(PlanEditPage.DailyTime)
-        }
-        PlanEditActionRow(
-            title = R.string.choose_material,
-            subtitle = R.string.choose_material_subtitle,
-            icon = Icons.AutoMirrored.Filled.LibraryBooks,
-        ) {
-            onNavigate(PlanEditPage.Scope)
-        }
-        HorizontalDivider(
-            modifier = Modifier.padding(horizontal = 8.dp),
-            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.28f),
-        )
+        Spacer(Modifier.weight(1f))
+        Spacer(Modifier.height(10.dp))
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.Center,
@@ -1581,27 +1584,22 @@ private fun PlanEditActionRow(
     subtitle: Int,
     icon: ImageVector,
     modifier: Modifier = Modifier,
+    showDivider: Boolean = false,
     onClick: () -> Unit,
 ) {
     val contentColor = MaterialTheme.colorScheme.onSurface
     val supportingColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.82f)
-    val borderColor = renCardBorderColor()
     val iconContainerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.24f)
     val iconColor = MaterialTheme.colorScheme.primary
+    val separatorColor = treeLineColor(0.09f)
 
-    Surface(
-        onClick = onClick,
-        modifier = modifier
-            .fillMaxWidth()
-            .height(PlanEditActionRowHeight),
-        shape = RoundedCornerShape(14.dp),
-        color = renCardContainerColor(),
-        border = BorderStroke(1.dp, borderColor),
-    ) {
+    Column(modifier = modifier.fillMaxWidth()) {
         Row(
             modifier = Modifier
-                .fillMaxSize()
-                .padding(horizontal = 16.dp),
+                .fillMaxWidth()
+                .height(PlanEditActionRowHeight)
+                .clickable(onClick = onClick)
+                .padding(horizontal = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Surface(
@@ -1645,6 +1643,12 @@ private fun PlanEditActionRow(
                 contentDescription = null,
                 modifier = Modifier.size(20.dp),
                 tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.62f),
+            )
+        }
+        if (showDivider) {
+            HorizontalDivider(
+                modifier = Modifier.padding(start = PlanEditActionTextStartPadding, end = 8.dp),
+                color = separatorColor,
             )
         }
     }
@@ -3908,10 +3912,6 @@ private fun relativeDeadlineLabel(preferences: PlanSetupSubmission, today: Calen
     if (remainingMillis <= 0L) {
         return stringResource(R.string.deadline_past)
     }
-    if (remainingMillis < DeadlineHourLabelThreshold * MillisPerHour) {
-        val hours = (remainingMillis / MillisPerHour).toInt().coerceAtLeast(1)
-        return pluralStringResource(R.plurals.deadline_in_hours, hours, hours)
-    }
     val todayOnly = dayOnly(today)
     val deadlineOnly = dayOnly(deadline)
     val days = ((deadlineOnly.timeInMillis - todayOnly.timeInMillis) / MillisPerDay).toInt()
@@ -3929,5 +3929,3 @@ private fun suggestedLeafMinutes(tasks: List<GeneratedStudyBlock>): Int {
 }
 
 private const val MillisPerDay = 24 * 60 * 60 * 1000L
-private const val MillisPerHour = 60 * 60 * 1000L
-private const val DeadlineHourLabelThreshold = 73

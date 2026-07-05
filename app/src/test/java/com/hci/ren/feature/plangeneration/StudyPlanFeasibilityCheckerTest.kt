@@ -73,15 +73,15 @@ class StudyPlanFeasibilityCheckerTest {
         assertEquals(FeasibilityStatus.Unrealistic, result.status)
     }
 
-    @Test fun feasibilityReportsReservedAndLikelyWorkloads() {
+    @Test fun feasibilityReportsConfidenceAdjustedWorkload() {
         val result = StudyPlanFeasibilityChecker().check(
-            listOf(block(minutes = 450, maxMinutes = 810)),
+            listOf(block(minutes = 450, maxMinutes = 540, confidence = EstimateConfidence.Low)),
             submission(StudyGoal.PrepareForExam, StudyDeadline.ChooseDate, 90, setOf(StudyDay.Monday), "2026-06-23"),
             monday,
         )
         assertEquals(450, result.totalLikelyMinutes)
-        assertEquals(540, result.totalReservedMinutes)
-        assertEquals(540, result.totalRequiredMinutes)
+        assertEquals(450, result.totalReservedMinutes)
+        assertEquals(450, result.totalRequiredMinutes)
         assertEquals(90, result.availableMinutesPerStudyDay)
     }
 
@@ -89,6 +89,7 @@ class StudyPlanFeasibilityCheckerTest {
         id: String = "b1",
         minutes: Int,
         maxMinutes: Int = minutes,
+        confidence: EstimateConfidence = EstimateConfidence.Medium,
     ) = GeneratedStudyBlock(
         id = id,
         title = id,
@@ -99,6 +100,7 @@ class StudyPlanFeasibilityCheckerTest {
         instructions = "Review",
         topicIds = listOf("t1"),
         taskType = StudyTaskType.Review,
+        estimateConfidence = confidence,
     )
 
     private fun submission(
