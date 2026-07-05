@@ -46,7 +46,7 @@ class StudyMapScreenTest {
     }
 
     @Test fun overloadedPlanShowsEditPlanSheet() {
-        setScreen(plan(), submission(StudyDeadline.Tomorrow, 15), suggestedDeadline = "2099-06-30", balancedDays = 5, intensiveDays = 3)
+        setScreen(plan(), submission(StudyDeadline.Tomorrow, 15))
 
         composeRule.onNodeWithText("This plan is overloaded").assertIsDisplayed()
         composeRule.onNodeWithText("Some leaves are still outside the scheduled days.").assertIsDisplayed()
@@ -94,18 +94,12 @@ class StudyMapScreenTest {
     private fun setScreen(
         plan: GeneratedStudyPlan?,
         submission: PlanSetupSubmission?,
-        suggestedDeadline: String? = null,
-        balancedDays: Int = 0,
-        intensiveDays: Int = 0,
     ) {
         composeRule.setContent {
             RenTheme {
                 StudyMapScreen(
                     plan = plan,
                     preferences = submission,
-                    suggestedDeadline = suggestedDeadline,
-                    recommendedDaysBalanced = balancedDays,
-                    recommendedDaysIntensive = intensiveDays,
                     onBack = {},
                     onCreateProject = {},
                     onOpenToday = {},
@@ -113,7 +107,6 @@ class StudyMapScreenTest {
                     onDeletePlan = {},
                     onConsumeMessage = {},
                     onApplyDeadline = {},
-                    onExtendDeadline = { _, _ -> },
                     onIncreaseDailyTime = {},
                     onReduceScope = { _, _ -> },
                     onContinueAnyway = {},

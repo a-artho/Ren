@@ -5,11 +5,8 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.hci.ren.R
 import com.hci.ren.feature.pdfupload.presentation.StudyDeadline
-import com.hci.ren.feature.plangeneration.GeneratedStudyBlock
-import com.hci.ren.feature.plangeneration.StudyPlanFeasibilityChecker
 import com.hci.ren.feature.plangeneration.StudyTaskStatus
 import java.text.SimpleDateFormat
-import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 import java.util.TimeZone
@@ -28,15 +25,10 @@ data class StudyMapDetailUiState(
     val todayWrapUpMessage: String? = null,
     val errorMessage: String? = null,
     val userMessage: String? = null,
-    val suggestedDeadline: String? = null,
-    val recommendedDaysBalanced: Int = 0,
-    val recommendedDaysIntensive: Int = 0,
 )
 
 class StudyMapDetailViewModel(application: Application) : AndroidViewModel(application) {
     private val repository = StudyProjectRepository.create(application)
-    private val adjustmentService = PlanAdjustmentService()
-    private val feasibilityChecker = StudyPlanFeasibilityChecker()
     private val todayWrapUpService = TodayWrapUpService()
     private val writeMutex = Mutex()
     private val _uiState = MutableStateFlow(StudyMapDetailUiState())
@@ -82,23 +74,6 @@ class StudyMapDetailViewModel(application: Application) : AndroidViewModel(appli
             project.copy(
                 deadlineAtMillis = millis,
                 preferences = project.preferences.copy(deadline = StudyDeadline.ChooseDate, deadlineDate = date),
-            )
-        }
-    }
-
-    fun extendDeadline(studyDays: Int, intensive: Boolean) {
-        val project = _uiState.value.project ?: return
-        val date = deadlineAfterSelectedStudyDays(
-            studyDays,
-            project.preferences.studyDays,
-            resetOffsetHours = project.preferences.studyDayResetOffsetHours,
-        )
-        val effectiveMinutes = if (intensive) (project.preferences.dailyStudyMinutes * 1.5).toInt() else null
-        mutate("Deadline updated.") { current ->
-            current.copy(
-                deadlineAtMillis = date.toStudyCalendar()?.timeInMillis,
-                preferences = current.preferences.copy(deadline = StudyDeadline.ChooseDate, deadlineDate = date),
-                dailyMinutesOverride = effectiveMinutes,
             )
         }
     }
@@ -248,32 +223,12 @@ class StudyMapDetailViewModel(application: Application) : AndroidViewModel(appli
         todaySession: TodaySessionState? = _uiState.value.todaySession,
         todayWrapUpMessage: String? = null,
     ) {
-        val activeData = buildStudyMapData(
-            plan = project.plan,
-            preferences = project.preferences,
-            dailyMinutesOverride = project.dailyMinutesOverride,
-            dailyAvailableMinutesByDate = project.dailyAvailableMinutesByDate,
-            taskStateById = project.taskStateById,
-        )
-        val required = activeData.plan.blocks.filter(::isRequiredTask)
-        val feasibility = feasibilityChecker.check(
-            required,
-            project.preferences,
-            dailyMinutesOverride = project.dailyMinutesOverride,
-        )
         _uiState.value = StudyMapDetailUiState(
             hasLoaded = true,
             project = project,
             todaySession = todaySession,
             todayWrapUpMessage = todayWrapUpMessage,
             userMessage = message,
-            suggestedDeadline = adjustmentService.suggestedDeadline(
-                activeData.plan.blocks,
-                project.preferences,
-                dailyMinutesOverride = project.dailyMinutesOverride,
-            ),
-            recommendedDaysBalanced = feasibility.recommendedDaysBalanced,
-            recommendedDaysIntensive = feasibility.recommendedDaysIntensive,
         )
     }
 
@@ -299,26 +254,4 @@ private fun StudyProject.withTaskState(taskId: String, state: StudyTaskState): S
         updated[taskId] = state
     }
     return copy(taskStateById = updated)
-}
-
-private fun isRequiredTask(task: GeneratedStudyBlock) =
-    countsTowardRequiredTime(task)
-
-internal fun deadlineAfterSelectedStudyDays(
-    days: Int,
-    selectedDays: Set<com.hci.ren.feature.pdfupload.presentation.StudyDay>,
-    resetOffsetHours: Int = 0,
-    today: Calendar = currentStudyCalendar(resetOffsetHours),
-): String {
-    val cursor = dayOnly(today)
-    var counted = 0
-    val targetDays = days.coerceAtLeast(1)
-    if (selectedDays.isEmpty()) {
-        return cursor.apply { add(Calendar.DAY_OF_MONTH, targetDays) }.toStudyDate()
-    }
-    while (counted < targetDays) {
-        if (cursor.studyDay in selectedDays) counted++
-        cursor.add(Calendar.DAY_OF_MONTH, 1)
-    }
-    return cursor.toStudyDate()
 }

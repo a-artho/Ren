@@ -73,7 +73,7 @@ class StudyPlanFeasibilityCheckerTest {
         assertEquals(FeasibilityStatus.Unrealistic, result.status)
     }
 
-    @Test fun deadlineRecommendationsSeparateSafeAndTightPaces() {
+    @Test fun feasibilityReportsReservedAndLikelyWorkloads() {
         val result = StudyPlanFeasibilityChecker().check(
             listOf(block(minutes = 450, maxMinutes = 810)),
             submission(StudyGoal.PrepareForExam, StudyDeadline.ChooseDate, 90, setOf(StudyDay.Monday), "2026-06-23"),
@@ -83,8 +83,6 @@ class StudyPlanFeasibilityCheckerTest {
         assertEquals(540, result.totalReservedMinutes)
         assertEquals(540, result.totalRequiredMinutes)
         assertEquals(90, result.availableMinutesPerStudyDay)
-        assertEquals(6, result.recommendedDaysBalanced)
-        assertEquals(5, result.recommendedDaysIntensive)
     }
 
     private fun block(
