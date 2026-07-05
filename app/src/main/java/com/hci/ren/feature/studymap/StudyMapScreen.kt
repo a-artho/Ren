@@ -1748,6 +1748,13 @@ private fun studyMapViewIcon(view: StudyMapView): ImageVector = when (view) {
 @Composable
 private fun treeLineColor(alpha: Float): Color = MaterialTheme.colorScheme.onSurface.copy(alpha = alpha)
 
+private fun mainTimelineContinuationStroke(strokeWidth: Float): Stroke =
+    Stroke(
+        width = strokeWidth,
+        cap = StrokeCap.Round,
+        pathEffect = PathEffect.dashPathEffect(floatArrayOf(strokeWidth * 3f, strokeWidth * 6f)),
+    )
+
 private fun androidx.compose.foundation.lazy.LazyListScope.scheduleItems(
     data: StudyMapData,
     onOpenToday: () -> Unit,
@@ -2149,7 +2156,7 @@ private fun TimelineStudyItemBranchRow(
                     pageLabel = taskPageLabel(task),
                     isFirstLeaf = index == 0,
                     isLastLeaf = index == item.tasks.lastIndex,
-                    continuesMainRail = !isLastBranch || !isLastDay,
+                    continuesMainRail = !isLastDay,
                     continuesChildRailAfterGroup = !isLastBranch,
                     onCollapseParent = onToggleExpanded,
                 )
@@ -2280,12 +2287,18 @@ private fun TimelineSourceDivider(
             val branchX = 9.dp.toPx()
             val nodeCenterX = 39.dp.toPx()
             if (showMainRail) {
+                val strokeWidth = 1.dp.toPx()
                 drawLine(
                     color = if (continuesChildRail) fadedTrunkRail else trunkRail,
                     start = Offset(branchX, 0f),
                     end = Offset(branchX, size.height),
-                    strokeWidth = 1.dp.toPx(),
-                    cap = StrokeCap.Butt,
+                    strokeWidth = strokeWidth,
+                    cap = if (continuesChildRail) StrokeCap.Round else StrokeCap.Butt,
+                    pathEffect = if (continuesChildRail) {
+                        mainTimelineContinuationStroke(strokeWidth).pathEffect
+                    } else {
+                        null
+                    },
                 )
             }
             if (continuesChildRail) {
@@ -2398,6 +2411,7 @@ private fun TaskBranchConnector(
         val nodeGap = 6.dp.toPx()
         val strokeWidth = 1.dp.toPx()
         val exitY = size.height
+        val continuationStroke = mainTimelineContinuationStroke(strokeWidth)
         if (isFirstBranch) {
             drawPath(
                 path = Path().apply {
@@ -2416,7 +2430,8 @@ private fun TaskBranchConnector(
                     start = Offset(branchX, nodeCenterY + strokeWidth / 2f),
                     end = Offset(branchX, exitY),
                     strokeWidth = strokeWidth,
-                    cap = StrokeCap.Butt,
+                    cap = StrokeCap.Round,
+                    pathEffect = continuationStroke.pathEffect,
                 )
             } else {
                 drawLine(
@@ -2424,7 +2439,8 @@ private fun TaskBranchConnector(
                     start = Offset(branchX, 0f),
                     end = Offset(branchX, exitY),
                     strokeWidth = strokeWidth,
-                    cap = StrokeCap.Butt,
+                    cap = StrokeCap.Round,
+                    pathEffect = continuationStroke.pathEffect,
                 )
             }
         }
@@ -2471,12 +2487,14 @@ private fun NestedTaskBranchConnector(
         val strokeWidth = 1.dp.toPx()
 
         if (continuesMainRail) {
+            val continuationStroke = mainTimelineContinuationStroke(strokeWidth)
             drawLine(
                 color = mainRailColor,
                 start = Offset(mainBranchX, 0f),
                 end = Offset(mainBranchX, size.height),
                 strokeWidth = strokeWidth,
-                cap = StrokeCap.Butt,
+                cap = StrokeCap.Round,
+                pathEffect = continuationStroke.pathEffect,
             )
         }
 
@@ -2510,12 +2528,15 @@ private fun TimelineDayGap(height: Dp = 28.dp) {
             .height(height),
     ) {
         val branchX = 9.dp.toPx()
+        val strokeWidth = 1.dp.toPx()
+        val continuationStroke = mainTimelineContinuationStroke(strokeWidth)
         drawLine(
             color = mutedColor,
             start = Offset(branchX, 0f),
             end = Offset(branchX, size.height),
-            strokeWidth = 1.dp.toPx(),
-            cap = StrokeCap.Butt,
+            strokeWidth = strokeWidth,
+            cap = StrokeCap.Round,
+            pathEffect = continuationStroke.pathEffect,
         )
     }
 }
