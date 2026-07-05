@@ -62,6 +62,7 @@ import com.hci.ren.ui.components.PlanFlowScaffold
 import com.hci.ren.ui.motion.RenEmphasizedDecelerateEasing
 import com.hci.ren.ui.motion.RenEmphasizedEasing
 import com.hci.ren.ui.motion.isReducedMotionEnabled
+import com.hci.ren.ui.theme.renMutedIconColor
 import kotlin.math.PI
 import kotlin.math.cos
 import kotlin.math.min
@@ -274,7 +275,7 @@ private fun ProcessingContent(
                     imageVector = Icons.Default.Lock,
                     contentDescription = null,
                     modifier = Modifier.size(16.dp),
-                    tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.78f),
+                    tint = renMutedIconColor(),
                 )
                 Spacer(Modifier.width(10.dp))
                 Text(

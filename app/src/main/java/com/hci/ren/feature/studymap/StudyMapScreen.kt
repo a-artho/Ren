@@ -68,6 +68,7 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DatePicker
+import androidx.compose.material3.DatePickerDefaults
 import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.SelectableDates
 import androidx.compose.material3.rememberDatePickerState
@@ -159,6 +160,8 @@ import com.hci.ren.ui.theme.RenContextMenuSurface
 import com.hci.ren.ui.theme.renCardBorderColor
 import com.hci.ren.ui.theme.renCardBorderStroke
 import com.hci.ren.ui.theme.renCardContainerColor
+import com.hci.ren.ui.theme.renMutedIconColor
+import com.hci.ren.ui.theme.renSelectedBorderColor
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
@@ -575,7 +578,7 @@ private fun StudyPlanMenuActionRow(
                 imageVector = icon,
                 contentDescription = null,
                 modifier = Modifier.size(18.dp),
-                tint = MaterialTheme.colorScheme.primary,
+                tint = renMutedIconColor(),
             )
             Spacer(Modifier.width(12.dp))
             Text(
@@ -1164,6 +1167,9 @@ private fun PlanEditDatePickerDialog(
     val datePickerState = rememberDatePickerState(selectableDates = selectableDates)
     DatePickerDialog(
         onDismissRequest = onDismiss,
+        colors = DatePickerDefaults.colors(
+            containerColor = RenContextMenuSurface,
+        ),
         confirmButton = {
             TextButton(
                 enabled = datePickerState.selectedDateMillis != null,
@@ -1178,7 +1184,12 @@ private fun PlanEditDatePickerDialog(
             }
         },
     ) {
-        DatePicker(state = datePickerState)
+        DatePicker(
+            state = datePickerState,
+            colors = DatePickerDefaults.colors(
+                containerColor = RenContextMenuSurface,
+            ),
+        )
     }
 }
 
@@ -1293,7 +1304,7 @@ private fun PlanEditDailyTimeChoiceRow(
 ) {
     val rowSurface = renCardContainerColor()
     val targetBorderColor = if (selected) {
-        MaterialTheme.colorScheme.primary.copy(alpha = 0.74f)
+        renSelectedBorderColor()
     } else {
         renCardBorderColor()
     }
@@ -1589,8 +1600,8 @@ private fun PlanEditActionRow(
 ) {
     val contentColor = MaterialTheme.colorScheme.onSurface
     val supportingColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.82f)
-    val iconContainerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.24f)
-    val iconColor = MaterialTheme.colorScheme.primary
+    val iconContainerColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.08f)
+    val iconColor = renMutedIconColor()
     val separatorColor = treeLineColor(0.09f)
 
     Column(modifier = modifier.fillMaxWidth()) {

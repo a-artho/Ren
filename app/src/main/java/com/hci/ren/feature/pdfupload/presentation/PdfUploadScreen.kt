@@ -84,6 +84,8 @@ import com.hci.ren.ui.theme.RenTheme
 import com.hci.ren.ui.theme.RenSelectedCardSurface
 import com.hci.ren.ui.theme.renCardBorderColor
 import com.hci.ren.ui.theme.renCardContainerColor
+import com.hci.ren.ui.theme.renMutedIconColor
+import com.hci.ren.ui.theme.renSelectedBorderColor
 import com.hci.ren.ui.motion.RenMotionDurationMillis
 import com.hci.ren.ui.motion.RenMotionEasing
 import com.hci.ren.ui.motion.isReducedMotionEnabled
@@ -573,7 +575,7 @@ private fun PdfPageImage(
     }
 
     val borderColor by animateColorAsState(
-        targetValue = if (isSelected) MaterialTheme.colorScheme.primary else renCardBorderColor(),
+        targetValue = if (isSelected) renSelectedBorderColor() else renCardBorderColor(),
         animationSpec = tween(RenMotionDurationMillis, easing = RenMotionEasing),
         label = "page-border",
     )
@@ -584,7 +586,7 @@ private fun PdfPageImage(
     )
     val pageShape = RoundedCornerShape(12.dp)
     val pageBorder = BorderStroke(
-        width = if (isSelected) 2.dp else 1.dp,
+        width = 1.dp,
         color = borderColor,
     )
     val content: @Composable () -> Unit = {
@@ -670,13 +672,13 @@ private fun EmptyUploadPane(
             Surface(
                 modifier = Modifier.size(56.dp),
                 shape = RoundedCornerShape(18.dp),
-                color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f),
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.08f),
             ) {
                 Box(contentAlignment = Alignment.Center) {
                     Icon(
                         imageVector = Icons.Default.PictureAsPdf,
                         contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary,
+                        tint = renMutedIconColor(),
                         modifier = Modifier.size(30.dp),
                     )
                 }

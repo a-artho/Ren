@@ -32,6 +32,7 @@ import androidx.compose.material.icons.filled.PendingActions
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.WbSunny
 import androidx.compose.material3.DatePicker
+import androidx.compose.material3.DatePickerDefaults
 import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
@@ -81,9 +82,11 @@ import com.hci.ren.ui.components.PlanFlowPrimaryButton
 import com.hci.ren.ui.components.PlanFlowScaffold
 import com.hci.ren.ui.components.PlanFlowSectionGap
 import com.hci.ren.ui.theme.RenTheme
+import com.hci.ren.ui.theme.RenContextMenuSurface
 import com.hci.ren.ui.theme.renCardBorderColor
 import com.hci.ren.ui.theme.renCardBorderStroke
 import com.hci.ren.ui.theme.renCardContainerColor
+import com.hci.ren.ui.theme.renSelectedBorderColor
 import com.hci.ren.ui.motion.RenFadeThroughDurationMillis
 import com.hci.ren.ui.motion.RenMotionDurationMillis
 import com.hci.ren.ui.motion.isReducedMotionEnabled
@@ -200,6 +203,9 @@ fun PlanSetupScreen(
     if (isDatePickerOpen) {
         DatePickerDialog(
             onDismissRequest = { isDatePickerOpen = false },
+            colors = DatePickerDefaults.colors(
+                containerColor = RenContextMenuSurface,
+            ),
             confirmButton = {
                 TextButton(
                     onClick = {
@@ -223,7 +229,12 @@ fun PlanSetupScreen(
                 }
             },
         ) {
-            DatePicker(state = datePickerState)
+            DatePicker(
+                state = datePickerState,
+                colors = DatePickerDefaults.colors(
+                    containerColor = RenContextMenuSurface,
+                ),
+            )
         }
     }
 }
@@ -529,7 +540,7 @@ private fun StudyWeekDayButton(
         renCardContainerColor()
     }
     val targetBorder = if (isSelected) {
-        MaterialTheme.colorScheme.primary.copy(alpha = 0.9f)
+        renSelectedBorderColor()
     } else {
         MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.72f)
     }
