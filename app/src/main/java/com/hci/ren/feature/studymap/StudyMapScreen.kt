@@ -1944,7 +1944,7 @@ private fun difficultyLabel(difficulty: StudyBlockDifficulty): String = when (di
     StudyBlockDifficulty.Heavy -> stringResource(R.string.load_heavy)
 }
 
-private fun taskSourceDocumentLabel(task: GeneratedStudyBlock, documents: List<StudySourceDocument>): String? {
+internal fun taskSourceDocumentLabel(task: GeneratedStudyBlock, documents: List<StudySourceDocument>): String? {
     val ref = task.sourceRefs.firstOrNull() ?: return null
     return documents
         .firstOrNull { it.matchesSourceDocumentId(ref.documentId) }
@@ -1953,7 +1953,7 @@ private fun taskSourceDocumentLabel(task: GeneratedStudyBlock, documents: List<S
 }
 
 @Composable
-private fun taskPageLabel(task: GeneratedStudyBlock): String? {
+internal fun taskPageLabel(task: GeneratedStudyBlock): String? {
     val ref = task.sourceRefs.firstOrNull() ?: return null
     return when {
         ref.startPage != null && ref.endPage != null && ref.endPage != ref.startPage -> stringResource(R.string.source_page_range, ref.startPage, ref.endPage)
@@ -1994,7 +1994,7 @@ private fun timelineStudyItemPageLabel(item: TimelineStudyItem): String? {
 }
 
 @Composable
-private fun taskTypeColor(type: StudyTaskType) = when (type) {
+internal fun taskTypeColor(type: StudyTaskType) = when (type) {
     StudyTaskType.Practice,
     StudyTaskType.Quiz,
     StudyTaskType.MockTest,
@@ -2006,7 +2006,7 @@ private fun taskTypeColor(type: StudyTaskType) = when (type) {
     else -> MaterialTheme.colorScheme.primaryContainer
 }
 
-private fun taskTypeIcon(type: StudyTaskType): ImageVector = when (type) {
+internal fun taskTypeIcon(type: StudyTaskType): ImageVector = when (type) {
     StudyTaskType.Practice,
     StudyTaskType.Quiz,
     StudyTaskType.MockTest,
@@ -2947,7 +2947,7 @@ private fun statusContent(status: StudyTaskStatus) = when (status) {
 }
 
 @Composable
-private fun taskTypeLabel(type: StudyTaskType): String = when (type) {
+internal fun taskTypeLabel(type: StudyTaskType): String = when (type) {
     StudyTaskType.Concept -> stringResource(R.string.task_type_concept)
     StudyTaskType.Practice -> stringResource(R.string.task_type_practice)
     StudyTaskType.Review -> stringResource(R.string.task_type_review)
@@ -2962,7 +2962,7 @@ private fun taskTypeLabel(type: StudyTaskType): String = when (type) {
     StudyTaskType.Custom -> stringResource(R.string.task_type_custom)
 }
 
-private fun formatMinutes(minutes: Int): String = when {
+internal fun formatMinutes(minutes: Int): String = when {
     minutes < 60 -> "$minutes min"
     minutes % 60 == 0 -> "${minutes / 60}h"
     else -> "${minutes / 60}h ${minutes % 60}m"

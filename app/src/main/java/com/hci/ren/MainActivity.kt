@@ -45,6 +45,7 @@ import com.hci.ren.feature.pdfupload.presentation.PdfUploadRoute
 import com.hci.ren.feature.pdfupload.presentation.PdfUploadViewModel
 import com.hci.ren.feature.plangeneration.PlanGenerationScreen
 import com.hci.ren.feature.plangeneration.PlanGenerationViewModel
+import com.hci.ren.feature.plangeneration.StudyTaskStatus
 import com.hci.ren.feature.studymap.StudyMapDetailRoute
 import com.hci.ren.feature.studymap.StudyMapDetailViewModel
 import com.hci.ren.feature.studymap.TodayScreen
@@ -238,6 +239,9 @@ class MainActivity : ComponentActivity() {
                                 onAvailableTimeChanged = studyMapDetailViewModel::updateTodayAvailableTime,
                                 onTaskAction = studyMapDetailViewModel::updateTodayTaskAction,
                                 onWrapUpToday = studyMapDetailViewModel::wrapUpToday,
+                                onStartFocusTask = { taskId ->
+                                    studyMapDetailViewModel.updateTaskStatus(taskId, StudyTaskStatus.InProgress)
+                                },
                                 onConsumeWrapUpResult = studyMapDetailViewModel::consumeTodayWrapUpMessage,
                                 changeMessage = studyMapState.userMessage,
                                 onConsumeMessage = studyMapDetailViewModel::consumeMessage,
