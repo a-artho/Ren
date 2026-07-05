@@ -48,7 +48,6 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -193,9 +192,9 @@ private fun ProcessingContent(
 ) {
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
         val compact = maxHeight < 660.dp
-        val animationHeight = if (compact) 330.dp else 430.dp
+        val animationHeight = if (compact) 330.dp else 360.dp
         val animationTopGap = if (compact) 38.dp else 64.dp
-        val statusTopGap = if (compact) 12.dp else 18.dp
+        val subtitleGap = if (compact) 8.dp else 10.dp
         val bottomGap = if (compact) 4.dp else 12.dp
 
         Column(
@@ -210,52 +209,57 @@ private fun ProcessingContent(
                     .weight(1f),
                 contentAlignment = Alignment.Center,
             ) {
-                BreathingPlanAnimation(
-                    stepIndex = activeStepIndex,
-                    reducedMotion = reducedMotion,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(animationHeight),
-                )
-            }
-
-            Spacer(Modifier.height(statusTopGap))
-
-            AnimatedContent(
-                targetState = activeStepIndex,
-                transitionSpec = {
-                    fadeIn(
-                        animationSpec = tween(
-                            durationMillis = if (reducedMotion) 0 else 260,
-                            easing = RenEmphasizedDecelerateEasing,
-                        ),
-                    ) togetherWith fadeOut(
-                        animationSpec = tween(
-                            durationMillis = if (reducedMotion) 0 else 140,
-                            easing = RenEmphasizedEasing,
-                        ),
-                    )
-                },
-                label = "plan-generation-current-step",
-                modifier = Modifier.fillMaxWidth(),
-            ) { targetIndex ->
-                val step = processingSteps[targetIndex]
                 Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .semantics {
-                            stateDescription = "Processing step ${targetIndex + 1} of ${processingSteps.size}"
-                        },
+                    modifier = Modifier.fillMaxWidth(),
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
-                    Text(
-                        text = stepSubtitle(step),
-                        modifier = Modifier.fillMaxWidth(),
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        lineHeight = 24.sp,
-                        textAlign = TextAlign.Center,
+                    BreathingPlanAnimation(
+                        stepIndex = activeStepIndex,
+                        reducedMotion = reducedMotion,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(animationHeight),
                     )
+
+                    Spacer(Modifier.height(subtitleGap))
+
+                    AnimatedContent(
+                        targetState = activeStepIndex,
+                        transitionSpec = {
+                            fadeIn(
+                                animationSpec = tween(
+                                    durationMillis = if (reducedMotion) 0 else 260,
+                                    easing = RenEmphasizedDecelerateEasing,
+                                ),
+                            ) togetherWith fadeOut(
+                                animationSpec = tween(
+                                    durationMillis = if (reducedMotion) 0 else 140,
+                                    easing = RenEmphasizedEasing,
+                                ),
+                            )
+                        },
+                        label = "plan-generation-current-step",
+                        modifier = Modifier.fillMaxWidth(),
+                    ) { targetIndex ->
+                        val step = processingSteps[targetIndex]
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .semantics {
+                                    stateDescription = "Processing step ${targetIndex + 1} of ${processingSteps.size}"
+                                },
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                        ) {
+                            Text(
+                                text = stepSubtitle(step),
+                                modifier = Modifier.fillMaxWidth(),
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                lineHeight = 24.sp,
+                                textAlign = TextAlign.Center,
+                            )
+                        }
+                    }
                 }
             }
 
@@ -350,6 +354,13 @@ private fun BreathingPlanAnimation(
             alphaMultiplier = breath.coreAlphaMultiplier,
             breathProgress = breatheProgress,
         )
+        drawSubtleRipples(
+            center = center,
+            baseRadius = coreRadius,
+            primary = primary,
+            alphaMultiplier = breath.coreAlphaMultiplier,
+            breathProgress = breatheProgress,
+        )
         drawCircle(
             color = primary.copy(alpha = 0.118f * breath.coreAlphaMultiplier),
             radius = coreRadius * 1.48f * breath.scale,
@@ -394,12 +405,8 @@ private fun DrawScope.drawGradientOrb(
 ) {
     val breathWave = sin(breathProgress.toDouble() * TOPIC_NODE_TURN).toFloat()
     val outwardGlow = ((breathWave + 1f) / 2f).coerceIn(0f, 1f)
-    val path = organicOrbPath(
-        center = center,
-        radius = radius * (0.98f + outwardGlow * 0.04f),
-    )
-    drawPath(
-        path = path,
+    val orbRadius = radius * (0.98f + outwardGlow * 0.04f)
+    drawCircle(
         brush = Brush.radialGradient(
             colors = listOf(
                 primary.copy(alpha = (0.11f + outwardGlow * 0.06f) * alphaMultiplier),
@@ -408,13 +415,10 @@ private fun DrawScope.drawGradientOrb(
                 Color.Transparent,
             ),
             center = center,
-            radius = radius * (1.06f + outwardGlow * 0.36f),
+            radius = orbRadius,
         ),
-    )
-    drawPath(
-        path = path,
-        color = primary.copy(alpha = (0.026f + outwardGlow * 0.035f) * alphaMultiplier),
-        style = Stroke(width = (0.85f + outwardGlow * 0.45f).dp.toPx(), cap = StrokeCap.Round),
+        radius = orbRadius,
+        center = center,
     )
 }
 
@@ -428,12 +432,8 @@ private fun DrawScope.drawBreathingOuterAura(
 ) {
     val breathWave = sin(breathProgress.toDouble() * TOPIC_NODE_TURN).toFloat()
     val outwardGlow = ((breathWave + 1f) / 2f).coerceIn(0f, 1f)
-    val path = organicOrbPath(
-        center = center,
-        radius = radius * (0.94f + outwardGlow * 0.06f),
-    )
-    drawPath(
-        path = path,
+    val auraRadius = radius * (0.94f + outwardGlow * 0.06f)
+    drawCircle(
         brush = Brush.radialGradient(
             colors = listOf(
                 primary.copy(alpha = (0.045f + outwardGlow * 0.018f) * alphaMultiplier),
@@ -442,42 +442,29 @@ private fun DrawScope.drawBreathingOuterAura(
                 Color.Transparent,
             ),
             center = center,
-            radius = radius * (0.82f + outwardGlow * 0.38f),
+            radius = auraRadius,
         ),
-    )
-    drawPath(
-        path = path,
-        color = primary.copy(alpha = (0.012f + outwardGlow * 0.01f) * alphaMultiplier),
-        style = Stroke(width = (0.55f + outwardGlow * 0.18f).dp.toPx(), cap = StrokeCap.Round),
+        radius = auraRadius,
+        center = center,
     )
 }
 
-private fun organicOrbPath(
+private fun DrawScope.drawSubtleRipples(
     center: Offset,
-    radius: Float,
-): Path {
-    val orbPoints = gradientOrbPoints.map { point ->
-        val angle = point.angle
-        val shapeRadius = radius * point.radius
-        Offset(
-            x = center.x + cos(angle).toFloat() * shapeRadius * point.scaleX,
-            y = center.y + sin(angle).toFloat() * shapeRadius * point.scaleY,
+    baseRadius: Float,
+    primary: Color,
+    alphaMultiplier: Float,
+    breathProgress: Float,
+) {
+    listOf(0f, 0.46f).forEach { phaseOffset ->
+        val progress = (breathProgress + phaseOffset) % 1f
+        val fade = sin(progress * PI).toFloat().coerceAtLeast(0f)
+        drawCircle(
+            color = primary.copy(alpha = 0.045f * fade * alphaMultiplier),
+            radius = baseRadius * (1.72f + progress * 0.74f),
+            center = center,
+            style = Stroke(width = 0.8.dp.toPx(), cap = StrokeCap.Round),
         )
-    }
-    return Path().apply {
-        val first = orbPoints.first()
-        val last = orbPoints.last()
-        moveTo((last.x + first.x) / 2f, (last.y + first.y) / 2f)
-        orbPoints.forEachIndexed { index, point ->
-            val next = orbPoints[(index + 1) % orbPoints.size]
-            quadraticTo(
-                point.x,
-                point.y,
-                (point.x + next.x) / 2f,
-                (point.y + next.y) / 2f,
-            )
-        }
-        close()
     }
 }
 
@@ -703,27 +690,6 @@ private data class AnimationProfile(
 private val planAnimationProfile = AnimationProfile(
     coreScale = 0.126f,
     orbScale = 3.45f,
-)
-
-private data class GradientOrbPoint(
-    val angle: Double,
-    val radius: Float,
-    val scaleX: Float,
-    val scaleY: Float,
-)
-
-private val gradientOrbPoints = listOf(
-    GradientOrbPoint(angle = -2.92, radius = 0.98f, scaleX = 1.0f, scaleY = 0.98f),
-    GradientOrbPoint(angle = -2.34, radius = 0.96f, scaleX = 0.96f, scaleY = 1.04f),
-    GradientOrbPoint(angle = -1.74, radius = 0.98f, scaleX = 0.98f, scaleY = 1.02f),
-    GradientOrbPoint(angle = -1.14, radius = 0.99f, scaleX = 1.03f, scaleY = 0.98f),
-    GradientOrbPoint(angle = -0.52, radius = 1.05f, scaleX = 1.12f, scaleY = 0.92f),
-    GradientOrbPoint(angle = 0.1, radius = 1.08f, scaleX = 1.12f, scaleY = 0.92f),
-    GradientOrbPoint(angle = 0.72, radius = 0.98f, scaleX = 1.04f, scaleY = 1.02f),
-    GradientOrbPoint(angle = 1.34, radius = 1.04f, scaleX = 0.95f, scaleY = 1.08f),
-    GradientOrbPoint(angle = 1.96, radius = 0.98f, scaleX = 0.95f, scaleY = 1.05f),
-    GradientOrbPoint(angle = 2.58, radius = 1.05f, scaleX = 1.08f, scaleY = 0.95f),
-    GradientOrbPoint(angle = 3.06, radius = 0.99f, scaleX = 1.0f, scaleY = 0.96f),
 )
 
 private const val PLAN_BREATH_DURATION_MILLIS = 2600
