@@ -81,6 +81,9 @@ import com.hci.ren.ui.components.PlanFlowPrimaryButton
 import com.hci.ren.ui.components.PlanFlowScaffold
 import com.hci.ren.ui.components.PlanFlowSectionGap
 import com.hci.ren.ui.theme.RenTheme
+import com.hci.ren.ui.theme.RenSelectedCardSurface
+import com.hci.ren.ui.theme.renCardBorderColor
+import com.hci.ren.ui.theme.renCardContainerColor
 import com.hci.ren.ui.motion.RenMotionDurationMillis
 import com.hci.ren.ui.motion.RenMotionEasing
 import com.hci.ren.ui.motion.isReducedMotionEnabled
@@ -235,8 +238,7 @@ internal fun PdfFileCard(
     val onMoveDownState = rememberUpdatedState(onMoveDown)
     val moveStepPxState = rememberUpdatedState(moveStepPx)
     val containerColor by animateColorAsState(
-        targetValue = if (isSelected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f)
-            else MaterialTheme.colorScheme.surface,
+        targetValue = if (isSelected) RenSelectedCardSurface else renCardContainerColor(),
         animationSpec = tween(RenMotionDurationMillis, easing = RenMotionEasing),
         label = "file-card-bg",
     )
@@ -254,7 +256,7 @@ internal fun PdfFileCard(
         targetValue = if (isDragging) {
             MaterialTheme.colorScheme.primary.copy(alpha = 0.58f)
         } else {
-            MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.18f)
+            renCardBorderColor()
         },
         animationSpec = tween(RenMotionDurationMillis, easing = RenMotionEasing),
         label = "file-card-border",
@@ -571,12 +573,12 @@ private fun PdfPageImage(
     }
 
     val borderColor by animateColorAsState(
-        targetValue = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant,
+        targetValue = if (isSelected) MaterialTheme.colorScheme.primary else renCardBorderColor(),
         animationSpec = tween(RenMotionDurationMillis, easing = RenMotionEasing),
         label = "page-border",
     )
     val backgroundColor by animateColorAsState(
-        targetValue = if (isSelected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = .18f) else MaterialTheme.colorScheme.surface,
+        targetValue = if (isSelected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = .18f) else renCardContainerColor(),
         animationSpec = tween(RenMotionDurationMillis, easing = RenMotionEasing),
         label = "page-background",
     )

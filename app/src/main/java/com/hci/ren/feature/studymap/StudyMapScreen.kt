@@ -155,6 +155,10 @@ import com.hci.ren.ui.motion.RenMotionDurationMillis
 import com.hci.ren.ui.motion.RenMotionEasing
 import com.hci.ren.ui.motion.isReducedMotionEnabled
 import com.hci.ren.ui.motion.renFadeThroughTransform
+import com.hci.ren.ui.theme.RenContextMenuSurface
+import com.hci.ren.ui.theme.renCardBorderColor
+import com.hci.ren.ui.theme.renCardBorderStroke
+import com.hci.ren.ui.theme.renCardContainerColor
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
@@ -171,11 +175,7 @@ private val PlanEditSheetMenuHeight = 468.dp
 private val PlanEditSheetTopicHeight = 640.dp
 private val PlanEditMenuHeaderHeight = 76.dp
 private val PlanEditActionRowHeight = 62.dp
-private val PlanEditSheetSurface = Color(0xFF070A08)
-private val PlanEditRowSurface = Color(0xFF0E130F)
-private val PlanEditRowSurfaceMuted = Color(0xFF141A15)
-private val PlanEditSelectedSurface = Color(0xFF0E261A)
-private val PlanEditOutline = Color(0xFF253429)
+private val PlanEditSheetSurface = RenContextMenuSurface
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -516,7 +516,7 @@ private fun StudyPlanTitleMenu(
             offset = DpOffset(x = 0.dp, y = 8.dp),
             modifier = Modifier.width(238.dp),
             shape = RoundedCornerShape(18.dp),
-            containerColor = MaterialTheme.colorScheme.surface,
+            containerColor = RenContextMenuSurface,
             tonalElevation = 0.dp,
             shadowElevation = 10.dp,
             border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.64f)),
@@ -1288,16 +1288,13 @@ private fun PlanEditDailyTimeChoiceRow(
     modifier: Modifier = Modifier,
     onClick: () -> Unit,
 ) {
+    val rowSurface = renCardContainerColor()
     val targetBorderColor = if (selected) {
         MaterialTheme.colorScheme.primary.copy(alpha = 0.74f)
     } else {
-        PlanEditOutline.copy(alpha = 0.82f)
+        renCardBorderColor()
     }
-    val targetBackground = if (selected) {
-        PlanEditSelectedSurface
-    } else {
-        PlanEditRowSurface
-    }
+    val targetBackground = rowSurface
     val borderColor by animateColorAsState(
         targetValue = targetBorderColor,
         animationSpec = tween(RenMotionDurationMillis, easing = RenMotionEasing),
@@ -1452,8 +1449,8 @@ private fun PlanEditScopeContent(
                 .fillMaxWidth()
                 .weight(1f),
             shape = RoundedCornerShape(16.dp),
-            color = PlanEditRowSurface,
-            border = BorderStroke(1.dp, PlanEditOutline.copy(alpha = 0.80f)),
+            color = Color.Transparent,
+            border = renCardBorderStroke(),
         ) {
             BoxWithConstraints(Modifier.fillMaxSize()) {
                 Column(
@@ -1472,7 +1469,7 @@ private fun PlanEditScopeContent(
                             color = if (checked) {
                                 Color.Transparent
                             } else {
-                                PlanEditRowSurfaceMuted.copy(alpha = 0.72f)
+                                renCardContainerColor()
                             },
                         ) {
                             Row(
@@ -1556,11 +1553,11 @@ private fun PlanEditPrimaryAction(
 @Composable
 private fun planEditTextFieldColors() = OutlinedTextFieldDefaults.colors(
     focusedBorderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.9f),
-    unfocusedBorderColor = PlanEditOutline.copy(alpha = 0.90f),
+    unfocusedBorderColor = renCardBorderColor(),
     errorBorderColor = MaterialTheme.colorScheme.error,
-    focusedContainerColor = PlanEditRowSurface,
-    unfocusedContainerColor = PlanEditRowSurface,
-    errorContainerColor = PlanEditRowSurface,
+    focusedContainerColor = renCardContainerColor(),
+    unfocusedContainerColor = renCardContainerColor(),
+    errorContainerColor = renCardContainerColor(),
     cursorColor = MaterialTheme.colorScheme.primary,
     focusedLabelColor = MaterialTheme.colorScheme.primary,
     unfocusedLabelColor = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -1588,7 +1585,7 @@ private fun PlanEditActionRow(
 ) {
     val contentColor = MaterialTheme.colorScheme.onSurface
     val supportingColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.82f)
-    val borderColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.46f)
+    val borderColor = renCardBorderColor()
     val iconContainerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.24f)
     val iconColor = MaterialTheme.colorScheme.primary
 
@@ -1598,7 +1595,7 @@ private fun PlanEditActionRow(
             .fillMaxWidth()
             .height(PlanEditActionRowHeight),
         shape = RoundedCornerShape(14.dp),
-        color = PlanEditRowSurface,
+        color = renCardContainerColor(),
         border = BorderStroke(1.dp, borderColor),
     ) {
         Row(
@@ -3175,8 +3172,8 @@ private fun MaterialSection(
     Card(
         modifier = modifier,
         shape = RoundedCornerShape(16.dp),
-        border = CardDefaults.outlinedCardBorder(),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        border = renCardBorderStroke(),
+        colors = CardDefaults.cardColors(containerColor = renCardContainerColor()),
     ) {
         Column(Modifier.animateContentSize()) {
             Surface(onClick = onToggleExpanded, color = Color.Transparent) {

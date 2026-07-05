@@ -47,6 +47,8 @@ import androidx.compose.ui.unit.dp
 import com.hci.ren.ui.motion.RenMotionDurationMillis
 import com.hci.ren.ui.motion.renEnterSpec
 import com.hci.ren.ui.motion.renExitSpec
+import com.hci.ren.ui.theme.renCardBorderColor
+import com.hci.ren.ui.theme.renCardContainerColor
 
 @Composable
 fun PlanFlowOptionRow(
@@ -60,12 +62,12 @@ fun PlanFlowOptionRow(
     val targetBorderColor = if (isSelected) {
         MaterialTheme.colorScheme.primary
     } else {
-        MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.72f)
+        renCardBorderColor()
     }
     val targetBackground = if (isSelected) {
         MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.24f)
     } else {
-        MaterialTheme.colorScheme.surface
+        renCardContainerColor()
     }
     val borderColor by animateColorAsState(
         targetValue = targetBorderColor,
@@ -185,7 +187,7 @@ fun PlanFlowCircleChoice(
     val targetBorderColor = if (isSelected) {
         MaterialTheme.colorScheme.primary.copy(alpha = 0.86f)
     } else {
-        MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.72f)
+        renCardBorderColor()
     }
     val targetTextColor = if (isSelected) {
         MaterialTheme.colorScheme.primary
@@ -195,7 +197,7 @@ fun PlanFlowCircleChoice(
     val targetBackgroundColor = if (isSelected) {
         MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.28f)
     } else {
-        MaterialTheme.colorScheme.surface
+        renCardContainerColor()
     }
     val borderColor by animateColorAsState(targetBorderColor, tween(RenMotionDurationMillis), label = "plan-circle-choice-border")
     val textColor by animateColorAsState(targetTextColor, tween(RenMotionDurationMillis), label = "plan-circle-choice-text")
@@ -235,12 +237,12 @@ fun PlanFlowPillChoice(
     val targetBorderColor = if (isSelected) {
         MaterialTheme.colorScheme.primary.copy(alpha = 0.86f)
     } else {
-        MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.72f)
+        renCardBorderColor()
     }
     val targetBackgroundColor = if (isSelected) {
         MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.28f)
     } else {
-        MaterialTheme.colorScheme.surface
+        renCardContainerColor()
     }
     val targetTextColor = if (isSelected) {
         MaterialTheme.colorScheme.primary

@@ -93,6 +93,7 @@ import com.hci.ren.feature.plangeneration.StudySourceDocument
 import com.hci.ren.feature.plangeneration.StudyTaskStatus
 import com.hci.ren.feature.plangeneration.StudyTaskType
 import com.hci.ren.feature.plangeneration.likelyStudyMinutes
+import com.hci.ren.ui.theme.RenContextMenuSurface
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
@@ -1308,6 +1309,8 @@ private fun TodayStartHereCard(
                     DropdownMenu(
                         expanded = menuExpanded,
                         onDismissRequest = { menuExpanded = false },
+                        containerColor = RenContextMenuSurface,
+                        tonalElevation = 0.dp,
                     ) {
                         actions.forEach { action ->
                             DropdownMenuItem(
@@ -1660,6 +1663,8 @@ private fun TodayTaskRow(
                     DropdownMenu(
                         expanded = menuExpanded,
                         onDismissRequest = { menuExpanded = false },
+                        containerColor = RenContextMenuSurface,
+                        tonalElevation = 0.dp,
                     ) {
                         actions.forEach { action ->
                             DropdownMenuItem(

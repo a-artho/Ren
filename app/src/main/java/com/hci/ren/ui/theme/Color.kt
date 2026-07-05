@@ -37,6 +37,11 @@ internal val RenDarkSurfaceContainer = Color(0xFF0F140F)
 internal val RenDarkSurfaceContainerHighest = Color(0xFF1A201A)
 internal val RenDarkOutline = Color(0xFF8C938A)
 internal val RenDarkOutlineVariant = Color(0xFF283028)
+internal val RenContextMenuSurface = Color(0xFF080808)
+
+val RenCardSurface = Color(0xFF040504)
+val RenCardOutline = Color(0xFF151915)
+val RenSelectedCardSurface = Color(0xFF0E261A)
 
 internal val RenLightInverseSurface = Color(0xFF2E312D)
 internal val RenLightInverseOnSurface = Color(0xFFF1F2EE)

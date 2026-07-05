@@ -81,6 +81,9 @@ import com.hci.ren.ui.components.PlanFlowPrimaryButton
 import com.hci.ren.ui.components.PlanFlowScaffold
 import com.hci.ren.ui.components.PlanFlowSectionGap
 import com.hci.ren.ui.theme.RenTheme
+import com.hci.ren.ui.theme.renCardBorderColor
+import com.hci.ren.ui.theme.renCardBorderStroke
+import com.hci.ren.ui.theme.renCardContainerColor
 import com.hci.ren.ui.motion.RenFadeThroughDurationMillis
 import com.hci.ren.ui.motion.RenMotionDurationMillis
 import com.hci.ren.ui.motion.isReducedMotionEnabled
@@ -415,8 +418,8 @@ private fun StudyRhythmCard(
         modifier = Modifier
             .fillMaxWidth(),
         shape = RoundedCornerShape(20.dp),
-        color = MaterialTheme.colorScheme.surface,
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        color = renCardContainerColor(),
+        border = renCardBorderStroke(),
     ) {
         Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 20.dp)) {
             StudyWeekPicker(
@@ -468,7 +471,6 @@ private fun StudyWeekPicker(
     onDayToggled: (StudyDay) -> Unit,
 ) {
     val days = StudyDay.entries
-    val primary = MaterialTheme.colorScheme.primary
     val muted = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.46f)
 
     Box(
@@ -492,20 +494,6 @@ private fun StudyWeekPicker(
                 cap = StrokeCap.Round,
             )
 
-            days.dropLast(1).forEachIndexed { index, day ->
-                val nextDay = days[index + 1]
-                if (day in selectedDays && nextDay in selectedDays) {
-                    val startX = step * index + step / 2f + radius + 1.5.dp.toPx()
-                    val endX = step * (index + 1) + step / 2f - radius - 1.5.dp.toPx()
-                    drawLine(
-                        color = primary.copy(alpha = 0.72f),
-                        start = Offset(startX, centerY),
-                        end = Offset(endX, centerY),
-                        strokeWidth = 1.4.dp.toPx(),
-                        cap = StrokeCap.Round,
-                    )
-                }
-            }
         }
 
         Row(
@@ -538,7 +526,7 @@ private fun StudyWeekDayButton(
     val targetBackground = if (isSelected) {
         MaterialTheme.colorScheme.primary.copy(alpha = 0.07f)
     } else {
-        MaterialTheme.colorScheme.surface
+        renCardContainerColor()
     }
     val targetBorder = if (isSelected) {
         MaterialTheme.colorScheme.primary.copy(alpha = 0.9f)
@@ -615,12 +603,12 @@ private fun QuickSelectChip(
     val targetBackground = if (isSelected) {
         MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.16f)
     } else {
-        Color.Transparent
+        renCardContainerColor()
     }
     val targetBorder = if (isSelected) {
         MaterialTheme.colorScheme.primary.copy(alpha = 0.45f)
     } else {
-        MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.42f)
+        renCardBorderColor()
     }
     val targetText = if (isSelected) {
         MaterialTheme.colorScheme.primary
@@ -784,11 +772,11 @@ private fun selectedDaysLabelColor(count: Int): Color =
 @Composable
 private fun planTextFieldColors() = OutlinedTextFieldDefaults.colors(
     focusedBorderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.9f),
-    unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.78f),
+    unfocusedBorderColor = renCardBorderColor(),
     errorBorderColor = MaterialTheme.colorScheme.error,
-    focusedContainerColor = MaterialTheme.colorScheme.surface,
-    unfocusedContainerColor = MaterialTheme.colorScheme.surface,
-    errorContainerColor = MaterialTheme.colorScheme.surface,
+    focusedContainerColor = renCardContainerColor(),
+    unfocusedContainerColor = renCardContainerColor(),
+    errorContainerColor = renCardContainerColor(),
     cursorColor = MaterialTheme.colorScheme.primary,
     focusedLabelColor = MaterialTheme.colorScheme.primary,
     unfocusedLabelColor = MaterialTheme.colorScheme.onSurfaceVariant,
