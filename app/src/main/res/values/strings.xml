@@ -117,6 +117,8 @@
     <string name="decrease_available_time">Decrease available time</string>
     <string name="increase_available_time">Increase available time</string>
     <string name="reset_to_plan_time">Reset to plan time</string>
+    <string name="close_time_budget">Close time budget</string>
+    <string name="done_time_budget">Done</string>
     <string name="today_time_budget_title">Today\'s time budget</string>
     <string name="today_budget_summary_free">%1$s available - %2$s planned - %3$s free</string>
     <string name="today_budget_summary_overflow">%1$s available - %2$s planned - %3$s moving forward</string>

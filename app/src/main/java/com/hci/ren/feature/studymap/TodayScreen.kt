@@ -633,6 +633,8 @@ private fun TimeBudgetDialog(
     onReset: () -> Unit,
     onDismiss: () -> Unit,
 ) {
+    val hasTimeOverride = availableMinutes != baseAvailableMinutes
+
     Dialog(onDismissRequest = onDismiss) {
         Card(
             modifier = Modifier.fillMaxWidth(),
@@ -656,7 +658,7 @@ private fun TimeBudgetDialog(
                         color = MaterialTheme.colorScheme.onSurface,
                     )
                     IconButton(onClick = onDismiss, modifier = Modifier.size(32.dp)) {
-                        Icon(Icons.Default.Close, contentDescription = stringResource(R.string.mark_done))
+                        Icon(Icons.Default.Close, contentDescription = stringResource(R.string.close_time_budget))
                     }
                 }
                 Row(
@@ -712,21 +714,24 @@ private fun TimeBudgetDialog(
                         Icon(Icons.Default.Add, contentDescription = stringResource(R.string.increase_available_time))
                     }
                 }
-                if (availableMinutes != baseAvailableMinutes) {
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
                     OutlinedButton(
                         onClick = onReset,
+                        enabled = hasTimeOverride,
                         modifier = Modifier.fillMaxWidth(),
                     ) {
                         Icon(Icons.Default.RestartAlt, contentDescription = null, modifier = Modifier.size(18.dp))
                         Spacer(Modifier.width(8.dp))
                         Text(stringResource(R.string.reset_to_plan_time))
                     }
-                }
-                Button(
-                    onClick = onDismiss,
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Text(stringResource(R.string.mark_done))
+                    Button(
+                        onClick = onDismiss,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Text(stringResource(R.string.done_time_budget))
+                    }
                 }
             }
         }
