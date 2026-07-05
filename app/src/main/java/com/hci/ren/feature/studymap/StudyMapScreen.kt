@@ -64,6 +64,7 @@ import androidx.compose.material.icons.filled.UnfoldLess
 import androidx.compose.material.icons.filled.WarningAmber
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DatePicker
@@ -80,6 +81,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SegmentedButton
@@ -163,7 +165,9 @@ private enum class AdjustmentSheet { PlanEdit, Continue }
 private enum class PlanEditPage { Menu, Rename, DailyTime, Scope }
 private enum class PlanEditDailyTimeChoice { FitTwoLeaves, FitFourLeaves, Custom }
 
-private val PlanEditSheetMenuHeight = 488.dp
+private const val UnscheduledAutoCollapseLeafThreshold = 3
+
+private val PlanEditSheetMenuHeight = 468.dp
 private val PlanEditSheetTopicHeight = 640.dp
 private val PlanEditMenuHeaderHeight = 76.dp
 private val PlanEditActionRowHeight = 62.dp
@@ -316,6 +320,7 @@ fun StudyMapScreen(
                 StudyMapView.Schedule -> scheduleItems(
                     data = data,
                     onOpenToday = onOpenToday,
+                    onEditPlan = { showAdjustment(AdjustmentSheet.PlanEdit) },
                     autoCloseExpandedDays = autoCloseExpandedDays,
                     collapseKey = collapseScheduleKey + navigationResetKey,
                 )
@@ -1096,16 +1101,13 @@ private fun PlanEditMenuContent(
         }
         HorizontalDivider(
             modifier = Modifier.padding(horizontal = 8.dp),
-            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.42f),
+            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.28f),
         )
-        PlanEditActionRow(
-            title = R.string.delete_plan,
-            subtitle = R.string.delete_plan_subtitle,
-            icon = Icons.Default.DeleteOutline,
-            destructive = true,
-            showChevron = false,
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.End,
         ) {
-            onDeletePlan()
+            PlanEditDeleteAction(onClick = onDeletePlan)
         }
     }
 }
@@ -1582,35 +1584,13 @@ private fun PlanEditActionRow(
     subtitle: Int,
     icon: ImageVector,
     modifier: Modifier = Modifier,
-    destructive: Boolean = false,
-    showChevron: Boolean = true,
     onClick: () -> Unit,
 ) {
-    val contentColor = if (destructive) {
-        MaterialTheme.colorScheme.error.copy(alpha = 0.92f)
-    } else {
-        MaterialTheme.colorScheme.onSurface
-    }
-    val supportingColor = if (destructive) {
-        MaterialTheme.colorScheme.error.copy(alpha = 0.72f)
-    } else {
-        MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.82f)
-    }
-    val borderColor = if (destructive) {
-        MaterialTheme.colorScheme.error.copy(alpha = 0.34f)
-    } else {
-        MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.46f)
-    }
-    val iconContainerColor = if (destructive) {
-        MaterialTheme.colorScheme.error.copy(alpha = 0.10f)
-    } else {
-        MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.24f)
-    }
-    val iconColor = if (destructive) {
-        MaterialTheme.colorScheme.error.copy(alpha = 0.92f)
-    } else {
-        MaterialTheme.colorScheme.primary
-    }
+    val contentColor = MaterialTheme.colorScheme.onSurface
+    val supportingColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.82f)
+    val borderColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.46f)
+    val iconContainerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.24f)
+    val iconColor = MaterialTheme.colorScheme.primary
 
     Surface(
         onClick = onClick,
@@ -1662,16 +1642,46 @@ private fun PlanEditActionRow(
                     overflow = TextOverflow.Ellipsis,
                 )
             }
-            if (showChevron) {
-                Spacer(Modifier.width(12.dp))
-                Icon(
-                    imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
-                    contentDescription = null,
-                    modifier = Modifier.size(20.dp),
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.62f),
-                )
-            }
+            Spacer(Modifier.width(12.dp))
+            Icon(
+                imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                contentDescription = null,
+                modifier = Modifier.size(20.dp),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.62f),
+            )
         }
+    }
+}
+
+@Composable
+private fun PlanEditDeleteAction(
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit,
+) {
+    val deleteColor = MaterialTheme.colorScheme.error.copy(alpha = 0.84f)
+    OutlinedButton(
+        onClick = onClick,
+        modifier = modifier.height(42.dp),
+        shape = RoundedCornerShape(14.dp),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.32f)),
+        colors = ButtonDefaults.outlinedButtonColors(
+            containerColor = MaterialTheme.colorScheme.error.copy(alpha = 0.07f),
+            contentColor = deleteColor,
+        ),
+        contentPadding = PaddingValues(horizontal = 14.dp),
+    ) {
+        Icon(
+            imageVector = Icons.Default.DeleteOutline,
+            contentDescription = null,
+            modifier = Modifier.size(17.dp),
+        )
+        Spacer(Modifier.width(8.dp))
+        Text(
+            text = stringResource(R.string.delete_plan),
+            style = MaterialTheme.typography.labelLarge,
+            fontWeight = FontWeight.SemiBold,
+            maxLines = 1,
+        )
     }
 }
 
@@ -1741,6 +1751,7 @@ private fun treeLineColor(alpha: Float): Color = MaterialTheme.colorScheme.onSur
 private fun androidx.compose.foundation.lazy.LazyListScope.scheduleItems(
     data: StudyMapData,
     onOpenToday: () -> Unit,
+    onEditPlan: () -> Unit,
     autoCloseExpandedDays: Boolean,
     collapseKey: Int,
 ) {
@@ -1762,6 +1773,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.scheduleItems(
             UnscheduledWorkCard(
                 tasks = data.schedule.unscheduledTasks,
                 documents = data.plan.sourceDocuments,
+                onEditPlan = onEditPlan,
                 modifier = Modifier.animateItem(),
             )
         }
@@ -2607,9 +2619,17 @@ private fun StudyDayActionIcon(isToday: Boolean, expanded: Boolean) {
 private fun UnscheduledWorkCard(
     tasks: List<GeneratedStudyBlock>,
     documents: List<StudySourceDocument>,
+    onEditPlan: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val sourceGroups = remember(tasks, documents) { unscheduledSourceGroups(tasks, documents) }
+    val timelineItems = remember(tasks, documents) { tasks.toTimelineStudyItems(documents) }
+    val timelineStateKey = remember(timelineItems) {
+        timelineItems.joinToString("|") { it.timelineKey() }
+    }
+    var detailsExpanded by rememberSaveable(timelineStateKey) {
+        mutableStateOf(tasks.size <= UnscheduledAutoCollapseLeafThreshold)
+    }
+    var expandedItemKey by rememberSaveable(timelineStateKey) { mutableStateOf<String?>(null) }
     val meta = listOf(
         pluralStringResource(R.plurals.study_leaf_count, tasks.size, tasks.size),
         formatMinutes(tasks.sumOf { it.likelyStudyMinutes }),
@@ -2620,79 +2640,201 @@ private fun UnscheduledWorkCard(
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         border = CardDefaults.outlinedCardBorder(),
     ) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Row(verticalAlignment = Alignment.Top) {
-                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text(
-                        text = stringResource(R.string.unscheduled_tasks),
-                        style = MaterialTheme.typography.labelLarge,
-                        fontWeight = FontWeight.Bold,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.semantics { heading() },
-                    )
+        Column(
+            modifier = Modifier
+                .padding(16.dp)
+                .animateContentSize(),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Surface(
+                onClick = {
+                    val nextExpanded = !detailsExpanded
+                    detailsExpanded = nextExpanded
+                    if (!nextExpanded) expandedItemKey = null
+                },
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(12.dp),
+                color = Color.Transparent,
+            ) {
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            text = stringResource(R.string.unscheduled_tasks),
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier
+                                .weight(1f)
+                                .semantics { heading() },
+                        )
+                        Spacer(Modifier.width(12.dp))
+                        Text(
+                            text = meta,
+                            modifier = Modifier.widthIn(max = 148.dp),
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.Medium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.86f),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Icon(
+                            imageVector = if (detailsExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.72f),
+                        )
+                    }
                     Text(
                         text = stringResource(R.string.unscheduled_explanation),
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.82f),
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
                     )
                 }
-                Spacer(Modifier.width(12.dp))
-                Text(
-                    text = meta,
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                )
             }
-            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.7f))
-            sourceGroups.forEachIndexed { groupIndex, group ->
-                if (groupIndex > 0) {
-                    Spacer(Modifier.height(2.dp))
+
+            if (detailsExpanded) {
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.7f))
+                Column(verticalArrangement = Arrangement.spacedBy(0.dp)) {
+                    var previousSourceKey: String? = null
+                    timelineItems.forEachIndexed { index, item ->
+                        val itemKey = item.timelineKey()
+                        val sourceDocument = item.sourceDocument
+                        val sourceKey = sourceDocument?.id ?: "other"
+                        if (sourceKey != previousSourceKey) {
+                            if (index > 0) {
+                                Spacer(Modifier.height(4.dp))
+                            }
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 2.dp),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                SourceDividerPill(
+                                    text = sourceDocument
+                                        ?.let { stringResource(R.string.pdf_order_label, it.order) }
+                                        ?: stringResource(R.string.other_material),
+                                )
+                            }
+                        }
+                        previousSourceKey = sourceKey
+                        UnscheduledStudyItemRow(
+                            item = item,
+                            meta = timelineStudyItemMeta(item),
+                            expanded = expandedItemKey == itemKey,
+                            onToggleExpanded = {
+                                expandedItemKey = if (expandedItemKey == itemKey) null else itemKey
+                            },
+                        )
+                    }
                 }
-                group.source?.let { source ->
-                    SourceDividerLabel(
-                        text = source,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(start = 40.dp, end = 4.dp),
-                    )
-                }
-                group.tasks.forEach { task ->
-                    UnscheduledTaskRow(
-                        task = task,
-                        pageLabel = taskPageLabel(task),
-                    )
-                }
+            }
+
+            TextButton(
+                onClick = onEditPlan,
+                modifier = Modifier
+                    .align(Alignment.End)
+                    .height(38.dp),
+                contentPadding = PaddingValues(horizontal = 10.dp),
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Edit,
+                    contentDescription = null,
+                    modifier = Modifier.size(16.dp),
+                )
+                Spacer(Modifier.width(6.dp))
+                Text(stringResource(R.string.make_room))
             }
         }
     }
 }
 
 @Composable
-private fun UnscheduledTaskRow(
+private fun UnscheduledStudyItemRow(
+    item: TimelineStudyItem,
+    meta: String,
+    expanded: Boolean,
+    onToggleExpanded: () -> Unit,
+) {
+    val grouped = item.tasks.size > 1
+    val rowModifier = if (grouped) {
+        Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onToggleExpanded)
+    } else {
+        Modifier.fillMaxWidth()
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .animateContentSize(),
+    ) {
+        Row(
+            modifier = rowModifier.padding(vertical = 8.dp),
+            verticalAlignment = Alignment.Top,
+        ) {
+            TreeTaskLeafNode(
+                status = item.timelineStatus(),
+                isParent = grouped,
+            )
+            Spacer(Modifier.width(8.dp))
+            TimelineStudyItemTextContent(
+                item = item,
+                meta = meta,
+                modifier = Modifier.weight(1f),
+            )
+            if (grouped) {
+                Spacer(Modifier.width(8.dp))
+                Icon(
+                    imageVector = if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                    contentDescription = null,
+                    modifier = Modifier
+                        .padding(top = 10.dp)
+                        .size(18.dp),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.72f),
+                )
+            }
+        }
+
+        if (grouped && expanded) {
+            item.tasks.forEach { task ->
+                UnscheduledLeafRow(
+                    task = task,
+                    pageLabel = taskPageLabel(task),
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun UnscheduledLeafRow(
     task: GeneratedStudyBlock,
     pageLabel: String?,
 ) {
-    val nodeColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.82f)
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = 8.dp),
+            .padding(start = 30.dp, top = 3.dp, bottom = 7.dp),
         verticalAlignment = Alignment.Top,
     ) {
-        TaskBullet(
-            status = task.status,
-            nodeSize = 10.dp,
-            completeIconSize = 12.dp,
-            borderWidth = 1.25.dp,
-            borderColor = nodeColor,
-            containerSize = 20.dp,
-        )
-        Spacer(Modifier.width(10.dp))
+        TreeTaskLeafNode(status = task.status)
+        Spacer(Modifier.width(8.dp))
         TaskRowTextContent(
             task = task,
             pageLabel = pageLabel,
+            muted = true,
             modifier = Modifier.weight(1f),
         )
     }
@@ -2913,14 +3055,6 @@ private fun difficultyLabel(difficulty: StudyBlockDifficulty): String = when (di
     StudyBlockDifficulty.Heavy -> stringResource(R.string.load_heavy)
 }
 
-private fun taskSourceDocumentLabel(task: GeneratedStudyBlock, documents: List<StudySourceDocument>): String? {
-    val ref = task.sourceRefs.firstOrNull() ?: return null
-    return documents
-        .firstOrNull { it.matchesSourceDocumentId(ref.documentId) }
-        ?.filename
-        ?.shortDocumentName()
-}
-
 @Composable
 private fun taskPageLabel(task: GeneratedStudyBlock): String? {
     val ref = task.sourceRefs.firstOrNull() ?: return null
@@ -3099,37 +3233,6 @@ private fun TimelineStudyItem.timelineKey(): String = listOf(
     tasks.lastOrNull()?.id.orEmpty(),
     tasks.size.toString(),
 ).joinToString("|")
-
-private data class UnscheduledSourceGroup(
-    val source: String?,
-    val tasks: List<GeneratedStudyBlock>,
-)
-
-private fun unscheduledSourceGroups(
-    tasks: List<GeneratedStudyBlock>,
-    documents: List<StudySourceDocument>,
-): List<UnscheduledSourceGroup> {
-    val groups = mutableListOf<UnscheduledSourceGroup>()
-    var currentSource: String? = null
-    var currentTasks = mutableListOf<GeneratedStudyBlock>()
-
-    tasks.sortedBy { it.order }.forEach { task ->
-        val source = taskSourceDocumentLabel(task, documents)
-        if (currentTasks.isEmpty() || source == currentSource) {
-            currentSource = source
-            currentTasks += task
-        } else {
-            groups += UnscheduledSourceGroup(currentSource, currentTasks)
-            currentSource = source
-            currentTasks = mutableListOf(task)
-        }
-    }
-
-    if (currentTasks.isNotEmpty()) {
-        groups += UnscheduledSourceGroup(currentSource, currentTasks)
-    }
-    return groups
-}
 
 private fun List<GeneratedStudyBlock>.toTimelineStudyItems(
     documents: List<StudySourceDocument>,

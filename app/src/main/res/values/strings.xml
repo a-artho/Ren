@@ -59,7 +59,6 @@
     <string name="delete_plan">Delete plan</string>
     <string name="auto_close_days">Auto-close days</string>
     <string name="delete_plan_title">Delete this plan?</string>
-    <string name="delete_plan_subtitle">Remove from this device. No take-backs.</string>
     <string name="delete_plan_message">This removes the current study plan from this device. Tiny bit dramatic, but permanent.</string>
     <string name="delete">Delete</string>
     <string name="empty_study_plan_header">New exam? Deep breaths</string>
@@ -153,8 +152,9 @@
     <string name="today_complete_empty_message">You can wrap up now or pull in more work if you want to keep going.</string>
     <string name="tomorrow">Tomorrow</string>
     <string name="unscheduled_tasks">Needs room</string>
-    <string name="unscheduled_explanation">These leaves do not fit in the time budget.</string>
+    <string name="unscheduled_explanation">Outside the schedule for now. Dramatic, but fixable.</string>
     <string name="not_scheduled">Not scheduled</string>
+    <string name="make_room">Make room</string>
     <string name="apply_changes">Save changes</string>
     <string name="current_daily_budget">Current daily budget</string>
     <string name="current_daily_budget_header">Current daily budget: %1$s</string>
