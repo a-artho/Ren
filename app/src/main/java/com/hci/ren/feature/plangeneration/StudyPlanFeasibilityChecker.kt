@@ -4,7 +4,6 @@ import com.hci.ren.feature.pdfupload.presentation.PlanSetupSubmission
 import com.hci.ren.feature.studymap.availableStudyDates
 import com.hci.ren.feature.studymap.currentStudyCalendar
 import java.util.Calendar
-import kotlin.math.ceil
 import kotlin.math.roundToInt
 
 enum class FeasibilityStatus { Realistic, Intensive, Unrealistic }
@@ -15,8 +14,6 @@ data class FeasibilityResult(
     val shortageMinutes: Int,
     val workloadRatio: Double,
     val estimatedCoveragePercent: Int,
-    val recommendedDaysBalanced: Int,
-    val recommendedDaysIntensive: Int,
     val availableMinutesPerStudyDay: Int,
     val hasDeadline: Boolean,
     val totalLikelyMinutes: Int = totalRequiredMinutes,
@@ -62,8 +59,6 @@ class StudyPlanFeasibilityChecker {
             shortageMinutes = maxOf(likelyShortage, reservedShortage),
             workloadRatio = ratio,
             estimatedCoveragePercent = coverage,
-            recommendedDaysBalanced = daysNeeded(reserved, availableMinutesPerStudyDay),
-            recommendedDaysIntensive = daysNeeded(likely, availableMinutesPerStudyDay),
             availableMinutesPerStudyDay = availableMinutesPerStudyDay,
             hasDeadline = true,
             totalLikelyMinutes = likely,
@@ -72,7 +67,5 @@ class StudyPlanFeasibilityChecker {
             reservedShortageMinutes = reservedShortage,
         )
     }
-
-    private fun daysNeeded(minutes: Int, dailyMinutes: Int) = if (minutes == 0) 0 else ceil(minutes.toDouble() / dailyMinutes.coerceAtLeast(1)).toInt()
 
 }

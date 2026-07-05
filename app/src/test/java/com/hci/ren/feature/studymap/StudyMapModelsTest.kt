@@ -16,7 +16,6 @@ import java.util.Calendar
 import java.util.GregorianCalendar
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -61,22 +60,6 @@ class StudyMapModelsTest {
         )
 
         assertEquals(PlanRealismStatus.Overloaded, result.status)
-    }
-
-    @Test fun suggestedDeadlineIsFutureAndProvidesEnoughCapacity() {
-        val preferences = submission(60, StudyDeadline.ChooseDate, "2026-06-23")
-        val suggestion = PlanAdjustmentService().suggestedDeadline(
-            listOf(task("one", 180)),
-            preferences,
-            monday,
-        )
-
-        assertNotNull(suggestion)
-        val suggestedDate = suggestion!!.toStudyCalendar()!!
-        assertFalse(suggestedDate.before(monday))
-        val updated = preferences.copy(deadline = StudyDeadline.ChooseDate, deadlineDate = suggestion)
-        val available = PlanRealismCalculator().calculate(listOf(task("one", 180)), updated, monday).availableMinutes
-        assertTrue(available!! >= 180)
     }
 
     @Test fun increasingDailyTimeIncreasesAvailabilityAndScheduleCapacity() {
@@ -474,16 +457,6 @@ class StudyMapModelsTest {
         )
 
         assertTrue(dates.isEmpty())
-    }
-
-    @Test fun extendingDeadlineReturnsDayAfterLastStudyDay() {
-        val deadline = deadlineAfterSelectedStudyDays(
-            days = 2,
-            selectedDays = setOf(StudyDay.Monday, StudyDay.Wednesday),
-            today = monday,
-        )
-
-        assertEquals("2026-06-25", deadline)
     }
 
     private fun task(

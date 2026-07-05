@@ -49,41 +49,6 @@ data class StudyMapData(
 
 enum class ScopeReduction { ChooseTopics }
 
-data class ScopeReductionPreview(val strategy: ScopeReduction, val savedMinutes: Int)
-
-class PlanAdjustmentService {
-    fun suggestedDeadline(
-        tasks: List<GeneratedStudyBlock>,
-        preferences: PlanSetupSubmission,
-        today: Calendar = currentStudyCalendar(preferences),
-        dailyMinutesOverride: Int? = null,
-    ): String? {
-        val dailyMinutes = (dailyMinutesOverride ?: preferences.dailyStudyMinutes).coerceAtLeast(0)
-        if (dailyMinutes == 0 || preferences.studyDays.isEmpty()) return null
-        val target = requiredStudyMinutes(tasks)
-        val cursor = dayOnly(today)
-        var available = 0
-        repeat(MAX_DEADLINE_SEARCH_DAYS) {
-            if (cursor.studyDay in preferences.studyDays) available += dailyMinutes
-            if (available >= target) {
-                return (cursor.clone() as Calendar)
-                    .apply { add(Calendar.DAY_OF_MONTH, 1) }
-                    .toStudyDate()
-            }
-            cursor.add(Calendar.DAY_OF_MONTH, 1)
-        }
-        return null
-    }
-
-    fun scopePreviews(tasks: List<GeneratedStudyBlock>): List<ScopeReductionPreview> = listOf(
-        ScopeReductionPreview(ScopeReduction.ChooseTopics, 0),
-    )
-
-    companion object {
-        const val MAX_DEADLINE_SEARCH_DAYS = 366 * 3
-    }
-}
-
 class TaskProgressCalculator {
     fun projectProgress(tasks: List<GeneratedStudyBlock>): Pair<Int, Int> {
         val included = tasks.filter(::countsTowardRequiredTime)
