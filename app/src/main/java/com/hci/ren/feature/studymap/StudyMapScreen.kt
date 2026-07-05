@@ -1749,7 +1749,7 @@ private fun mainTimelineContinuationStroke(strokeWidth: Float): Stroke =
     Stroke(
         width = strokeWidth,
         cap = StrokeCap.Round,
-        pathEffect = PathEffect.dashPathEffect(floatArrayOf(strokeWidth * 3f, strokeWidth * 6f)),
+        pathEffect = PathEffect.dashPathEffect(floatArrayOf(strokeWidth * 3f, strokeWidth * 9f)),
     )
 
 private fun androidx.compose.foundation.lazy.LazyListScope.scheduleItems(
