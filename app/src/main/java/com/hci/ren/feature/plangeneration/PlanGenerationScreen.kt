@@ -46,7 +46,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -198,6 +200,7 @@ private fun ProcessingContent(
 
         Column(
             modifier = Modifier.fillMaxSize(),
+            horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Spacer(Modifier.height(animationTopGap))
 
@@ -247,6 +250,7 @@ private fun ProcessingContent(
                 ) {
                     Text(
                         text = stepSubtitle(step),
+                        modifier = Modifier.fillMaxWidth(),
                         style = MaterialTheme.typography.bodyLarge,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         lineHeight = 24.sp,
@@ -272,7 +276,7 @@ private fun ProcessingContent(
                 Text(
                     text = stringResource(R.string.wait_tip_1),
                     style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.72f),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.66f),
                     textAlign = TextAlign.Center,
                 )
             }
@@ -288,6 +292,7 @@ private fun BreathingPlanAnimation(
     modifier: Modifier = Modifier,
 ) {
     val primary = MaterialTheme.colorScheme.primary
+    val secondary = MaterialTheme.colorScheme.secondary
     val muted = MaterialTheme.colorScheme.outlineVariant
     val profile = planAnimationProfile
     val transition = rememberInfiniteTransition(label = "plan-breathing-animation")
@@ -327,41 +332,25 @@ private fun BreathingPlanAnimation(
         val center = Offset(size.width / 2f, size.height / 2f)
         val minDimension = min(size.width, size.height)
         val coreRadius = minDimension * profile.coreScale
-        val waveReach = minDimension * profile.waveReach
-        val motionProfile = WaveMotionProfile(
-            waveReach = profile.waveReach,
-            scaleXBase = profile.scaleXBase,
-            scaleYBase = profile.scaleYBase,
-        )
 
-        repeat(profile.waveCount) { index ->
-            val progress = planGenerationRippleProgress(breatheProgress, index, profile.waveCount)
-            val motion = planGenerationWaveMotion(motionProfile, index, progress)
-            val radius = (coreRadius * profile.waveStart + waveReach * motion.progress) * breath.scale
-            drawOval(
-                color = primary.copy(alpha = motion.alphaMultiplier * profile.waveAlpha * breath.auraAlphaMultiplier),
-                topLeft = Offset(center.x - radius * motion.scaleX, center.y - radius * motion.scaleY),
-                size = Size(radius * 2f * motion.scaleX, radius * 2f * motion.scaleY),
-            )
-        }
-
-        drawCenteredOval(
-            color = primary.copy(alpha = profile.ambientAlpha * breath.auraAlphaMultiplier),
+        drawGradientOrb(
             center = center,
-            width = minDimension * 0.86f * breath.scale,
-            height = minDimension * 0.52f * breath.scale,
-        )
-        drawCenteredOval(
-            color = primary.copy(alpha = profile.ambientAlpha * 0.72f * breath.auraAlphaMultiplier),
-            center = center,
-            width = minDimension * 0.58f * breath.scale,
-            height = minDimension * 0.66f * breath.scale,
+            radius = coreRadius * profile.orbScale * breath.scale,
+            primary = primary,
+            secondary = secondary,
+            alphaMultiplier = breath.auraAlphaMultiplier,
+            breathProgress = breatheProgress,
+            phase = centerPhase,
         )
 
-        drawCircle(
-            color = primary.copy(alpha = 0.06f * breath.coreAlphaMultiplier),
+        drawBreathingOuterAura(
+            center = center,
             radius = coreRadius * 2.7f * breath.scale,
-            center = center,
+            primary = primary,
+            secondary = secondary,
+            alphaMultiplier = breath.coreAlphaMultiplier,
+            breathProgress = breatheProgress,
+            phase = centerPhase,
         )
         drawCircle(
             color = primary.copy(alpha = 0.118f * breath.coreAlphaMultiplier),
@@ -397,17 +386,117 @@ private fun BreathingPlanAnimation(
     }
 }
 
-private fun DrawScope.drawCenteredOval(
-    color: Color,
+private fun DrawScope.drawGradientOrb(
     center: Offset,
-    width: Float,
-    height: Float,
+    radius: Float,
+    primary: Color,
+    secondary: Color,
+    alphaMultiplier: Float,
+    breathProgress: Float,
+    phase: Float,
 ) {
-    drawOval(
-        color = color,
-        topLeft = Offset(center.x - width / 2f, center.y - height / 2f),
-        size = Size(width, height),
+    val breathWave = sin(breathProgress.toDouble() * TOPIC_NODE_TURN).toFloat()
+    val outwardGlow = ((breathWave + 1f) / 2f).coerceIn(0f, 1f)
+    val glowCenter = Offset(
+        x = center.x + cos(phase.toDouble() * TOPIC_NODE_TURN).toFloat() * radius * (0.045f + outwardGlow * 0.045f),
+        y = center.y + sin(phase.toDouble() * TOPIC_NODE_TURN).toFloat() * radius * (0.03f + outwardGlow * 0.025f),
     )
+    val path = organicOrbPath(
+        center = center,
+        radius = radius * (0.98f + outwardGlow * 0.04f),
+        phase = phase,
+        morphAmount = 0.035f + outwardGlow * 0.018f,
+    )
+    drawPath(
+        path = path,
+        brush = Brush.radialGradient(
+            colors = listOf(
+                primary.copy(alpha = (0.11f + outwardGlow * 0.06f) * alphaMultiplier),
+                secondary.copy(alpha = (0.075f + outwardGlow * 0.045f) * alphaMultiplier),
+                primary.copy(alpha = (0.026f + outwardGlow * 0.04f) * alphaMultiplier),
+                Color.Transparent,
+            ),
+            center = glowCenter,
+            radius = radius * (1.06f + outwardGlow * 0.36f),
+        ),
+    )
+    drawPath(
+        path = path,
+        color = primary.copy(alpha = (0.026f + outwardGlow * 0.035f) * alphaMultiplier),
+        style = Stroke(width = (0.85f + outwardGlow * 0.45f).dp.toPx(), cap = StrokeCap.Round),
+    )
+}
+
+private fun DrawScope.drawBreathingOuterAura(
+    center: Offset,
+    radius: Float,
+    primary: Color,
+    secondary: Color,
+    alphaMultiplier: Float,
+    breathProgress: Float,
+    phase: Float,
+) {
+    val breathWave = sin(breathProgress.toDouble() * TOPIC_NODE_TURN).toFloat()
+    val outwardGlow = ((breathWave + 1f) / 2f).coerceIn(0f, 1f)
+    val path = organicOrbPath(
+        center = center,
+        radius = radius * (0.94f + outwardGlow * 0.06f),
+        phase = phase + 0.27f,
+        morphAmount = 0.048f + outwardGlow * 0.024f,
+    )
+    drawPath(
+        path = path,
+        brush = Brush.radialGradient(
+            colors = listOf(
+                primary.copy(alpha = (0.045f + outwardGlow * 0.018f) * alphaMultiplier),
+                secondary.copy(alpha = (0.026f + outwardGlow * 0.028f) * alphaMultiplier),
+                primary.copy(alpha = (0.01f + outwardGlow * 0.026f) * alphaMultiplier),
+                Color.Transparent,
+            ),
+            center = center,
+            radius = radius * (0.82f + outwardGlow * 0.38f),
+        ),
+    )
+    drawPath(
+        path = path,
+        color = primary.copy(alpha = (0.012f + outwardGlow * 0.01f) * alphaMultiplier),
+        style = Stroke(width = (0.55f + outwardGlow * 0.18f).dp.toPx(), cap = StrokeCap.Round),
+    )
+}
+
+private fun organicOrbPath(
+    center: Offset,
+    radius: Float,
+    phase: Float,
+    morphAmount: Float,
+): Path {
+    val phaseRadians = phase.toDouble() * TOPIC_NODE_TURN
+    val orbPoints = gradientOrbPoints.mapIndexed { index, point ->
+        val angle = point.angle
+        val pointMorph = morphAmount * point.morphScale
+        val drift = sin(phaseRadians * 0.62 + index * 0.74).toFloat() * pointMorph
+        val counterDrift = cos(phaseRadians * 0.46 + index * 0.51).toFloat() * pointMorph * 0.48f
+        val shapeRadius = radius * (point.radius + drift)
+        Offset(
+            x = center.x + cos(angle).toFloat() * shapeRadius * (point.scaleX + counterDrift),
+            y = center.y + sin(angle).toFloat() * shapeRadius * (point.scaleY - counterDrift * 0.72f),
+        )
+    }
+    return Path().apply {
+        val first = orbPoints.first()
+        val last = orbPoints.last()
+        moveTo((last.x + first.x) / 2f, (last.y + first.y) / 2f)
+        orbPoints.forEachIndexed { index, point ->
+            val next = orbPoints[(index + 1) % orbPoints.size]
+            quadraticTo(
+                point.x,
+                point.y,
+                (point.x + next.x) / 2f,
+                (point.y + next.y) / 2f,
+            )
+        }
+        close()
+    }
 }
 
 private fun DrawScope.drawPlanGlyph(
@@ -625,25 +714,35 @@ private fun generationProgress(status: PlanStatus): Float {
 private fun stepSubtitle(step: Step): String = stringResource(step.subtitleRes)
 
 private data class AnimationProfile(
-    val waveCount: Int,
-    val waveReach: Float,
-    val waveStart: Float,
-    val waveAlpha: Float,
-    val ambientAlpha: Float,
     val coreScale: Float,
-    val scaleXBase: Float,
-    val scaleYBase: Float,
+    val orbScale: Float,
 )
 
 private val planAnimationProfile = AnimationProfile(
-    waveCount = 4,
-    waveReach = 0.48f,
-    waveStart = 1.38f,
-    waveAlpha = 0.024f,
-    ambientAlpha = 0.017f,
     coreScale = 0.126f,
-    scaleXBase = 0.64f,
-    scaleYBase = 0.36f,
+    orbScale = 3.45f,
+)
+
+private data class GradientOrbPoint(
+    val angle: Double,
+    val radius: Float,
+    val scaleX: Float,
+    val scaleY: Float,
+    val morphScale: Float = 1f,
+)
+
+private val gradientOrbPoints = listOf(
+    GradientOrbPoint(angle = -2.92, radius = 0.98f, scaleX = 1.0f, scaleY = 0.98f, morphScale = 0.72f),
+    GradientOrbPoint(angle = -2.34, radius = 0.96f, scaleX = 0.96f, scaleY = 1.04f, morphScale = 0.78f),
+    GradientOrbPoint(angle = -1.74, radius = 0.98f, scaleX = 0.98f, scaleY = 1.02f, morphScale = 0.38f),
+    GradientOrbPoint(angle = -1.14, radius = 0.99f, scaleX = 1.03f, scaleY = 0.98f, morphScale = 0.42f),
+    GradientOrbPoint(angle = -0.52, radius = 1.05f, scaleX = 1.12f, scaleY = 0.92f, morphScale = 0.92f),
+    GradientOrbPoint(angle = 0.1, radius = 1.08f, scaleX = 1.12f, scaleY = 0.92f),
+    GradientOrbPoint(angle = 0.72, radius = 0.98f, scaleX = 1.04f, scaleY = 1.02f),
+    GradientOrbPoint(angle = 1.34, radius = 1.04f, scaleX = 0.95f, scaleY = 1.08f),
+    GradientOrbPoint(angle = 1.96, radius = 0.98f, scaleX = 0.95f, scaleY = 1.05f),
+    GradientOrbPoint(angle = 2.58, radius = 1.05f, scaleX = 1.08f, scaleY = 0.95f),
+    GradientOrbPoint(angle = 3.06, radius = 0.99f, scaleX = 1.0f, scaleY = 0.96f, morphScale = 0.78f),
 )
 
 private const val PLAN_BREATH_DURATION_MILLIS = 2600
