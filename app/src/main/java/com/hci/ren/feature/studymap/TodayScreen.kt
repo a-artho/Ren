@@ -163,7 +163,7 @@ fun TodayScreen(
     var isDoneTodayExpanded by rememberSaveable(today) { mutableStateOf(true) }
     var isWontFitTodayExpanded by rememberSaveable(today) { mutableStateOf(true) }
     var isRemovedFromPlanExpanded by rememberSaveable(today) { mutableStateOf(true) }
-    var visibleWrapUpResult by rememberSaveable(today) { mutableStateOf<String?>(null) }
+    var visibleWrapUpMessage by rememberSaveable(today) { mutableStateOf<String?>(null) }
     var visibleNotice by rememberSaveable(today) { mutableStateOf<String?>(null) }
     val emptyState = todayPlan.emptyState(data, isTodayClosed)
     val canWrapUpToday = todayPlan.canWrapUpToday(isTodayClosed)
@@ -233,7 +233,7 @@ fun TodayScreen(
 
     LaunchedEffect(wrapUpResultMessage) {
         if (wrapUpResultMessage != null) {
-            visibleWrapUpResult = wrapUpResultMessage
+            visibleWrapUpMessage = wrapUpResultMessage
             onConsumeWrapUpResult()
         }
     }
@@ -351,14 +351,6 @@ fun TodayScreen(
                 }
             }
         }
-        if (isTodayClosed && visibleWrapUpResult != null) {
-            item(key = "today-wrap-up-result") {
-                TodayWrapUpResultCard(
-                    message = visibleWrapUpResult.orEmpty(),
-                    modifier = Modifier.animateItem(),
-                )
-            }
-        }
         if (visibleNotice != null) {
             item(key = "today-notice") {
                 TodayNoticeCard(
@@ -376,7 +368,7 @@ fun TodayScreen(
                         stringResource(R.string.today_rebalanced)
                     },
                     message = if (isTodayClosed) {
-                        stringResource(R.string.today_time_closed_message)
+                        visibleWrapUpMessage ?: stringResource(R.string.today_time_closed_message)
                     } else {
                         impactPreview?.message() ?: todayPlan.replanFeedbackMessage()
                     },
@@ -403,11 +395,13 @@ fun TodayScreen(
             todayPlan.removedFromPlanTasks.isEmpty() &&
             todayPlan.pullInCandidates.isEmpty()
         ) {
-            item(key = "today-empty") {
-                EmptyTodayCard(
-                    state = emptyState,
-                    modifier = Modifier.animateItem(),
-                )
+            if (!isTodayClosed) {
+                item(key = "today-empty") {
+                    EmptyTodayCard(
+                        state = emptyState,
+                        modifier = Modifier.animateItem(),
+                    )
+                }
             }
         } else {
             if (listedUpNextTasks.isNotEmpty()) {
@@ -1458,40 +1452,6 @@ private fun TodayImpactPreview.message(): String = when (status) {
     TodayImpactStatus.Tight -> stringResource(R.string.today_impact_tight)
     TodayImpactStatus.Crammed -> stringResource(R.string.today_impact_crammed)
     TodayImpactStatus.Overloaded -> stringResource(R.string.today_impact_overloaded)
-}
-
-@Composable
-private fun TodayWrapUpResultCard(
-    message: String,
-    modifier: Modifier = Modifier,
-) {
-    Card(
-        modifier = modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(18.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
-    ) {
-        Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp),
-        ) {
-            Text(
-                text = stringResource(R.string.today_wrap_up_result_title),
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onPrimaryContainer,
-            )
-            Text(
-                text = message,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onPrimaryContainer,
-            )
-            Text(
-                text = stringResource(R.string.wrap_up_source_material_message),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onPrimaryContainer,
-            )
-        }
-    }
 }
 
 @Composable

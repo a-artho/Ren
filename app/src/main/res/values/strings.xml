@@ -172,11 +172,10 @@
     <string name="wrap_up_today_confirm">Wrap up</string>
     <string name="ok">OK</string>
     <string name="wrap_up_summary_value">%1$d - %2$s</string>
-    <string name="today_wrap_up_result_title">Plan updated</string>
-    <string name="today_wrapped_up_message">Today wrapped up.</string>
-    <string name="today_wrapped_up_moved_message">Today wrapped up. Unfinished work moved forward.</string>
-    <string name="today_wrapped_up_saved_message">Today wrapped up. Changes saved.</string>
-    <string name="today_wrapped_up_saved_and_moved_message">Today wrapped up. Changes saved; unfinished work moved forward.</string>
+    <string name="today_wrapped_up_message">The active plan is updated.</string>
+    <string name="today_wrapped_up_moved_message">Unfinished work moved forward.</string>
+    <string name="today_wrapped_up_saved_message">Changes saved.</string>
+    <string name="today_wrapped_up_saved_and_moved_message">Changes saved; unfinished work moved forward.</string>
     <string name="no_tasks_today">No tasks today</string>
     <string name="no_tasks_today_message">Your plan has nothing scheduled for this study day.</string>
     <string name="today_closed_empty_title">Today is wrapped up</string>
