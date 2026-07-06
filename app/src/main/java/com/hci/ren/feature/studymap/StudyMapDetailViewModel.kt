@@ -198,14 +198,18 @@ class StudyMapDetailViewModel(application: Application) : AndroidViewModel(appli
     }
 
     fun reduceScope(strategy: ScopeReduction, selectedTopicIds: Set<String>) = mutate("Study map updated.") { project ->
-        val excludedIds = when (strategy) {
-            ScopeReduction.ChooseTopics -> project.plan.blocks
-                .filter { task -> selectedTopicIds.isNotEmpty() && task.topicIds.none(selectedTopicIds::contains) }
-                .mapTo(mutableSetOf()) { it.id }
-        }
+        if (selectedTopicIds.isEmpty()) return@mutate project
         val state = project.taskStateById.toMutableMap()
-        excludedIds.forEach { taskId ->
-            state[taskId] = StudyTaskState(status = StudyTaskStatus.ExcludedByUser)
+        when (strategy) {
+            ScopeReduction.ChooseTopics -> project.plan.blocks.forEach { task ->
+                if (task.topicIds.any(selectedTopicIds::contains)) {
+                    if (state[task.id]?.status == StudyTaskStatus.ExcludedByUser) {
+                        state.remove(task.id)
+                    }
+                } else {
+                    state[task.id] = StudyTaskState(status = StudyTaskStatus.ExcludedByUser)
+                }
+            }
         }
         project.copy(taskStateById = state)
     }

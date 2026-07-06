@@ -87,8 +87,6 @@ import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
-import androidx.compose.material3.SheetState
-import androidx.compose.material3.SheetValue
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -107,7 +105,6 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.blur
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
@@ -151,12 +148,12 @@ import com.hci.ren.feature.plangeneration.reservedStudyMinutes
 import com.hci.ren.ui.components.PlanFlowCircleAction
 import com.hci.ren.ui.components.PlanFlowControlHeight
 import com.hci.ren.ui.components.PlanLandingScaffold
-import com.hci.ren.ui.components.planFlowPrimaryButtonColors
 import com.hci.ren.ui.motion.RenMotionDurationMillis
 import com.hci.ren.ui.motion.RenMotionEasing
 import com.hci.ren.ui.motion.isReducedMotionEnabled
 import com.hci.ren.ui.motion.renFadeThroughTransform
 import com.hci.ren.ui.theme.RenContextMenuSurface
+import com.hci.ren.ui.theme.RenGreenDark
 import com.hci.ren.ui.theme.renCardBorderColor
 import com.hci.ren.ui.theme.renCardBorderStroke
 import com.hci.ren.ui.theme.renCardContainerColor
@@ -174,7 +171,8 @@ private enum class PlanEditDailyTimeChoice { FitTwoLeaves, FitFourLeaves, Custom
 
 private const val UnscheduledAutoCollapseLeafThreshold = 3
 
-private val PlanEditSheetMenuHeight = 468.dp
+private val PlanEditSheetMenuHeight = 444.dp
+private val PlanEditSheetDefaultHeight = 468.dp
 private val PlanEditSheetTopicHeight = 640.dp
 private val PlanEditMenuHeaderHeight = 76.dp
 private val PlanEditActionRowHeight = 68.dp
@@ -208,29 +206,17 @@ fun StudyMapScreen(
     var selectedViewName by rememberSaveable { mutableStateOf(StudyMapView.Schedule.name) }
     val selectedView = StudyMapView.valueOf(selectedViewName)
     var adjustment by remember { mutableStateOf<AdjustmentSheet?>(null) }
-    var modalBackgroundActive by remember { mutableStateOf(false) }
     var deleteDialogOpen by remember { mutableStateOf(false) }
     var autoCloseExpandedDays by rememberSaveable { mutableStateOf(true) }
     var collapseScheduleKey by rememberSaveable { mutableIntStateOf(0) }
 
     fun showAdjustment(sheet: AdjustmentSheet) {
-        modalBackgroundActive = true
         adjustment = sheet
     }
 
     fun dismissAdjustment() {
-        modalBackgroundActive = false
         adjustment = null
     }
-
-    val backgroundBlur by animateDpAsState(
-        targetValue = if (modalBackgroundActive) 8.dp else 0.dp,
-        animationSpec = tween(
-            durationMillis = RenMotionDurationMillis,
-            easing = RenMotionEasing,
-        ),
-        label = "study-map-modal-background-blur",
-    )
 
     BackHandler(onBack = onBack)
 
@@ -264,9 +250,7 @@ fun StudyMapScreen(
     }
 
     Scaffold(
-        modifier = modifier
-            .fillMaxSize()
-            .blur(backgroundBlur),
+        modifier = modifier.fillMaxSize(),
         containerColor = MaterialTheme.colorScheme.background,
         snackbarHost = { SnackbarHost(snackbar) },
         topBar = {
@@ -358,9 +342,8 @@ fun StudyMapScreen(
             resetOffsetHours = preferences.studyDayResetOffsetHours,
             currentDailyMinutes = data.dailyMinutes,
             leafMinutes = suggestedLeafMinutes(plan.blocks),
-            plan = plan,
+            plan = data.plan,
             onDismiss = { dismissAdjustment() },
-            onSheetMotionActiveChange = { modalBackgroundActive = it },
             onRename = { name ->
                 onRenamePlan(name)
                 dismissAdjustment()
@@ -811,41 +794,6 @@ private fun RealismWarningPanel(realism: PlanRealism, onAction: (AdjustmentSheet
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun rememberBlurSyncedSheetState(
-    onSheetMotionActiveChange: (Boolean) -> Unit,
-    skipPartiallyExpanded: Boolean = false,
-): SheetState {
-    var hasStartedShowing by remember { mutableStateOf(false) }
-    val sheetState = rememberModalBottomSheetState(
-        skipPartiallyExpanded = skipPartiallyExpanded,
-        confirmValueChange = { target ->
-            onSheetMotionActiveChange(target != SheetValue.Hidden)
-            true
-        },
-    )
-
-    LaunchedEffect(Unit) {
-        onSheetMotionActiveChange(true)
-    }
-    LaunchedEffect(sheetState.currentValue, sheetState.targetValue) {
-        val isEnteringOrVisible = sheetState.currentValue != SheetValue.Hidden ||
-            sheetState.targetValue != SheetValue.Hidden
-        if (isEnteringOrVisible) {
-            hasStartedShowing = true
-        }
-        when {
-            hasStartedShowing && sheetState.targetValue == SheetValue.Hidden ->
-                onSheetMotionActiveChange(false)
-            sheetState.targetValue != SheetValue.Hidden ->
-                onSheetMotionActiveChange(true)
-        }
-    }
-
-    return sheetState
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
 private fun PlanEditSheet(
     currentName: String,
     resetOffsetHours: Int,
@@ -853,7 +801,6 @@ private fun PlanEditSheet(
     leafMinutes: Int,
     plan: GeneratedStudyPlan,
     onDismiss: () -> Unit,
-    onSheetMotionActiveChange: (Boolean) -> Unit,
     onRename: (String) -> Unit,
     onApplyDeadline: (epochMillis: Long) -> Unit,
     onApplyDailyTime: (Int) -> Unit,
@@ -863,17 +810,13 @@ private fun PlanEditSheet(
     var pageName by rememberSaveable { mutableStateOf(PlanEditPage.Menu.name) }
     var showCustomDatePicker by rememberSaveable { mutableStateOf(false) }
     val page = PlanEditPage.valueOf(pageName)
-    val sheetHeight by animateDpAsState(
-        targetValue = when (page) {
-            PlanEditPage.Scope -> PlanEditSheetTopicHeight
-            else -> PlanEditSheetMenuHeight
-        },
-        animationSpec = tween(durationMillis = RenMotionDurationMillis, easing = RenMotionEasing),
-        label = "plan-edit-sheet-height",
-    )
+    val sheetHeight = when (page) {
+        PlanEditPage.Menu -> PlanEditSheetMenuHeight
+        PlanEditPage.Scope -> PlanEditSheetTopicHeight
+        else -> PlanEditSheetDefaultHeight
+    }
     val reducedMotion = isReducedMotionEnabled()
-    val sheetState = rememberBlurSyncedSheetState(
-        onSheetMotionActiveChange = onSheetMotionActiveChange,
+    val sheetState = rememberModalBottomSheetState(
         skipPartiallyExpanded = true,
     )
 
@@ -881,7 +824,7 @@ private fun PlanEditSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
         containerColor = PlanEditSheetSurface,
-        scrimColor = Color.Transparent,
+        scrimColor = MaterialTheme.colorScheme.scrim.copy(alpha = 0.28f),
         tonalElevation = 0.dp,
         dragHandle = { RenSheetHandle() },
     ) {
@@ -1107,8 +1050,7 @@ private fun PlanEditMenuContent(
                 onNavigate(PlanEditPage.Scope)
             }
         }
-        Spacer(Modifier.weight(1f))
-        Spacer(Modifier.height(10.dp))
+        Spacer(Modifier.height(18.dp))
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.Center,
@@ -1420,13 +1362,21 @@ private fun PlanEditScopeContent(
     modifier: Modifier = Modifier,
     onApply: (ScopeReduction, Set<String>) -> Unit,
 ) {
-    val topics = remember(plan.topics) {
+    val knownTopicIds = remember(plan.topics) { plan.topics.mapTo(mutableSetOf()) { it.id } }
+    val activeTopicIds = remember(plan.blocks, knownTopicIds) {
+        plan.blocks
+            .filterNot { it.status == StudyTaskStatus.ExcludedByUser }
+            .flatMap { it.topicIds }
+            .filter { it in knownTopicIds }
+            .toSet()
+    }
+    val topics = remember(plan.topics, activeTopicIds) {
         mutableStateListOf<String>().also { selected ->
-            selected.addAll(plan.topics.map { it.id })
+            selected.addAll(activeTopicIds)
         }
     }
     val topicScrollState = rememberScrollState()
-    val canApply = topics.isNotEmpty() && topics.size < plan.topics.size
+    val canApply = topics.isNotEmpty() && topics.toSet() != activeTopicIds
 
     fun setTopic(topicId: String, checked: Boolean) {
         if (checked) {
@@ -1554,7 +1504,12 @@ private fun PlanEditPrimaryAction(
         modifier = Modifier
             .fillMaxWidth()
             .height(PlanFlowControlHeight),
-        colors = planFlowPrimaryButtonColors(),
+        colors = ButtonDefaults.buttonColors(
+            containerColor = RenGreenDark,
+            contentColor = Color.White,
+            disabledContainerColor = MaterialTheme.colorScheme.surfaceVariant,
+            disabledContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+        ),
     ) {
         Text(
             stringResource(R.string.apply_changes),
