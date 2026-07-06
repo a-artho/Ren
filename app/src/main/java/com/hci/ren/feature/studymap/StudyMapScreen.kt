@@ -769,11 +769,25 @@ private fun RealismWarningPanel(realism: PlanRealism, onAction: (AdjustmentSheet
     Card(
         colors = CardDefaults.cardColors(containerColor = container),
         shape = RoundedCornerShape(18.dp),
+        border = realismWarningBorder(realism.status),
     ) {
-        Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Default.WarningAmber, contentDescription = null, tint = accent)
-                Spacer(Modifier.width(8.dp))
+                Surface(
+                    modifier = Modifier.size(34.dp),
+                    shape = RoundedCornerShape(12.dp),
+                    color = accent.copy(alpha = 0.14f),
+                    contentColor = accent,
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            imageVector = Icons.Default.WarningAmber,
+                            contentDescription = null,
+                            modifier = Modifier.size(19.dp),
+                        )
+                    }
+                }
+                Spacer(Modifier.width(10.dp))
                 Text(
                     realismWarningTitle(realism.status),
                     style = MaterialTheme.typography.titleMedium,
@@ -786,8 +800,18 @@ private fun RealismWarningPanel(realism: PlanRealism, onAction: (AdjustmentSheet
                 style = MaterialTheme.typography.bodyMedium,
                 color = content,
             )
-            AdjustmentAction(R.string.edit_plan, R.string.edit_plan_sheet_subtitle) { onAction(AdjustmentSheet.PlanEdit) }
-            AdjustmentAction(R.string.continue_anyway, R.string.continue_anyway_short_subtitle) { onAction(AdjustmentSheet.Continue) }
+            AdjustmentAction(
+                title = R.string.edit_plan,
+                subtitle = R.string.edit_plan_sheet_subtitle,
+                icon = Icons.Default.Edit,
+                accent = accent,
+            ) { onAction(AdjustmentSheet.PlanEdit) }
+            AdjustmentAction(
+                title = R.string.continue_anyway,
+                subtitle = R.string.continue_anyway_short_subtitle,
+                icon = Icons.Default.CheckCircle,
+                accent = accent,
+            ) { onAction(AdjustmentSheet.Continue) }
         }
     }
 }
@@ -1653,16 +1677,49 @@ private fun PlanEditDeleteAction(
 }
 
 @Composable
-private fun AdjustmentAction(title: Int, subtitle: Int, onClick: () -> Unit) {
+private fun AdjustmentAction(
+    title: Int,
+    subtitle: Int,
+    icon: ImageVector,
+    accent: Color,
+    onClick: () -> Unit,
+) {
     Surface(
         onClick = onClick,
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(12.dp),
         color = MaterialTheme.colorScheme.surface.copy(alpha = 0.7f),
     ) {
-        Column(Modifier.padding(12.dp)) {
-            Text(stringResource(title), style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
-            Text(stringResource(subtitle), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Row(
+            modifier = Modifier.padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                modifier = Modifier.size(17.dp),
+                tint = accent,
+            )
+            Spacer(Modifier.width(10.dp))
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(2.dp),
+            ) {
+                Text(
+                    text = stringResource(title),
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    text = stringResource(subtitle),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
         }
     }
 }
@@ -2634,60 +2691,55 @@ private fun UnscheduledWorkCard(
                 .animateContentSize(),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Surface(
-                onClick = {
-                    val nextExpanded = !detailsExpanded
-                    detailsExpanded = nextExpanded
-                    if (!nextExpanded) expandedItemKey = null
-                },
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(12.dp),
-                color = Color.Transparent,
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable(role = Role.Button) {
+                        val nextExpanded = !detailsExpanded
+                        detailsExpanded = nextExpanded
+                        if (!nextExpanded) expandedItemKey = null
+                    },
+                verticalArrangement = Arrangement.spacedBy(6.dp),
             ) {
-                Column(
+                Row(
                     modifier = Modifier.fillMaxWidth(),
-                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Text(
-                            text = stringResource(R.string.unscheduled_tasks),
-                            style = MaterialTheme.typography.titleSmall,
-                            fontWeight = FontWeight.Bold,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier
-                                .weight(1f)
-                                .semantics { heading() },
-                        )
-                        Spacer(Modifier.width(12.dp))
-                        Text(
-                            text = meta,
-                            modifier = Modifier.widthIn(max = 148.dp),
-                            style = MaterialTheme.typography.labelMedium,
-                            fontWeight = FontWeight.Medium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.86f),
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                        Spacer(Modifier.width(8.dp))
-                        Icon(
-                            imageVector = if (detailsExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
-                            contentDescription = null,
-                            modifier = Modifier.size(18.dp),
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.72f),
-                        )
-                    }
                     Text(
-                        text = stringResource(R.string.unscheduled_explanation),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.82f),
-                        maxLines = 2,
+                        text = stringResource(R.string.unscheduled_tasks),
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier
+                            .weight(1f)
+                            .semantics { heading() },
+                    )
+                    Spacer(Modifier.width(12.dp))
+                    Text(
+                        text = meta,
+                        modifier = Modifier.widthIn(max = 148.dp),
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.Medium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.86f),
+                        maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
+                    Spacer(Modifier.width(8.dp))
+                    Icon(
+                        imageVector = if (detailsExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.72f),
+                    )
                 }
+                Text(
+                    text = stringResource(R.string.unscheduled_explanation),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.82f),
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
             }
 
             if (detailsExpanded) {
@@ -3754,7 +3806,7 @@ private fun realismColor(status: PlanRealismStatus) = when (status) {
     PlanRealismStatus.OnTrack -> MaterialTheme.colorScheme.primary
     PlanRealismStatus.Tight -> MaterialTheme.colorScheme.tertiary
     PlanRealismStatus.Crammed -> MaterialTheme.colorScheme.tertiary
-    PlanRealismStatus.Overloaded -> MaterialTheme.colorScheme.tertiary
+    PlanRealismStatus.Overloaded -> MaterialTheme.colorScheme.error
 }
 
 @Composable
@@ -3770,7 +3822,7 @@ private fun realismContainer(status: PlanRealismStatus) = when (status) {
     PlanRealismStatus.OnTrack -> MaterialTheme.colorScheme.primaryContainer
     PlanRealismStatus.Tight -> MaterialTheme.colorScheme.tertiaryContainer
     PlanRealismStatus.Crammed -> MaterialTheme.colorScheme.tertiaryContainer
-    PlanRealismStatus.Overloaded -> MaterialTheme.colorScheme.tertiaryContainer
+    PlanRealismStatus.Overloaded -> MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.24f)
 }
 
 @Composable
@@ -3778,7 +3830,13 @@ private fun realismContent(status: PlanRealismStatus) = when (status) {
     PlanRealismStatus.OnTrack -> MaterialTheme.colorScheme.onPrimaryContainer
     PlanRealismStatus.Tight -> MaterialTheme.colorScheme.onTertiaryContainer
     PlanRealismStatus.Crammed -> MaterialTheme.colorScheme.onTertiaryContainer
-    PlanRealismStatus.Overloaded -> MaterialTheme.colorScheme.onTertiaryContainer
+    PlanRealismStatus.Overloaded -> MaterialTheme.colorScheme.onErrorContainer
+}
+
+@Composable
+private fun realismWarningBorder(status: PlanRealismStatus): BorderStroke? = when (status) {
+    PlanRealismStatus.Overloaded -> BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.38f))
+    else -> null
 }
 
 @Composable
