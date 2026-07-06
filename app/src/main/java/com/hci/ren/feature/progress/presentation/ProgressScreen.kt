@@ -22,6 +22,8 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.BarChart
+import androidx.compose.material.icons.filled.DateRange
+import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -36,6 +38,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringArrayResource
 import androidx.compose.ui.res.stringResource
@@ -45,9 +48,12 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.hci.ren.feature.progress.StudyConsistencyDay
+import com.hci.ren.feature.progress.StudyConsistencySummary
 import com.hci.ren.R
 import com.hci.ren.feature.progress.WeeklyFocusDay
 import com.hci.ren.feature.progress.WeeklyFocusSummary
+import com.hci.ren.feature.progress.buildStudyConsistencySummary
 import com.hci.ren.feature.progress.buildWeeklyFocusSummary
 import com.hci.ren.feature.studymap.StudyProject
 
@@ -55,8 +61,14 @@ import com.hci.ren.feature.studymap.StudyProject
 fun ProgressScreen(
     project: StudyProject,
     modifier: Modifier = Modifier,
+    today: String? = null,
 ) {
-    val summary = remember(project) { buildWeeklyFocusSummary(project) }
+    val weeklySummary = remember(project, today) {
+        if (today == null) buildWeeklyFocusSummary(project) else buildWeeklyFocusSummary(project, today)
+    }
+    val consistencySummary = remember(project, today) {
+        if (today == null) buildStudyConsistencySummary(project) else buildStudyConsistencySummary(project, today)
+    }
 
     LazyColumn(
         modifier = modifier
@@ -79,7 +91,10 @@ fun ProgressScreen(
             )
         }
         item(key = "weekly-focus") {
-            WeeklyFocusCard(summary = summary)
+            WeeklyFocusCard(summary = weeklySummary)
+        }
+        item(key = "study-consistency") {
+            StudyConsistencyCard(summary = consistencySummary)
         }
     }
 }
@@ -439,6 +454,262 @@ private fun FocusBar(
                 ),
         )
     }
+}
+
+@Composable
+private fun StudyConsistencyCard(
+    summary: StudyConsistencySummary,
+    modifier: Modifier = Modifier,
+) {
+    val mostConsistentLabel = summary.mostConsistentWeeksAgo?.let {
+        consistencyWeekLabel(weeksAgo = it, sentenceCase = true)
+    } ?: stringResource(R.string.progress_consistency_no_data)
+    val chartDescription = stringResource(
+        R.string.progress_consistency_chart_description,
+        summary.currentStreakDays,
+        mostConsistentLabel,
+        summary.activeDays,
+        summary.weekCount,
+    )
+    Surface(
+        modifier = modifier
+            .fillMaxWidth()
+            .testTag("study-consistency-card")
+            .semantics { contentDescription = chartDescription },
+        shape = RoundedCornerShape(24.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerLowest,
+        tonalElevation = 0.dp,
+        border = androidx.compose.foundation.BorderStroke(
+            1.dp,
+            MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.84f),
+        ),
+    ) {
+        Column(
+            modifier = Modifier.padding(22.dp),
+            verticalArrangement = Arrangement.spacedBy(20.dp),
+        ) {
+            StudyConsistencyHeader()
+            BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+                if (maxWidth >= 520.dp) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(22.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        StudyConsistencyStats(
+                            summary = summary,
+                            mostConsistentLabel = mostConsistentLabel,
+                            modifier = Modifier.width(164.dp),
+                        )
+                        StudyConsistencyHeatmap(
+                            summary = summary,
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
+                } else {
+                    Column(verticalArrangement = Arrangement.spacedBy(18.dp)) {
+                        StudyConsistencyStats(
+                            summary = summary,
+                            mostConsistentLabel = mostConsistentLabel,
+                        )
+                        StudyConsistencyHeatmap(summary = summary)
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun StudyConsistencyHeader() {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            modifier = Modifier
+                .size(36.dp)
+                .clip(RoundedCornerShape(12.dp))
+                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.11f)),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                imageVector = Icons.Default.DateRange,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(23.dp),
+            )
+        }
+        Text(
+            text = stringResource(R.string.progress_consistency_title),
+            style = MaterialTheme.typography.titleLarge,
+            color = MaterialTheme.colorScheme.onSurface,
+            fontWeight = FontWeight.SemiBold,
+        )
+    }
+}
+
+@Composable
+private fun StudyConsistencyStats(
+    summary: StudyConsistencySummary,
+    mostConsistentLabel: String,
+    modifier: Modifier = Modifier,
+) {
+    Column(
+        modifier = modifier,
+        verticalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
+        Column {
+            Text(
+                text = summary.currentStreakDays.toString(),
+                style = MaterialTheme.typography.displayMedium,
+                color = MaterialTheme.colorScheme.primary,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+            )
+            Text(
+                text = stringResource(R.string.progress_day_streak),
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 1,
+            )
+        }
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(9.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(22.dp)
+                    .clip(RoundedCornerShape(11.dp))
+                    .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.18f)),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Star,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(15.dp),
+                )
+            }
+            Text(
+                text = if (summary.mostConsistentWeeksAgo == null) {
+                    stringResource(R.string.progress_consistency_empty)
+                } else {
+                    stringResource(R.string.progress_most_consistent_period, mostConsistentLabel)
+                },
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
+@Composable
+private fun StudyConsistencyHeatmap(
+    summary: StudyConsistencySummary,
+    modifier: Modifier = Modifier,
+) {
+    val dayLabels = stringArrayResource(R.array.progress_weekday_short_labels)
+    BoxWithConstraints(modifier = modifier.fillMaxWidth()) {
+        val labelWidth = 86.dp
+        val rowGap = 9.dp
+        val cellGap = 7.dp
+        val rawCellSize = (maxWidth - labelWidth - rowGap - (cellGap * 6)) / 7
+        val cellSize = when {
+            rawCellSize < 10.dp -> 10.dp
+            rawCellSize > 34.dp -> 34.dp
+            else -> rawCellSize
+        }
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(rowGap),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Row(horizontalArrangement = Arrangement.spacedBy(cellGap)) {
+                    dayLabels.take(7).forEach { label ->
+                        Text(
+                            text = label,
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.width(cellSize),
+                            maxLines = 1,
+                            overflow = TextOverflow.Clip,
+                        )
+                    }
+                }
+                Spacer(Modifier.width(labelWidth))
+            }
+            summary.weeks.forEach { week ->
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(rowGap),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(cellGap)) {
+                        week.days.forEachIndexed { dayIndex, day ->
+                            StudyConsistencyCell(
+                                day = day,
+                                modifier = Modifier
+                                    .size(cellSize)
+                                    .testTag("consistency-cell-${week.weeksAgo}-$dayIndex"),
+                            )
+                        }
+                    }
+                    Text(
+                        text = consistencyWeekLabel(week.weeksAgo),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.width(labelWidth),
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun StudyConsistencyCell(
+    day: StudyConsistencyDay,
+    modifier: Modifier = Modifier,
+) {
+    val color = if (day.hasFocus) {
+        MaterialTheme.colorScheme.primary.copy(alpha = 0.34f + (day.completionRatio * 0.54f))
+    } else {
+        MaterialTheme.colorScheme.onSurface.copy(alpha = 0.07f)
+    }
+    Box(
+        modifier = modifier
+            .clip(RoundedCornerShape(7.dp))
+            .background(color),
+    )
+}
+
+@Composable
+private fun consistencyWeekLabel(
+    weeksAgo: Int,
+    sentenceCase: Boolean = false,
+): String = when (weeksAgo) {
+    0 -> stringResource(
+        if (sentenceCase) {
+            R.string.progress_consistency_this_week_sentence
+        } else {
+            R.string.progress_consistency_this_week
+        },
+    )
+    1 -> stringResource(
+        if (sentenceCase) {
+            R.string.progress_consistency_last_week_sentence
+        } else {
+            R.string.progress_consistency_last_week
+        },
+    )
+    else -> stringResource(R.string.progress_consistency_weeks_ago, weeksAgo)
 }
 
 @Composable

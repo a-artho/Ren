@@ -74,6 +74,67 @@ class ProgressModelsTest {
         assertEquals(2, summary.totalFocusMinutes)
     }
 
+    @Test fun studyConsistencySummaryBuildsFourWeekHeatmapFromFocusHistory() {
+        val summary = buildStudyConsistencySummary(
+            project(
+                dailyMinutes = 120,
+                focusHistory = mapOf(
+                    "2026-07-07" to listOf(focusRecord(focusSeconds = 3_600)),
+                    "2026-07-08" to listOf(focusRecord(focusSeconds = 3_600)),
+                    "2026-07-09" to listOf(focusRecord(focusSeconds = 7_200)),
+                    "2026-06-30" to listOf(focusRecord(focusSeconds = 1_800)),
+                    "2026-07-01" to listOf(focusRecord(focusSeconds = 1_800)),
+                    "2026-07-03" to listOf(focusRecord(focusSeconds = 1_800)),
+                    "2026-07-05" to listOf(focusRecord(focusSeconds = 1_800)),
+                    "2026-06-23" to listOf(focusRecord(focusSeconds = 3_600)),
+                ),
+            ),
+            today = "2026-07-09",
+        )
+
+        assertEquals(4, summary.weeks.size)
+        assertEquals("2026-07-06", summary.weeks[0].days.first().date)
+        assertEquals("2026-06-29", summary.weeks[1].days.first().date)
+        assertEquals(3, summary.weeks[0].activeDays)
+        assertEquals(4, summary.weeks[1].activeDays)
+        assertEquals(8, summary.activeDays)
+        assertEquals(3, summary.currentStreakDays)
+        assertEquals(1, summary.mostConsistentWeeksAgo)
+        assertEquals(120, summary.weeks[0].days[3].focusMinutes)
+        assertEquals(1f, summary.weeks[0].days[3].completionRatio, 0.001f)
+        assertEquals(0f, summary.weeks[0].days[0].completionRatio, 0.001f)
+    }
+
+    @Test fun studyConsistencySummaryUsesTodayForCurrentStreak() {
+        val summary = buildStudyConsistencySummary(
+            project(
+                dailyMinutes = 120,
+                focusHistory = mapOf(
+                    "2026-07-07" to listOf(focusRecord(focusSeconds = 3_600)),
+                    "2026-07-08" to listOf(focusRecord(focusSeconds = 3_600)),
+                ),
+            ),
+            today = "2026-07-09",
+        )
+
+        assertEquals(0, summary.currentStreakDays)
+        assertEquals(0, summary.mostConsistentWeeksAgo)
+    }
+
+    @Test fun studyConsistencySummaryHasNoMostConsistentWeekWithoutFocusData() {
+        val summary = buildStudyConsistencySummary(
+            project(
+                dailyMinutes = 120,
+                focusHistory = emptyMap(),
+            ),
+            today = "2026-07-09",
+        )
+
+        assertEquals(0, summary.currentStreakDays)
+        assertEquals(0, summary.activeDays)
+        assertEquals(null, summary.mostConsistentWeeksAgo)
+    }
+
     private fun focusRecord(focusSeconds: Int) = FocusSessionRecord(
         taskId = "task",
         plannedFocusMinutes = 60,
