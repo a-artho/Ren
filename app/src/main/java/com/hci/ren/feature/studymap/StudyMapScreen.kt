@@ -3578,7 +3578,7 @@ private fun IntroSceneBackground(
         drawRect(Color.Black)
 
         val planetRadius = size.width * 0.54f
-        val planetCenter = Offset(size.width * 0.98f, size.height * 0.32f)
+        val planetCenter = Offset(size.width * 0.98f, size.height * 0.29f)
         val lightEntry = Offset(
             planetCenter.x - planetRadius * 1.08f,
             planetCenter.y - planetRadius * 0.62f,
@@ -3654,7 +3654,7 @@ private fun StudyPlanIntroContent(
             ),
             modifier = Modifier
                 .align(Alignment.BottomStart)
-                .padding(bottom = 336.dp)
+                .padding(bottom = 333.dp)
                 .widthIn(max = 340.dp),
         )
     }
@@ -3681,9 +3681,9 @@ private fun IntroActionGuide(
                     Color.Transparent,
                 ),
                 center = actionCenter,
-                radius = 216.dp.toPx(),
+                radius = 316.dp.toPx(),
             ),
-            radius = 216.dp.toPx(),
+            radius = 316.dp.toPx(),
             center = actionCenter,
         )
 
