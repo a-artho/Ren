@@ -38,7 +38,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
@@ -163,14 +163,10 @@ fun PlanFlowIntro(
 
 @Composable
 fun planFlowPrimaryButtonColors(): ButtonColors = ButtonDefaults.buttonColors(
-    containerColor = if (MaterialTheme.colorScheme.background.luminance() < 0.5f) {
-        RenGreenDark
-    } else {
-        MaterialTheme.colorScheme.primary
-    },
-    contentColor = MaterialTheme.colorScheme.onPrimary,
+    containerColor = planFlowActionColor(),
+    contentColor = Color.White,
     disabledContainerColor = MaterialTheme.colorScheme.surfaceVariant,
-    disabledContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+    disabledContentColor = planFlowDisabledContentColor(),
 )
 
 @Composable
@@ -221,7 +217,7 @@ fun PlanFlowCircleAction(
         modifier = modifier.size(60.dp),
         shape = CircleShape,
         color = if (enabled) planFlowActionColor() else MaterialTheme.colorScheme.surfaceVariant,
-        contentColor = if (enabled) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
+        contentColor = if (enabled) Color.White else planFlowDisabledContentColor(),
     ) {
         Box(contentAlignment = Alignment.Center) {
             Icon(
@@ -234,12 +230,11 @@ fun PlanFlowCircleAction(
 }
 
 @Composable
-fun planFlowActionColor() =
-    if (MaterialTheme.colorScheme.background.luminance() < 0.5f) {
-        RenGreenDark
-    } else {
-        MaterialTheme.colorScheme.primary
-    }
+fun planFlowActionColor() = RenGreenDark
+
+@Composable
+private fun planFlowDisabledContentColor() =
+    MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.58f)
 
 @Composable
 fun PlanFlowTopRow(

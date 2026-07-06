@@ -10,9 +10,11 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -66,6 +68,8 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.vector.path
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -94,6 +98,8 @@ import com.hci.ren.ui.motion.renFadeThroughTransform
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
+private const val PlanSetupKeyboardDismissDelayMillis = 180
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PlanSetupScreen(
@@ -115,6 +121,9 @@ fun PlanSetupScreen(
     var isDatePickerOpen by rememberSaveable { mutableStateOf(false) }
     var isNavigationLocked by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
+    val focusManager = LocalFocusManager.current
+    val density = LocalDensity.current
+    val isKeyboardVisible = WindowInsets.ime.getBottom(density) > 0
     val selectableDates = remember(state.studyDayResetOffsetHours) {
         object : SelectableDates {
             override fun isSelectableDate(utcTimeMillis: Long): Boolean =
@@ -126,11 +135,20 @@ fun PlanSetupScreen(
         }
     }
     val datePickerState = rememberDatePickerState(selectableDates = selectableDates)
-    fun navigateOnce(action: () -> Unit) {
+    fun navigateOnce(
+        action: () -> Unit,
+        dismissKeyboardFirst: Boolean = false,
+    ) {
         if (isNavigationLocked) return
         isNavigationLocked = true
-        action()
+        if (dismissKeyboardFirst) {
+            focusManager.clearFocus(force = true)
+        }
         scope.launch {
+            if (dismissKeyboardFirst && isKeyboardVisible) {
+                delay(PlanSetupKeyboardDismissDelayMillis.toLong())
+            }
+            action()
             delay(RenFadeThroughDurationMillis.toLong())
             isNavigationLocked = false
         }
@@ -144,8 +162,8 @@ fun PlanSetupScreen(
         bottomContent = {
             PlanSetupPrimaryButton(
                 state = state,
-                onNext = { navigateOnce(onNext) },
-                onGeneratePlan = { navigateOnce(onGeneratePlan) },
+                onNext = { navigateOnce(onNext, dismissKeyboardFirst = true) },
+                onGeneratePlan = { navigateOnce(onGeneratePlan, dismissKeyboardFirst = true) },
             )
         },
     ) {
