@@ -106,6 +106,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathEffect
@@ -132,6 +133,7 @@ import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.hci.ren.R
 import com.hci.ren.feature.pdfupload.presentation.PlanSetupSubmission
 import com.hci.ren.feature.pdfupload.presentation.StudyDeadline
@@ -153,6 +155,7 @@ import com.hci.ren.ui.motion.RenMotionEasing
 import com.hci.ren.ui.motion.isReducedMotionEnabled
 import com.hci.ren.ui.motion.renFadeThroughTransform
 import com.hci.ren.ui.theme.RenContextMenuSurface
+import com.hci.ren.ui.theme.RenGreen
 import com.hci.ren.ui.theme.RenGreenDark
 import com.hci.ren.ui.theme.renCardBorderColor
 import com.hci.ren.ui.theme.renCardBorderStroke
@@ -3478,6 +3481,9 @@ private fun EmptyStudyMap(onCreateProject: () -> Unit, snackbar: SnackbarHostSta
         modifier = modifier,
     ) {
         Box(Modifier.fillMaxSize()) {
+            IntroSceneBackground(
+                modifier = Modifier.matchParentSize(),
+            )
             Column(
                 modifier = Modifier.fillMaxSize(),
             ) {
@@ -3494,34 +3500,112 @@ private fun EmptyStudyMap(onCreateProject: () -> Unit, snackbar: SnackbarHostSta
                     progress = effectiveProgress,
                     reducedMotion = reducedMotion,
                 )
+                Spacer(
+                    modifier = Modifier.align(Alignment.CenterHorizontally),
+                )
             }
-            SnackbarHost(
-                hostState = snackbar,
-                modifier = Modifier.align(Alignment.BottomCenter),
-            )
         }
     }
 }
 
 @Composable
 private fun AnimatedEmptyStudyMapHeader(progress: Float) {
-    val baseColor = MaterialTheme.colorScheme.onBackground
     val headerText = stringResource(R.string.empty_study_plan_header)
-    Text(
-        text = buildAnnotatedString {
-            append(headerText)
-            repeat(3) { index ->
-                withStyle(SpanStyle(color = baseColor.copy(alpha = headlineDotAlpha(progress, index)))) {
-                    append(".")
-                }
-            }
-        },
-        style = MaterialTheme.typography.headlineSmall,
-        color = baseColor,
-        fontWeight = FontWeight.Bold,
-        maxLines = 1,
-        overflow = TextOverflow.Ellipsis,
-    )
+    val splitMarker = "? "
+    val titleLine = if (headerText.contains(splitMarker)) {
+        headerText.substringBefore(splitMarker) + "?"
+    } else {
+        headerText
+    }
+    val subtitleLine = if (headerText.contains(splitMarker)) {
+        headerText.substringAfter(splitMarker)
+    } else {
+        ""
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = 32.dp)
+            .semantics { heading() },
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        Text(
+            text = titleLine,
+            style = MaterialTheme.typography.displaySmall.copy(
+                fontSize = 40.sp,
+                lineHeight = 45.sp,
+            ),
+            color = Color.White,
+            fontWeight = FontWeight.Bold,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+        if (subtitleLine.isNotBlank()) {
+            Text(
+                text = buildAnnotatedString {
+                    append(subtitleLine)
+                    repeat(3) { index ->
+                        withStyle(
+                            SpanStyle(
+                                color = Color.White.copy(
+                                    alpha = 0.44f * headlineDotAlpha(progress, index),
+                                ),
+                            ),
+                        ) {
+                            append(".")
+                        }
+                    }
+                },
+                style = MaterialTheme.typography.displaySmall.copy(
+                    fontSize = 29.sp,
+                    lineHeight = 35.sp,
+                ),
+                color = Color.White.copy(alpha = 0.44f),
+                fontWeight = FontWeight.Bold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+    }
+}
+
+@Composable
+private fun IntroSceneBackground(
+    modifier: Modifier = Modifier,
+) {
+    Canvas(modifier = modifier) {
+        drawRect(Color.Black)
+
+        val planetRadius = size.width * 0.54f
+        val planetCenter = Offset(size.width * 0.98f, size.height * 0.32f)
+        val lightEntry = Offset(
+            planetCenter.x - planetRadius * 1.08f,
+            planetCenter.y - planetRadius * 0.62f,
+        )
+        val shadowSide = Offset(
+            planetCenter.x + planetRadius * 0.36f,
+            planetCenter.y + planetRadius * 0.18f,
+        )
+
+        drawCircle(
+            brush = Brush.linearGradient(
+                colors = listOf(
+                    Color.White.copy(alpha = 0.50f),
+                    RenGreen.copy(alpha = 0.40f),
+                    RenGreen.copy(alpha = 0.10f),
+                    Color.Black,
+                ),
+                start = lightEntry,
+                end = Offset(
+                    planetCenter.x - planetRadius * 0.20f,
+                    planetCenter.y - planetRadius * 0.00f
+                ),
+            ),
+            radius = planetRadius,
+            center = planetCenter,
+        )
+    }
 }
 
 @Composable
@@ -3535,33 +3619,43 @@ private fun StudyPlanIntroContent(
 ) {
     val actionScale = if (reducedMotion) 1f else introActionPulseScale(progress)
 
-    Column(
+    Box(
         modifier = modifier,
-        horizontalAlignment = Alignment.Start,
     ) {
-        Spacer(Modifier.weight(1f))
+        Box(
+            modifier = Modifier
+                .align(Alignment.BottomStart)
+                .fillMaxWidth()
+                .height(352.dp),
+        ) {
+            IntroActionGuide(
+                progress = progress,
+                reducedMotion = reducedMotion,
+                modifier = Modifier.fillMaxSize(),
+            )
+            PlanFlowCircleAction(
+                label = actionLabel,
+                onClick = onAction,
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .graphicsLayer {
+                        scaleX = actionScale
+                        scaleY = actionScale
+                    },
+            )
+        }
+
         Text(
             text = message,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            style = MaterialTheme.typography.bodyLarge,
-        )
-        IntroActionGuide(
-            progress = progress,
-            reducedMotion = reducedMotion,
+            color = Color.White.copy(alpha = 0.74f),
+            style = MaterialTheme.typography.bodyLarge.copy(
+                fontSize = 18.sp,
+                lineHeight = 31.sp,
+            ),
             modifier = Modifier
-                .fillMaxWidth()
-                .weight(1.15f)
-                .padding(horizontal = 12.dp),
-        )
-        PlanFlowCircleAction(
-            label = actionLabel,
-            onClick = onAction,
-            modifier = Modifier
-                .align(Alignment.End)
-                .graphicsLayer {
-                    scaleX = actionScale
-                    scaleY = actionScale
-                },
+                .align(Alignment.BottomStart)
+                .padding(bottom = 336.dp)
+                .widthIn(max = 340.dp),
         )
     }
 }
@@ -3572,17 +3666,33 @@ private fun IntroActionGuide(
     reducedMotion: Boolean,
     modifier: Modifier = Modifier,
 ) {
-    val guideColor = MaterialTheme.colorScheme.primary
-    val dashPhase = if (reducedMotion) 0f else progress * 28f
+    val guideColor = RenGreen
 
     Canvas(modifier = modifier) {
         if (size.width <= 0f || size.height <= 0f) return@Canvas
+
+        val actionCenter = Offset(size.width - 30.dp.toPx(), size.height - 30.dp.toPx())
+        drawCircle(
+            brush = Brush.radialGradient(
+                colors = listOf(
+                    RenGreen.copy(alpha = 0.18f),
+                    RenGreenDark.copy(alpha = 0.12f),
+                    RenGreenDark.copy(alpha = 0.05f),
+                    Color.Transparent,
+                ),
+                center = actionCenter,
+                radius = 216.dp.toPx(),
+            ),
+            radius = 216.dp.toPx(),
+            center = actionCenter,
+        )
 
         val start = Offset(size.width * 0.58f, 12.dp.toPx())
         val control1 = Offset(size.width * 0.9f, size.height * 0.08f)
         val control2 = Offset(size.width * 0.72f, size.height * 0.68f)
         val end = Offset(size.width - 40.dp.toPx(), size.height - 8.dp.toPx())
         val easedProgress = easeOutCubic(progress)
+        val dashPhase = if (reducedMotion) 0f else progress * 28f
         val path = Path().apply {
             moveTo(start.x, start.y)
             cubicTo(
@@ -3597,12 +3707,12 @@ private fun IntroActionGuide(
 
         drawPath(
             path = path,
-            color = guideColor.copy(alpha = 0.34f),
+            color = guideColor.copy(alpha = 0.46f),
             style = Stroke(
-                width = 2.dp.toPx(),
+                width = 3.dp.toPx(),
                 cap = StrokeCap.Round,
                 pathEffect = PathEffect.dashPathEffect(
-                    intervals = floatArrayOf(2.dp.toPx(), 10.dp.toPx()),
+                    intervals = floatArrayOf(2.2.dp.toPx(), 11.dp.toPx()),
                     phase = dashPhase,
                 ),
             ),
@@ -3652,8 +3762,8 @@ private fun introActionPulseScale(progress: Float): Float {
 private fun headlineDotAlpha(progress: Float, index: Int): Float {
     val revealStart = 0.05f + index * 0.12f
     val reveal = ((progress - revealStart) / 0.1f).coerceIn(0f, 1f)
-    val absorptionFade = 1f - ((progress - 0.76f) / 0.18f).coerceIn(0f, 1f) * 0.72f
-    return 0.18f + reveal * absorptionFade * 0.82f
+    val absorptionFade = 1f - ((progress - 0.76f) / 0.18f).coerceIn(0f, 1f)
+    return reveal * absorptionFade
 }
 
 private fun easeOutCubic(progress: Float): Float {
