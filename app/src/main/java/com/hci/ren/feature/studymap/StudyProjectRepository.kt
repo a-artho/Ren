@@ -11,6 +11,8 @@ import androidx.room.Query
 import androidx.room.Room
 import androidx.room.RoomDatabase
 import androidx.room.Transaction
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 import com.hci.ren.feature.pdfupload.presentation.PlanSetupSubmission
 import com.hci.ren.feature.pdfupload.presentation.StudyDay
 import com.hci.ren.feature.pdfupload.presentation.StudyDeadline
@@ -40,6 +42,7 @@ data class StudyProject(
     val dailyMinutesOverride: Int? = null,
     val dailyAvailableMinutesByDate: Map<String, Int> = emptyMap(),
     val taskStateById: Map<String, StudyTaskState> = emptyMap(),
+    val focusSessionHistoryByDate: Map<String, List<FocusSessionRecord>> = emptyMap(),
     val acceptedTightPlan: Boolean = false,
 )
 
@@ -66,6 +69,7 @@ data class StudyProjectEntity(
     val dailyMinutesOverride: Int?,
     val dailyAvailableMinutesJson: String,
     val taskStateJson: String,
+    val focusSessionHistoryJson: String,
     val acceptedTightPlan: Boolean,
 )
 
@@ -90,7 +94,7 @@ interface StudyProjectDao {
     }
 }
 
-@Database(entities = [StudyProjectEntity::class], version = 5, exportSchema = true)
+@Database(entities = [StudyProjectEntity::class], version = 6, exportSchema = true)
 abstract class StudyProjectDatabase : RoomDatabase() {
     abstract fun studyProjectDao(): StudyProjectDao
 
@@ -103,10 +107,17 @@ abstract class StudyProjectDatabase : RoomDatabase() {
                 StudyProjectDatabase::class.java,
                 "ren-study-projects.db",
             )
+                .addMigrations(Migration5To6)
                 .fallbackToDestructiveMigration(dropAllTables = true)
                 .build()
                 .also { instance = it }
         }
+    }
+}
+
+private object Migration5To6 : Migration(5, 6) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE active_study_project ADD COLUMN focusSessionHistoryJson TEXT NOT NULL DEFAULT '{}'")
     }
 }
 
@@ -141,6 +152,7 @@ internal object StudyProjectJsonCodec {
         dailyMinutesOverride = project.dailyMinutesOverride,
         dailyAvailableMinutesJson = project.dailyAvailableMinutesByDate.toJson().toString(),
         taskStateJson = project.taskStateById.toTaskStateJson().toString(),
+        focusSessionHistoryJson = project.focusSessionHistoryByDate.toFocusSessionHistoryJson().toString(),
         acceptedTightPlan = project.acceptedTightPlan,
     )
 
@@ -157,6 +169,7 @@ internal object StudyProjectJsonCodec {
             dailyMinutesOverride = entity.dailyMinutesOverride,
             dailyAvailableMinutesByDate = JSONObject(entity.dailyAvailableMinutesJson).toDailyAvailableMinutes(),
             taskStateById = JSONObject(entity.taskStateJson).toTaskState(),
+            focusSessionHistoryByDate = JSONObject(entity.focusSessionHistoryJson).toFocusSessionHistory(),
             acceptedTightPlan = entity.acceptedTightPlan,
         )
     }
@@ -374,6 +387,64 @@ private fun JSONObject.toTaskState(): Map<String, StudyTaskState> = keys().asSeq
     }
     .toMap()
 
+private fun Map<String, List<FocusSessionRecord>>.toFocusSessionHistoryJson() = JSONObject().apply {
+    entries
+        .filter { (date, records) -> date.toStudyCalendar() != null && records.isNotEmpty() }
+        .forEach { (date, records) ->
+            val validRecords = records
+                .filter { it.taskId.isNotBlank() && it.hasTrackedTime }
+                .map(FocusSessionRecord::toJson)
+            if (validRecords.isNotEmpty()) {
+                put(date, JSONArray(validRecords))
+            }
+        }
+}
+
+private fun FocusSessionRecord.toJson() = JSONObject()
+    .put("taskId", taskId)
+    .put("plannedFocusMinutes", plannedFocusMinutes)
+    .put("plannedFocusSeconds", plannedFocusSeconds)
+    .put("plannedBreakMinutes", plannedBreakMinutes)
+    .put("focusSeconds", focusSeconds)
+    .put("flowOvertimeSeconds", flowOvertimeSeconds)
+    .put("breakSeconds", breakSeconds)
+    .put("awaySeconds", awaySeconds)
+    .put("interruptionCount", interruptionCount)
+    .put("outcome", outcome.name)
+    .put("endedAtMillis", endedAtMillis)
+
+private fun JSONObject.toFocusSessionHistory(): Map<String, List<FocusSessionRecord>> = keys().asSequence()
+    .mapNotNull { date ->
+        if (date.toStudyCalendar() == null) return@mapNotNull null
+        val records = optJSONArray(date)
+            ?.objects()
+            ?.mapNotNull(JSONObject::toFocusSessionRecord)
+            .orEmpty()
+        date to records.takeIf { it.isNotEmpty() }
+    }
+    .filter { (_, records) -> records != null }
+    .associate { (date, records) -> date to records.orEmpty() }
+
+private fun JSONObject.toFocusSessionRecord(): FocusSessionRecord? {
+    val record = FocusSessionRecord(
+        taskId = optString("taskId"),
+        plannedFocusMinutes = optInt("plannedFocusMinutes", 0).coerceAtLeast(0),
+        plannedFocusSeconds = optInt(
+            "plannedFocusSeconds",
+            optInt("plannedFocusMinutes", 0).coerceAtLeast(0) * FocusRecordSecondsPerMinute,
+        ).coerceAtLeast(0),
+        plannedBreakMinutes = optInt("plannedBreakMinutes", 0).coerceAtLeast(0),
+        focusSeconds = optInt("focusSeconds", 0).coerceAtLeast(0),
+        flowOvertimeSeconds = optInt("flowOvertimeSeconds", 0).coerceAtLeast(0),
+        breakSeconds = optInt("breakSeconds", 0).coerceAtLeast(0),
+        awaySeconds = optInt("awaySeconds", 0).coerceAtLeast(0),
+        interruptionCount = optInt("interruptionCount", 0).coerceAtLeast(0),
+        outcome = optString("outcome").enumOr(FocusSessionOutcome.FocusRoundEnded),
+        endedAtMillis = optLong("endedAtMillis", 0L).coerceAtLeast(0L),
+    )
+    return record.takeIf { it.taskId.isNotBlank() && it.hasTrackedTime }
+}
+
 private fun JSONObject.toSubmission() = PlanSetupSubmission(
     documentUris = emptyList(),
     goal = getString("goal").enumOr(StudyGoal.PrepareForExam),
@@ -405,3 +476,5 @@ private fun String.wireEnumName() = trim()
 
 private fun JSONArray.objects() = (0 until length()).map { getJSONObject(it) }
 private fun JSONArray.strings() = (0 until length()).map { getString(it) }
+
+private const val FocusRecordSecondsPerMinute = 60

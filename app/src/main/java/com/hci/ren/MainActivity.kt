@@ -46,6 +46,7 @@ import com.hci.ren.feature.pdfupload.presentation.PdfUploadViewModel
 import com.hci.ren.feature.plangeneration.PlanGenerationScreen
 import com.hci.ren.feature.plangeneration.PlanGenerationViewModel
 import com.hci.ren.feature.plangeneration.StudyTaskStatus
+import com.hci.ren.feature.progress.presentation.ProgressScreen
 import com.hci.ren.feature.studymap.AdaptiveFocusMode
 import com.hci.ren.feature.studymap.StudyMapDetailRoute
 import com.hci.ren.feature.studymap.StudyMapDetailViewModel
@@ -281,7 +282,12 @@ class MainActivity : ComponentActivity() {
                             modifier = Modifier.padding(scaffoldPadding),
                         )
 
-                        ScreenProgress -> PlaceholderTabScreen(
+                        ScreenProgress -> studyMapState.project?.let { project ->
+                            ProgressScreen(
+                                project = project,
+                                modifier = Modifier.padding(scaffoldPadding),
+                            )
+                        } ?: PlaceholderTabScreen(
                             title = stringResource(R.string.progress),
                             message = stringResource(R.string.progress_placeholder_message),
                             modifier = Modifier.padding(scaffoldPadding),

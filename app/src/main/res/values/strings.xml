@@ -66,6 +66,31 @@
     <string name="progress">Progress</string>
     <string name="today_placeholder_message">Daily planning and focus sessions will live here.</string>
     <string name="progress_placeholder_message">Completion trends and focus feedback will live here.</string>
+    <string name="progress_focus_patterns">Your focus patterns and momentum</string>
+    <string name="weekly_focus">Weekly focus</string>
+    <string name="focus_minutes">Focus minutes</string>
+    <string name="progress_this_week">this week</string>
+    <string name="progress_study_days">study days</string>
+    <string name="progress_goal">Goal</string>
+    <string name="progress_minutes">%1$dm</string>
+    <string name="progress_hours">%1$dh</string>
+    <string name="progress_hours_minutes">%1$dh %2$dm</string>
+    <string name="progress_goal_line">%1$s goal</string>
+    <string name="progress_weekly_empty">Start a focus round from Today to fill this chart.</string>
+    <string name="progress_weekly_chart_description">%1$s focused this week across %2$s. Daily goal is %3$s.</string>
+    <plurals name="progress_study_day_count">
+        <item quantity="one">%1$d study day</item>
+        <item quantity="other">%1$d study days</item>
+    </plurals>
+    <string-array name="progress_weekday_short_labels">
+        <item>Mo</item>
+        <item>Tu</item>
+        <item>We</item>
+        <item>Th</item>
+        <item>Fr</item>
+        <item>Sa</item>
+        <item>Su</item>
+    </string-array>
     <string name="today_available_time">Available today</string>
     <string name="today_available_time_subtitle">This only changes today, not the whole plan.</string>
     <string name="today_tasks">Fits today</string>

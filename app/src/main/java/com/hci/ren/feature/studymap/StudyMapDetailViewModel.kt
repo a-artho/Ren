@@ -120,6 +120,7 @@ class StudyMapDetailViewModel(application: Application) : AndroidViewModel(appli
         if (date.toStudyCalendar() == null || !record.hasTrackedTime) return
         val current = _uiState.value
         val project = current.project ?: return
+        val before = project
         val session = current.todaySession
             ?.takeIf { it.date == date }
             ?: TodaySessionState(date = date)
@@ -138,9 +139,28 @@ class StudyMapDetailViewModel(application: Application) : AndroidViewModel(appli
                 availableMinutes = (currentAvailableMinutes - record.consumedMinutes)
                     .coerceIn(0, MaxTodaySessionMinutes),
             )
+        val updatedProject = project
+            .appendFocusSession(date, record)
+            .copy(updatedAtMillis = System.currentTimeMillis())
         _uiState.value = current.copy(
+            project = updatedProject,
             todaySession = updatedSession.takeUnless { it.isEmpty },
         )
+        viewModelScope.launch {
+            writeMutex.withLock {
+                try {
+                    repository.upsert(updatedProject)
+                } catch (error: CancellationException) {
+                    throw error
+                } catch (_: Exception) {
+                    publish(
+                        project = before,
+                        message = getApplication<Application>().getString(R.string.study_map_save_error),
+                        todaySession = updatedSession.takeUnless { it.isEmpty },
+                    )
+                }
+            }
+        }
     }
 
     fun wrapUpToday(date: String) {
@@ -291,4 +311,15 @@ private fun StudyProject.withTaskState(taskId: String, state: StudyTaskState): S
         updated[taskId] = state
     }
     return copy(taskStateById = updated)
+}
+
+private fun StudyProject.appendFocusSession(
+    date: String,
+    record: FocusSessionRecord,
+): StudyProject {
+    if (date.toStudyCalendar() == null || record.taskId.isBlank() || !record.hasTrackedTime) return this
+    val current = focusSessionHistoryByDate[date].orEmpty()
+    return copy(
+        focusSessionHistoryByDate = focusSessionHistoryByDate + (date to (current + record)),
+    )
 }

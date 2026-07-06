@@ -133,6 +133,42 @@ class StudyProjectPersistenceTest {
         assertEquals(StudyTaskState(status = StudyTaskStatus.Completed), decoded.taskStateById["chapter"])
     }
 
+    @Test fun focusSessionHistoryPersistsWithProject() {
+        val record = FocusSessionRecord(
+            taskId = "chapter",
+            plannedFocusMinutes = 60,
+            plannedFocusSeconds = 3_600,
+            plannedBreakMinutes = 10,
+            focusSeconds = 3_590,
+            flowOvertimeSeconds = 120,
+            breakSeconds = 300,
+            awaySeconds = 12,
+            interruptionCount = 1,
+            outcome = FocusSessionOutcome.FocusRoundEnded,
+            endedAtMillis = 200L,
+        )
+        val project = newStudyProject(
+            plan(listOf(GeneratedStudyBlock(
+                id = "chapter",
+                title = "Chapter",
+                order = 1,
+                effortMinMinutes = 80,
+                effortLikelyMinutes = 100,
+                effortMaxMinutes = 120,
+                instructions = "Study",
+                topicIds = listOf("topic"),
+            ))),
+            preferences(),
+            nowMillis = 100,
+        ).copy(
+            focusSessionHistoryByDate = mapOf("2026-06-22" to listOf(record)),
+        )
+
+        val decoded = StudyProjectJsonCodec.decode(StudyProjectJsonCodec.encode(project))
+
+        assertEquals(mapOf("2026-06-22" to listOf(record)), decoded.focusSessionHistoryByDate)
+    }
+
     @Test fun generatedProjectKeepsCanonicalBlocksBeforePersistence() {
         val generated = newStudyProject(
             plan(
