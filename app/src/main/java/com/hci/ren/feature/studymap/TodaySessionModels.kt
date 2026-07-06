@@ -10,6 +10,7 @@ data class TodaySessionState(
     val pulledInTaskIds: Set<String> = emptySet(),
     val doneTodayTaskIds: Set<String> = emptySet(),
     val removedFromPlanTaskIds: Set<String> = emptySet(),
+    val focusSessions: List<FocusSessionRecord> = emptyList(),
 ) {
     val hasAvailabilityOverride: Boolean get() = availableMinutes != null
     val hasTaskChanges: Boolean
@@ -17,8 +18,36 @@ data class TodaySessionState(
             pulledInTaskIds.isNotEmpty() ||
             doneTodayTaskIds.isNotEmpty() ||
             removedFromPlanTaskIds.isNotEmpty()
+    val focusSeconds: Int get() = focusSessions.sumOf { it.focusSeconds }
+    val breakSeconds: Int get() = focusSessions.sumOf { it.breakSeconds }
+    val spentFocusMinutes: Int get() = focusSeconds.toBudgetMinutes()
+    val spentBreakMinutes: Int get() = breakSeconds.toBudgetMinutes()
 
-    val isEmpty: Boolean get() = !hasAvailabilityOverride && !hasTaskChanges
+    val isEmpty: Boolean get() = !hasAvailabilityOverride && !hasTaskChanges && focusSessions.isEmpty()
+}
+
+data class FocusSessionRecord(
+    val taskId: String,
+    val plannedFocusMinutes: Int,
+    val plannedFocusSeconds: Int = plannedFocusMinutes * FocusSessionSecondsPerMinute,
+    val plannedBreakMinutes: Int,
+    val focusSeconds: Int,
+    val flowOvertimeSeconds: Int = 0,
+    val breakSeconds: Int,
+    val awaySeconds: Int,
+    val interruptionCount: Int,
+    val outcome: FocusSessionOutcome,
+    val endedAtMillis: Long,
+) {
+    val consumedMinutes: Int get() = (focusSeconds + breakSeconds).toBudgetMinutes()
+    val hasTrackedTime: Boolean
+        get() = focusSeconds > 0 || breakSeconds > 0 || awaySeconds > 0 || interruptionCount > 0
+}
+
+enum class FocusSessionOutcome {
+    FocusRoundEnded,
+    FocusStopped,
+    BreakEnded,
 }
 
 enum class TodaySessionTaskAction {
@@ -225,6 +254,11 @@ fun TodaySessionState.applyTaskAction(
     )
 }
 
+fun TodaySessionState.appendFocusSession(record: FocusSessionRecord): TodaySessionState {
+    if (record.taskId.isBlank() || !record.hasTrackedTime) return this
+    return copy(focusSessions = focusSessions + record)
+}
+
 private fun localTodayFitMode(
     tasks: List<GeneratedStudyBlock>,
     capacityMinutes: Int,
@@ -309,6 +343,9 @@ private fun orderedByPlan(
 private fun Iterable<GeneratedStudyBlock>.fitMinutesTotal(fitMode: ScheduleFitMode): Int =
     sumOf { fitMode.fitMinutes(it).coerceAtLeast(0) }
 
+private fun Int.toBudgetMinutes(): Int =
+    if (this <= 0) 0 else (this + FocusSessionSecondsPerMinute - 1) / FocusSessionSecondsPerMinute
+
 internal fun todayBaseAvailableMinutes(
     project: StudyProject,
     data: StudyMapData,
@@ -318,6 +355,7 @@ internal fun todayBaseAvailableMinutes(
     ?: data.dailyMinutes
 
 const val MaxTodaySessionMinutes = 1_440
+private const val FocusSessionSecondsPerMinute = 60
 private const val MaxPullInCandidateCount = 3
 private val TodayAnchorStatuses = setOf(
     StudyTaskStatus.Completed,
