@@ -232,6 +232,7 @@
     <string name="moving_forward_metric_label">Moving forward</string>
     <string name="removed_metric_label">Removed</string>
     <string name="adjusted_for_your_pace">Adjusted for your pace</string>
+    <string name="adjust_time">Adjust time</string>
     <string name="time_budget">Time budget</string>
     <string name="over_budget_metric_label">Over budget</string>
     <string name="wrap_up_today">Wrap up today</string>

@@ -13,7 +13,6 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -36,10 +35,10 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.automirrored.filled.Assignment
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DragIndicator
+import androidx.compose.material.icons.filled.Eco
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Info
@@ -72,6 +71,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -83,11 +83,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
-import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.vector.path
 import androidx.compose.ui.input.pointer.pointerInput
@@ -95,6 +91,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
@@ -111,6 +108,7 @@ import com.hci.ren.ui.motion.RenMotionEasing
 import com.hci.ren.ui.motion.isReducedMotionEnabled
 import com.hci.ren.ui.motion.renFadeThroughTransform
 import com.hci.ren.ui.theme.RenContextMenuSurface
+import kotlinx.coroutines.delay
 import kotlin.math.roundToInt
 
 @Composable
@@ -136,12 +134,28 @@ fun TodayScreen(
     )
     val today = currentStudyCalendar(project.preferences).toStudyDate()
     val reducedMotion = isReducedMotionEnabled()
-    val baseAvailableMinutes = todayBaseAvailableMinutes(project, data, today)
+    var clockNowMillis by remember { mutableLongStateOf(System.currentTimeMillis()) }
+    LaunchedEffect(project.preferences.studyDayResetOffsetHours) {
+        while (true) {
+            clockNowMillis = System.currentTimeMillis()
+            delay(60_000L)
+        }
+    }
+    val minutesUntilReset = minutesUntilStudyDayReset(
+        nowMillis = clockNowMillis,
+        resetOffsetHours = project.preferences.studyDayResetOffsetHours,
+    )
+    val baseAvailableMinutes = effectiveTodayAvailableMinutes(
+        requestedMinutes = todayBaseAvailableMinutes(project, data, today),
+        minutesUntilReset = minutesUntilReset,
+    )
     val isTodayClosed = project.dailyAvailableMinutesByDate[today] == 0
     val todaySession = session?.takeIf { it.date == today }
-    val availableMinutes = todaySession
-        ?.availableMinutes
-        ?: baseAvailableMinutes
+    val availableMinutes = effectiveTodayAvailableMinutes(
+        requestedMinutes = todaySession?.availableMinutes
+            ?: baseAvailableMinutes,
+        minutesUntilReset = minutesUntilReset,
+    )
     val hasAvailabilityOverride = todaySession?.availableMinutes != null && availableMinutes != baseAvailableMinutes
     val todayPlan = TodaySessionPlanner().plan(
         data = data,
@@ -149,6 +163,10 @@ fun TodayScreen(
         availableMinutes = availableMinutes,
         session = todaySession,
         hasAvailabilityOverride = hasAvailabilityOverride,
+    )
+    val clockPressure = todayClockPressure(
+        activeWorkMinutes = todayPlan.activeWorkMinutes,
+        minutesUntilReset = minutesUntilReset,
     )
     var showWrapUpDialog by remember(today, todayPlan) { mutableStateOf(false) }
     var showTimeBudgetDialog by remember(today) { mutableStateOf(false) }
@@ -198,7 +216,10 @@ fun TodayScreen(
         visibleUpNextTasks.drop(1)
     }
     fun updateAvailableMinutes(minutes: Int) {
-        val normalized = minutes.coerceIn(0, MaxTodaySessionMinutes)
+        val normalized = effectiveTodayAvailableMinutes(
+            requestedMinutes = minutes,
+            minutesUntilReset = minutesUntilReset,
+        )
         onAvailableTimeChanged(today, normalized.takeUnless { it == baseAvailableMinutes })
     }
     fun moveUpNextTask(taskId: String, offset: Int): Boolean {
@@ -260,6 +281,7 @@ fun TodayScreen(
         TimeBudgetDialog(
             availableMinutes = todayPlan.availableMinutes,
             baseAvailableMinutes = todayPlan.baseAvailableMinutes,
+            maxAvailableMinutes = minutesUntilReset.coerceIn(0, MaxTodaySessionMinutes),
             onDecrease = {
                 updateAvailableMinutes(todayPlan.availableMinutes - TimeAdjustmentStepMinutes)
             },
@@ -311,7 +333,9 @@ fun TodayScreen(
     ) {
         item(key = "today-header") {
             TodayHeader(
-                onTimeBudgetClick = { showTimeBudgetDialog = true },
+                todayPlan = todayPlan,
+                clockPressure = clockPressure,
+                isTodayClosed = isTodayClosed,
                 modifier = Modifier.animateItem(),
             )
         }
@@ -321,6 +345,33 @@ fun TodayScreen(
                 reducedMotion = reducedMotion,
                 modifier = Modifier.animateItem(),
             )
+        }
+        item(key = "today-actions") {
+            TodayActionRow(
+                wrapUpText = wrapUpButtonText,
+                wrapUpEnabled = canWrapUpToday,
+                onAdjustClick = { showTimeBudgetDialog = true },
+                onWrapUpClick = { showWrapUpDialog = true },
+                modifier = Modifier.animateItem(),
+            )
+        }
+        if (todayPlan.hasPendingChanges || isTodayClosed) {
+            item(key = "today-status") {
+                TodayRebalancedRow(
+                    title = if (isTodayClosed) {
+                        stringResource(R.string.today_wrapped_up_button)
+                    } else {
+                        stringResource(R.string.today_rebalanced)
+                    },
+                    message = if (isTodayClosed) {
+                        visibleWrapUpMessage ?: stringResource(R.string.today_time_closed_message)
+                    } else {
+                        impactPreview?.message() ?: todayPlan.replanFeedbackMessage()
+                    },
+                    reducedMotion = reducedMotion,
+                    modifier = Modifier.animateItem(),
+                )
+            }
         }
         if (startHereTask != null) {
             item(key = "today-start-here") {
@@ -355,34 +406,6 @@ fun TodayScreen(
             item(key = "today-notice") {
                 TodayNoticeCard(
                     message = visibleNotice.orEmpty(),
-                    modifier = Modifier.animateItem(),
-                )
-            }
-        }
-        item(key = "today-wrap-action") {
-            if (todayPlan.hasPendingChanges || isTodayClosed) {
-                TodayRebalancedRow(
-                    title = if (isTodayClosed) {
-                        stringResource(R.string.today_wrapped_up_button)
-                    } else {
-                        stringResource(R.string.today_rebalanced)
-                    },
-                    message = if (isTodayClosed) {
-                        visibleWrapUpMessage ?: stringResource(R.string.today_time_closed_message)
-                    } else {
-                        impactPreview?.message() ?: todayPlan.replanFeedbackMessage()
-                    },
-                    actionText = wrapUpButtonText,
-                    showAction = canWrapUpToday,
-                    onActionClick = { showWrapUpDialog = true },
-                    reducedMotion = reducedMotion,
-                    modifier = Modifier.animateItem(),
-                )
-            } else {
-                TodayWrapUpButton(
-                    text = wrapUpButtonText,
-                    enabled = canWrapUpToday,
-                    onClick = { showWrapUpDialog = true },
                     modifier = Modifier.animateItem(),
                 )
             }
@@ -816,58 +839,143 @@ private val SparklesIcon: ImageVector = ImageVector.Builder(
 
 @Composable
 private fun TodayHeader(
-    onTimeBudgetClick: () -> Unit,
+    todayPlan: TodaySessionPlan,
+    clockPressure: TodayClockPressure,
+    isTodayClosed: Boolean,
     modifier: Modifier = Modifier,
 ) {
+    val title = todayPlan.headerTitle(clockPressure, isTodayClosed)
+    val message = todayPlan.headerMessage(clockPressure, isTodayClosed)
+    val dayBoundary = todayPlan.headerDayBoundary(clockPressure, isTodayClosed)
+
     Row(
         modifier = modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
             Text(
-                text = stringResource(R.string.adjusted_for_your_pace),
+                text = title,
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
             )
-            Icon(
-                imageVector = SparklesIcon,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(24.dp),
-            )
-        }
-        Surface(
-            onClick = onTimeBudgetClick,
-            shape = RoundedCornerShape(50),
-            color = Color.Black,
-            contentColor = Color.White,
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.58f)),
-        ) {
-            Row(
-                modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Schedule,
-                    contentDescription = null,
-                    tint = Color.White,
-                    modifier = Modifier.size(18.dp),
-                )
+            if (message != null) {
                 Text(
-                    text = stringResource(R.string.time_budget),
-                    style = MaterialTheme.typography.labelLarge,
-                    fontWeight = FontWeight.SemiBold,
-                    color = Color.White,
+                    text = message,
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.Medium,
+                    color = todayPlan.headerColor(clockPressure, isTodayClosed),
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
                 )
             }
         }
+
+        if (dayBoundary != null) {
+            VerticalDivider(
+                modifier = Modifier
+                    .height(38.dp)
+                    .padding(horizontal = 14.dp),
+                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.36f),
+            )
+            Text(
+                text = dayBoundary,
+                modifier = Modifier.weight(1f),
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.Medium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.82f),
+                textAlign = TextAlign.End,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
     }
+}
+
+@Composable
+private fun TodaySessionPlan.headerTitle(
+    clockPressure: TodayClockPressure,
+    isTodayClosed: Boolean,
+): String = when {
+    isTodayClosed -> "Wrapped"
+    outsideTodayBudgetMinutes > 0 -> "Over budget"
+    activeWorkMinutes == 0 -> "All clear"
+    else -> clockPressure.headerTitle()
+}
+
+@Composable
+private fun TodayClockPressure.headerTitle(): String = when (status) {
+    TodayClockPressureStatus.Clear -> "All clear"
+    TodayClockPressureStatus.Plenty -> "You're okay"
+    TodayClockPressureStatus.StartSoon -> "Start soon"
+    TodayClockPressureStatus.ActNow,
+    TodayClockPressureStatus.DoesNotFit,
+    -> "Start now"
+}
+
+@Composable
+private fun TodaySessionPlan.headerMessage(
+    clockPressure: TodayClockPressure,
+    isTodayClosed: Boolean,
+): String? = when {
+    isTodayClosed -> "Today is closed."
+    outsideTodayBudgetMinutes > 0 -> {
+        val outsideLeaves = wontFitTodayTasks.size
+        if (outsideLeaves == 1) {
+            "1 leaf needs moving or more time."
+        } else {
+            "$outsideLeaves leaves need moving or more time."
+        }
+    }
+    activeWorkMinutes == 0 -> "Nothing waiting for today."
+    else -> clockPressure.headerMessage()
+}
+
+@Composable
+private fun TodayClockPressure.headerMessage(): String? = when (status) {
+    TodayClockPressureStatus.Clear -> "Nothing waiting for today."
+    TodayClockPressureStatus.Plenty,
+    TodayClockPressureStatus.StartSoon,
+    TodayClockPressureStatus.ActNow,
+    -> null
+    TodayClockPressureStatus.DoesNotFit -> "Short by ${formatMinutes(-bufferMinutes)}."
+}
+
+private fun TodaySessionPlan.headerDayBoundary(
+    clockPressure: TodayClockPressure,
+    isTodayClosed: Boolean,
+): String? = when {
+    isTodayClosed -> null
+    outsideTodayBudgetMinutes > 0 -> null
+    activeWorkMinutes == 0 -> null
+    else -> "Day ends in ${formatMinutes(clockPressure.minutesUntilReset)}."
+}
+
+@Composable
+private fun TodaySessionPlan.headerColor(
+    clockPressure: TodayClockPressure,
+    isTodayClosed: Boolean,
+): Color = when {
+    isTodayClosed -> MaterialTheme.colorScheme.onSurfaceVariant
+    outsideTodayBudgetMinutes > 0 -> MaterialTheme.colorScheme.error
+    else -> clockPressure.headerColor()
+}
+
+private val TodaySessionPlan.outsideTodayBudgetMinutes: Int
+    get() = maxOf(overflowMinutes, overPlannedMinutes)
+
+@Composable
+private fun TodayClockPressure.headerColor(): Color = when (status) {
+    TodayClockPressureStatus.DoesNotFit,
+    TodayClockPressureStatus.ActNow,
+    -> MaterialTheme.colorScheme.error
+    TodayClockPressureStatus.StartSoon -> MaterialTheme.colorScheme.tertiary
+    else -> MaterialTheme.colorScheme.onSurfaceVariant
 }
 
 @Composable
@@ -892,131 +1000,133 @@ private fun TodayBudgetCard(
         animationSpec = todayMotionSpec(reducedMotion),
         label = "today-budget-remaining",
     )
-    val animatedCompletedMinutes by animateIntAsState(
-        targetValue = todayPlan.completedMinutes,
+    val animatedRemainingLeaves by animateIntAsState(
+        targetValue = todayPlan.doTodayTasks.size + todayPlan.pulledInTasks.size,
         animationSpec = todayMotionSpec(reducedMotion),
-        label = "today-budget-completed",
+        label = "today-budget-remaining-leaves",
     )
-    val animatedMovingLaterMinutes by animateIntAsState(
-        targetValue = todayPlan.overflowMinutes + todayPlan.movedLaterMinutes,
+    val animatedDoneLeaves by animateIntAsState(
+        targetValue = todayPlan.doneTodayTasks.size,
         animationSpec = todayMotionSpec(reducedMotion),
-        label = "today-budget-moving-later",
+        label = "today-budget-done-leaves",
     )
-    val animatedRemovedMinutes by animateIntAsState(
-        targetValue = todayPlan.removedMinutes,
+    val animatedMovedLeaves by animateIntAsState(
+        targetValue = todayPlan.wontFitTodayTasks.size + todayPlan.movedLaterTasks.size,
         animationSpec = todayMotionSpec(reducedMotion),
-        label = "today-budget-removed",
+        label = "today-budget-moved-leaves",
     )
     val remainingOrOverLabel = if (pressureMinutes > 0) {
-        stringResource(R.string.over_budget_metric_label)
+        "Over"
     } else {
-        stringResource(R.string.remaining_metric_label)
+        "Free"
     }
-    val targetRemainingOrOverColor = if (pressureMinutes > 0) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
+    val targetRemainingOrOverColor = if (pressureMinutes > 0) {
+        MaterialTheme.colorScheme.error
+    } else {
+        MaterialTheme.colorScheme.primary
+    }
     val remainingOrOverColor by animateColorAsState(
         targetValue = targetRemainingOrOverColor,
         animationSpec = todayMotionSpec(reducedMotion),
         label = "today-budget-remaining-color",
     )
+    val mutedMetricIconColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.62f)
+    val warningMetricIconColor = MaterialTheme.colorScheme.error.copy(alpha = 0.72f)
 
-    Card(
+    Column(
         modifier = modifier
             .fillMaxWidth()
-            .animateContentSize(animationSpec = todayMotionSpec(reducedMotion)),
-        shape = RoundedCornerShape(24.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-        ),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
+            .animateContentSize(animationSpec = todayMotionSpec(reducedMotion))
+            .padding(vertical = 4.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
-        Column(
-            modifier = Modifier.padding(vertical = 18.dp, horizontal = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp),
+        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.42f))
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                TodayBudgetMetric(
-                    label = stringResource(R.string.available_metric_label),
-                    value = formatMinutes(animatedAvailableMinutes),
-                    icon = Icons.Default.Timer,
-                    iconTint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.weight(1f),
-                )
-                VerticalDivider(
-                    modifier = Modifier
-                        .height(36.dp)
-                        .padding(horizontal = 4.dp),
-                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
-                )
-                TodayBudgetMetric(
-                    label = stringResource(R.string.planned_metric_label),
-                    value = formatMinutes(animatedPlannedMinutes),
-                    icon = Icons.Default.CalendarMonth,
-                    iconTint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.weight(1f),
-                )
-                VerticalDivider(
-                    modifier = Modifier
-                        .height(36.dp)
-                        .padding(horizontal = 4.dp),
-                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
-                )
-                TodayBudgetMetric(
-                    label = remainingOrOverLabel,
-                    value = formatMinutes(animatedRemainingOrOverMinutes),
-                    icon = Icons.Default.WarningAmber,
-                    iconTint = remainingOrOverColor,
-                    valueColor = remainingOrOverColor,
-                    modifier = Modifier.weight(1f),
-                )
-            }
-
-            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                TodayBudgetMetric(
-                    label = stringResource(R.string.completed),
-                    value = formatMinutes(animatedCompletedMinutes),
-                    icon = Icons.Default.CheckCircle,
-                    iconTint = MaterialTheme.colorScheme.primary,
-                    compact = true,
-                    modifier = Modifier.weight(1f),
-                )
-                VerticalDivider(
-                    modifier = Modifier
-                        .height(30.dp)
-                        .padding(horizontal = 4.dp),
-                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
-                )
-                TodayBudgetMetric(
-                    label = stringResource(R.string.moved_later_metric_label),
-                    value = formatMinutes(animatedMovingLaterMinutes),
-                    icon = Icons.Default.Schedule,
-                    iconTint = MaterialTheme.colorScheme.tertiary,
-                    compact = true,
-                    modifier = Modifier.weight(1f),
-                )
-                VerticalDivider(
-                    modifier = Modifier
-                        .height(30.dp)
-                        .padding(horizontal = 4.dp),
-                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
-                )
-                TodayBudgetMetric(
-                    label = stringResource(R.string.removed_metric_label),
-                    value = formatMinutes(animatedRemovedMinutes),
-                    icon = Icons.Default.Close,
-                    iconTint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    compact = true,
-                    modifier = Modifier.weight(1f),
-                )
-            }
+            TodayBudgetMetric(
+                label = "Budget",
+                value = formatMinutes(animatedAvailableMinutes),
+                icon = Icons.Default.Timer,
+                iconTint = mutedMetricIconColor,
+                modifier = Modifier.weight(1f),
+            )
+            VerticalDivider(
+                modifier = Modifier
+                    .height(36.dp)
+                    .padding(horizontal = 4.dp),
+                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.42f),
+            )
+            TodayBudgetMetric(
+                label = "Planned",
+                value = formatMinutes(animatedPlannedMinutes),
+                icon = Icons.AutoMirrored.Filled.Assignment,
+                iconTint = mutedMetricIconColor,
+                modifier = Modifier.weight(1f),
+            )
+            VerticalDivider(
+                modifier = Modifier
+                    .height(36.dp)
+                    .padding(horizontal = 4.dp),
+                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.42f),
+            )
+            TodayBudgetMetric(
+                label = remainingOrOverLabel,
+                value = formatMinutes(animatedRemainingOrOverMinutes),
+                icon = if (pressureMinutes > 0) Icons.Default.WarningAmber else Icons.Default.Schedule,
+                iconTint = if (pressureMinutes > 0) warningMetricIconColor else mutedMetricIconColor,
+                valueColor = remainingOrOverColor,
+                modifier = Modifier.weight(1f),
+            )
         }
+
+        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.42f))
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            TodayBudgetMetric(
+                label = "Left",
+                value = leafCountLabel(animatedRemainingLeaves),
+                icon = Icons.Default.Eco,
+                iconTint = mutedMetricIconColor,
+                compact = true,
+                modifier = Modifier.weight(1f),
+            )
+            VerticalDivider(
+                modifier = Modifier
+                    .height(30.dp)
+                    .padding(horizontal = 4.dp),
+                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.42f),
+            )
+            TodayBudgetMetric(
+                label = "Done",
+                value = leafCountLabel(animatedDoneLeaves),
+                icon = Icons.Default.CheckCircle,
+                iconTint = mutedMetricIconColor,
+                compact = true,
+                modifier = Modifier.weight(1f),
+            )
+            VerticalDivider(
+                modifier = Modifier
+                    .height(30.dp)
+                    .padding(horizontal = 4.dp),
+                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.42f),
+            )
+            TodayBudgetMetric(
+                label = "Moved",
+                value = leafCountLabel(animatedMovedLeaves),
+                icon = Icons.Default.RestartAlt,
+                iconTint = mutedMetricIconColor,
+                compact = true,
+                modifier = Modifier.weight(1f),
+            )
+        }
+
+        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.42f))
     }
 }
 
@@ -1024,10 +1134,10 @@ private fun TodayBudgetCard(
 private fun TodayBudgetMetric(
     label: String,
     value: String,
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
-    iconTint: androidx.compose.ui.graphics.Color,
+    icon: ImageVector,
+    iconTint: Color,
     modifier: Modifier = Modifier,
-    valueColor: androidx.compose.ui.graphics.Color = MaterialTheme.colorScheme.onSurface,
+    valueColor: Color = MaterialTheme.colorScheme.onSurface,
     compact: Boolean = false,
 ) {
     val horizontalPadding = if (compact) 4.dp else 6.dp
@@ -1072,9 +1182,14 @@ private fun TodayBudgetMetric(
 }
 
 @Composable
+private fun leafCountLabel(count: Int): String =
+    pluralStringResource(R.plurals.study_leaf_count, count, count)
+
+@Composable
 private fun TimeBudgetDialog(
     availableMinutes: Int,
     baseAvailableMinutes: Int,
+    maxAvailableMinutes: Int,
     onDecrease: () -> Unit,
     onIncrease: () -> Unit,
     onReset: () -> Unit,
@@ -1164,31 +1279,101 @@ private fun TimeBudgetDialog(
                     )
                     IconButton(
                         onClick = onIncrease,
-                        enabled = availableMinutes < MaxTodaySessionMinutes,
+                        enabled = availableMinutes < maxAvailableMinutes,
                     ) {
                         Icon(Icons.Default.Add, contentDescription = stringResource(R.string.increase_available_time))
                     }
                 }
-                Column(
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    OutlinedButton(
+                if (hasTimeOverride) {
+                    TextButton(
                         onClick = onReset,
-                        enabled = hasTimeOverride,
                         modifier = Modifier.fillMaxWidth(),
                     ) {
-                        Icon(Icons.Default.RestartAlt, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Icon(
+                            imageVector = Icons.Default.RestartAlt,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp),
+                        )
                         Spacer(Modifier.width(8.dp))
                         Text(stringResource(R.string.reset_to_plan_time))
                     }
-                    Button(
-                        onClick = onDismiss,
-                        modifier = Modifier.fillMaxWidth(),
-                    ) {
-                        Text(stringResource(R.string.done_time_budget))
-                    }
+                }
+                Button(
+                    onClick = onDismiss,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text(stringResource(R.string.done_time_budget))
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun TodayActionRow(
+    wrapUpText: String,
+    wrapUpEnabled: Boolean,
+    onAdjustClick: () -> Unit,
+    onWrapUpClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val adjustContainer = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.22f)
+    val adjustContent = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.88f)
+    val wrapContainer = MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)
+    val wrapContent = MaterialTheme.colorScheme.primary
+    val disabledContainer = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.14f)
+    val disabledContent = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.42f)
+
+    Row(
+        modifier = modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        OutlinedButton(
+            onClick = onAdjustClick,
+            modifier = Modifier.weight(1f),
+            shape = RoundedCornerShape(50),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.46f)),
+            colors = ButtonDefaults.outlinedButtonColors(
+                containerColor = adjustContainer,
+                contentColor = adjustContent,
+            ),
+        ) {
+            Icon(
+                imageVector = Icons.Default.Schedule,
+                contentDescription = null,
+                modifier = Modifier.size(18.dp),
+            )
+            Spacer(Modifier.width(8.dp))
+            Text(
+                text = stringResource(R.string.adjust_time),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        Button(
+            onClick = onWrapUpClick,
+            enabled = wrapUpEnabled,
+            modifier = Modifier.weight(1f),
+            shape = RoundedCornerShape(50),
+            colors = ButtonDefaults.buttonColors(
+                containerColor = wrapContainer,
+                contentColor = wrapContent,
+                disabledContainerColor = disabledContainer,
+                disabledContentColor = disabledContent,
+            ),
+        ) {
+            Icon(
+                imageVector = Icons.Default.CheckCircle,
+                contentDescription = null,
+                modifier = Modifier.size(18.dp),
+            )
+            Spacer(Modifier.width(8.dp))
+            Text(
+                text = wrapUpText,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
         }
     }
 }
@@ -1197,9 +1382,6 @@ private fun TimeBudgetDialog(
 private fun TodayRebalancedRow(
     title: String,
     message: String,
-    actionText: String,
-    showAction: Boolean,
-    onActionClick: () -> Unit,
     reducedMotion: Boolean,
     modifier: Modifier = Modifier,
 ) {
@@ -1258,46 +1440,7 @@ private fun TodayRebalancedRow(
                     }
                 }
             }
-            if (showAction) {
-                OutlinedButton(
-                    onClick = onActionClick,
-                    shape = RoundedCornerShape(50),
-                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.72f)),
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Timer,
-                        contentDescription = null,
-                        modifier = Modifier.size(18.dp),
-                    )
-                    Spacer(Modifier.width(8.dp))
-                    Text(actionText)
-                }
-            }
         }
-    }
-}
-
-@Composable
-private fun TodayWrapUpButton(
-    text: String,
-    enabled: Boolean,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    OutlinedButton(
-        onClick = onClick,
-        enabled = enabled,
-        modifier = modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(50),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = if (enabled) 0.72f else 0.28f)),
-    ) {
-        Icon(
-            imageVector = Icons.Default.Timer,
-            contentDescription = null,
-            modifier = Modifier.size(18.dp),
-        )
-        Spacer(Modifier.width(8.dp))
-        Text(text)
     }
 }
 
@@ -1525,30 +1668,19 @@ private fun TodayStartHereCard(
     modifier: Modifier = Modifier,
 ) {
     var menuExpanded by remember(task.id) { mutableStateOf(false) }
-    var isRingVisible by remember(task.id) { mutableStateOf(false) }
+    var isStartEmphasisVisible by remember(task.id) { mutableStateOf(false) }
     LaunchedEffect(task.id) {
-        isRingVisible = true
+        isStartEmphasisVisible = true
     }
     val sourceText = todayTaskSourceText(task, sourceDocuments)
-    val durationValue = if (task.likelyStudyMinutes < 60) {
-        task.likelyStudyMinutes.toString()
-    } else {
-        formatMinutes(task.likelyStudyMinutes)
-    }
-    val durationUnit = if (task.likelyStudyMinutes < 60) "min" else null
     val startLabelShape = RoundedCornerShape(8.dp)
     val startLabelGlowDp by animateDpAsState(
-        targetValue = if (isRingVisible) 10.dp else 0.dp,
+        targetValue = if (isStartEmphasisVisible) 10.dp else 0.dp,
         animationSpec = todayEmphasisMotionSpec(reducedMotion),
         label = "today-start-label-glow",
     )
     val startLabelGlowElevation = with(LocalDensity.current) { startLabelGlowDp.toPx() }
     val startLabelGlowColor = MaterialTheme.colorScheme.primary
-    val ringProgress by animateFloatAsState(
-        targetValue = if (isRingVisible) 1f else 0f,
-        animationSpec = todayEmphasisMotionSpec(reducedMotion),
-        label = "today-start-duration-ring",
-    )
 
     Card(
         modifier = modifier
@@ -1559,8 +1691,8 @@ private fun TodayStartHereCard(
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.58f)),
     ) {
         Column(
-            modifier = Modifier.padding(start = 18.dp, end = 18.dp, top = 12.dp, bottom = 18.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp),
+            modifier = Modifier.padding(start = 18.dp, end = 18.dp, top = 12.dp, bottom = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -1633,23 +1765,19 @@ private fun TodayStartHereCard(
                 }
             }
 
-            Row(
+            Column(
                 modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(16.dp),
+                verticalArrangement = Arrangement.spacedBy(7.dp),
             ) {
-                Column(
-                    modifier = Modifier.weight(1f),
-                    verticalArrangement = Arrangement.spacedBy(6.dp),
-                ) {
-                    Text(
-                        text = task.title,
-                        style = MaterialTheme.typography.headlineSmall,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurface,
-                        maxLines = 3,
-                        overflow = TextOverflow.Ellipsis,
-                    )
+                Text(
+                    text = task.title,
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 3,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     TodayStartMetaRow(
                         icon = taskTypeIcon(task.taskType),
                         text = taskTypeLabel(task.taskType),
@@ -1661,11 +1789,6 @@ private fun TodayStartHereCard(
                         )
                     }
                 }
-                TodayDurationRing(
-                    durationValue = durationValue,
-                    durationUnit = durationUnit,
-                    progress = ringProgress,
-                )
             }
 
             Row(
@@ -1711,85 +1834,6 @@ private fun TodayStartHereCard(
                     )
                     Spacer(Modifier.width(8.dp))
                     Text(stringResource(R.string.mark_done))
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun TodayDurationRing(
-    durationValue: String,
-    durationUnit: String?,
-    progress: Float,
-) {
-    val primary = MaterialTheme.colorScheme.primary
-    Box(
-        modifier = Modifier.size(96.dp),
-        contentAlignment = Alignment.Center,
-    ) {
-        Canvas(modifier = Modifier.fillMaxSize()) {
-            val ringSegments = 8
-            val gapDegrees = 8f
-            val sweepDegrees = 360f / ringSegments - gapDegrees
-            val glowStrokeWidth = 12.dp.toPx()
-            val segmentStrokeWidth = 5.dp.toPx()
-            val ringDiameter = size.minDimension - glowStrokeWidth
-            val ringTopLeft = Offset(
-                x = (size.width - ringDiameter) / 2f,
-                y = (size.height - ringDiameter) / 2f,
-            )
-            val ringSize = Size(ringDiameter, ringDiameter)
-            repeat(ringSegments) { segmentIndex ->
-                val startAngle = -90f + segmentIndex * (360f / ringSegments) + gapDegrees / 2f
-                val segmentProgress = (progress * ringSegments - segmentIndex).coerceIn(0f, 1f)
-                drawArc(
-                    color = primary.copy(alpha = 0.16f),
-                    startAngle = startAngle,
-                    sweepAngle = sweepDegrees,
-                    useCenter = false,
-                    topLeft = ringTopLeft,
-                    size = ringSize,
-                    style = Stroke(width = glowStrokeWidth, cap = StrokeCap.Round),
-                )
-                if (segmentProgress > 0f) {
-                    drawArc(
-                        color = primary.copy(alpha = 0.92f),
-                        startAngle = startAngle,
-                        sweepAngle = sweepDegrees * segmentProgress,
-                        useCenter = false,
-                        topLeft = ringTopLeft,
-                        size = ringSize,
-                        style = Stroke(width = segmentStrokeWidth, cap = StrokeCap.Round),
-                    )
-                }
-            }
-        }
-        Surface(
-            modifier = Modifier.size(70.dp),
-            shape = CircleShape,
-            color = Color.Black,
-            contentColor = Color.White,
-            border = BorderStroke(1.dp, primary.copy(alpha = 0.20f)),
-        ) {
-            Column(
-                modifier = Modifier.padding(8.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.Center,
-            ) {
-                Text(
-                    text = durationValue,
-                    style = MaterialTheme.typography.headlineMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = Color.White,
-                    maxLines = 1,
-                )
-                if (durationUnit != null) {
-                    Text(
-                        text = durationUnit,
-                        style = MaterialTheme.typography.labelMedium,
-                        color = Color.White.copy(alpha = 0.72f),
-                    )
                 }
             }
         }
@@ -2226,7 +2270,8 @@ private fun WrapUpTodayDialog(
             minutes = todayPlan.removedMinutes,
         ),
     ).filter { it.count > 0 || it.minutes > 0 }
-    val closingRemainingMinutes = (todayPlan.availableMinutes - todayPlan.completedMinutes).coerceAtLeast(0)
+    val closingRemainingMinutes = (todayPlan.availableMinutes - todayPlan.untrackedCompletedMinutes)
+        .coerceAtLeast(0)
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(stringResource(R.string.wrap_up_today_title)) },
