@@ -85,7 +85,9 @@
     <string name="today_impact_crammed">Preview: plan becomes crammed after wrap-up.</string>
     <string name="today_impact_overloaded">Preview: plan becomes overloaded after wrap-up.</string>
     <string name="wont_fit_today">Won\'t fit today</string>
-    <string name="move_later_at_wrap_up">Will move later if you wrap up with this plan.</string>
+    <string name="wont_fit_today_info">Won\'t fit today info</string>
+    <string name="wont_fit_today_info_title">Won\'t fit today</string>
+    <string name="wont_fit_today_info_message">These tasks do not fit in today\'s available time. They stay in the plan and move forward at wrap-up unless you move or remove them.</string>
     <string name="moved_later">Moved later</string>
     <string name="moved_later_info">Moved later info</string>
     <string name="moved_later_info_title">Moved later</string>
@@ -101,7 +103,9 @@
     <string name="done_today_message">Will be marked complete after wrap-up.</string>
     <string name="already_done_today_message">Already marked complete.</string>
     <string name="removed_from_plan">Removed from plan</string>
-    <string name="removed_from_plan_message">Will be excluded after wrap-up.</string>
+    <string name="removed_from_plan_info">Removed from plan info</string>
+    <string name="removed_from_plan_info_title">Removed from plan</string>
+    <string name="removed_from_plan_info_message">These tasks will be excluded from the active plan when you wrap up today. Restore one if you want it back before then.</string>
     <string name="pull_ahead_suggestions">Use extra time</string>
     <string name="use_extra_time_info">Use extra time info</string>
     <string name="use_extra_time_info_title">Use extra time</string>

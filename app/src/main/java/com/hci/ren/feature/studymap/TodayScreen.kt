@@ -29,11 +29,11 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.automirrored.filled.Assignment
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CalendarMonth
@@ -156,9 +156,13 @@ fun TodayScreen(
     var showUseExtraTimeInfo by rememberSaveable(today) { mutableStateOf(false) }
     var showMovedLaterInfo by rememberSaveable(today) { mutableStateOf(false) }
     var showDoneTodayInfo by rememberSaveable(today) { mutableStateOf(false) }
+    var showWontFitTodayInfo by rememberSaveable(today) { mutableStateOf(false) }
+    var showRemovedFromPlanInfo by rememberSaveable(today) { mutableStateOf(false) }
     var isUseExtraTimeExpanded by rememberSaveable(today) { mutableStateOf(true) }
     var isMovedLaterExpanded by rememberSaveable(today) { mutableStateOf(true) }
     var isDoneTodayExpanded by rememberSaveable(today) { mutableStateOf(true) }
+    var isWontFitTodayExpanded by rememberSaveable(today) { mutableStateOf(true) }
+    var isRemovedFromPlanExpanded by rememberSaveable(today) { mutableStateOf(true) }
     var visibleWrapUpResult by rememberSaveable(today) { mutableStateOf<String?>(null) }
     var visibleNotice by rememberSaveable(today) { mutableStateOf<String?>(null) }
     val emptyState = todayPlan.emptyState(data, isTodayClosed)
@@ -175,6 +179,7 @@ fun TodayScreen(
         else -> stringResource(R.string.nothing_to_wrap_up)
     }
     val sourceDocuments = project.plan.sourceDocuments
+    val showUpNextSource = sourceDocuments.size > 1
     val upNextPlanTasks = todayPlan.doTodayTasks + todayPlan.pulledInTasks
     val upNextPlanIds = upNextPlanTasks.map { it.id }
     val pulledInTaskIds = todayPlan.pulledInTasks.mapTo(mutableSetOf()) { it.id }
@@ -284,6 +289,12 @@ fun TodayScreen(
     }
     if (showDoneTodayInfo) {
         DoneTodayInfoDialog(onDismiss = { showDoneTodayInfo = false })
+    }
+    if (showWontFitTodayInfo) {
+        WontFitTodayInfoDialog(onDismiss = { showWontFitTodayInfo = false })
+    }
+    if (showRemovedFromPlanInfo) {
+        RemovedFromPlanInfoDialog(onDismiss = { showRemovedFromPlanInfo = false })
     }
 
     LazyColumn(
@@ -434,8 +445,9 @@ fun TodayScreen(
                         task = task,
                         sourceDocuments = sourceDocuments,
                         position = if (isUpNextReorderMode) index + 1 else null,
-                        indicatorIcon = Icons.Default.Timer,
+                        indicatorIcon = Icons.AutoMirrored.Filled.ArrowForward,
                         indicatorContentDescription = stringResource(R.string.up_next),
+                        showSource = showUpNextSource,
                         supportingText = if (isPulledIn) stringResource(R.string.pulled_in_today_message) else null,
                         actions = actions,
                         isReorderMode = isUpNextReorderMode,
@@ -447,6 +459,7 @@ fun TodayScreen(
                             draggedUpNextTaskId = task.id.takeIf { isDragging }
                         },
                         reducedMotion = reducedMotion,
+                        compact = true,
                         modifier = if (isActivelyDragged) {
                             Modifier.zIndex(10f)
                         } else {
@@ -456,33 +469,68 @@ fun TodayScreen(
                 }
             }
             if (todayPlan.wontFitTodayTasks.isNotEmpty()) {
-                item(key = "today-wont-fit-header") {
-                    TodaySectionHeader(
-                        title = stringResource(R.string.wont_fit_today),
-                        reducedMotion = reducedMotion,
+                item(key = "today-wont-fit-section") {
+                    Column(
                         modifier = Modifier.animateItem(),
-                    )
-                }
-                items(todayPlan.wontFitTodayTasks, key = { "wont-fit-${it.id}" }) { task ->
-                    TodayTaskRow(
-                        task = task,
-                        sourceDocuments = sourceDocuments,
-                        indicatorIcon = Icons.Default.WarningAmber,
-                        indicatorContentDescription = stringResource(R.string.wont_fit_today),
-                        supportingText = stringResource(R.string.move_later_at_wrap_up),
-                        actions = listOf(
-                            TodayTaskActionSpec(
-                                label = stringResource(R.string.move_later),
-                                onClick = { onTaskAction(today, task.id, TodaySessionTaskAction.MoveLater) },
+                    ) {
+                        TodaySectionHeader(
+                            title = stringResource(R.string.wont_fit_today),
+                            reducedMotion = reducedMotion,
+                            countLabel = collapsedSectionTaskCountLabel(
+                                count = if (isWontFitTodayExpanded) 0 else todayPlan.wontFitTodayTasks.size,
                             ),
-                            TodayTaskActionSpec(
-                                label = stringResource(R.string.remove_from_plan),
-                                onClick = { pendingRemovalTask = task },
+                            trailingActions = listOf(
+                                TodaySectionAction(
+                                    label = "",
+                                    icon = Icons.Outlined.Info,
+                                    onClick = { showWontFitTodayInfo = true },
+                                    contentDescription = stringResource(R.string.wont_fit_today_info),
+                                ),
+                                TodaySectionAction(
+                                    label = if (isWontFitTodayExpanded) {
+                                        stringResource(R.string.collapse_section)
+                                    } else {
+                                        stringResource(R.string.expand_section)
+                                    },
+                                    icon = if (isWontFitTodayExpanded) {
+                                        Icons.Default.ExpandLess
+                                    } else {
+                                        Icons.Default.ExpandMore
+                                    },
+                                    onClick = { isWontFitTodayExpanded = !isWontFitTodayExpanded },
+                                ),
                             ),
-                        ),
-                        reducedMotion = reducedMotion,
-                        modifier = Modifier.animateItem(),
-                    )
+                        )
+                        TodayCollapsibleSectionContent(
+                            expanded = isWontFitTodayExpanded,
+                            reducedMotion = reducedMotion,
+                            compact = true,
+                        ) {
+                            todayPlan.wontFitTodayTasks.forEach { task ->
+                                key(task.id) {
+                                    TodayTaskRow(
+                                        task = task,
+                                        sourceDocuments = sourceDocuments,
+                                        indicatorIcon = Icons.Default.WarningAmber,
+                                        indicatorContentDescription = stringResource(R.string.wont_fit_today),
+                                        showSource = false,
+                                        actions = listOf(
+                                            TodayTaskActionSpec(
+                                                label = stringResource(R.string.move_later),
+                                                onClick = { onTaskAction(today, task.id, TodaySessionTaskAction.MoveLater) },
+                                            ),
+                                            TodayTaskActionSpec(
+                                                label = stringResource(R.string.remove_from_plan),
+                                                onClick = { pendingRemovalTask = task },
+                                            ),
+                                        ),
+                                        reducedMotion = reducedMotion,
+                                        compact = true,
+                                    )
+                                }
+                            }
+                        }
+                    }
                 }
             }
             if (todayPlan.movedLaterTasks.isNotEmpty()) {
@@ -521,6 +569,7 @@ fun TodayScreen(
                         TodayCollapsibleSectionContent(
                             expanded = isMovedLaterExpanded,
                             reducedMotion = reducedMotion,
+                            compact = true,
                         ) {
                             todayPlan.movedLaterTasks.forEach { task ->
                                 key(task.id) {
@@ -529,6 +578,7 @@ fun TodayScreen(
                                         sourceDocuments = sourceDocuments,
                                         indicatorIcon = Icons.Default.Schedule,
                                         indicatorContentDescription = stringResource(R.string.moved_later),
+                                        showSource = false,
                                         actions = listOf(
                                             TodayTaskActionSpec(
                                                 label = stringResource(R.string.restore),
@@ -540,6 +590,7 @@ fun TodayScreen(
                                             ),
                                         ),
                                         reducedMotion = reducedMotion,
+                                        compact = true,
                                     )
                                 }
                             }
@@ -583,6 +634,7 @@ fun TodayScreen(
                         TodayCollapsibleSectionContent(
                             expanded = isUseExtraTimeExpanded,
                             reducedMotion = reducedMotion,
+                            compact = true,
                         ) {
                             todayPlan.pullInCandidates.forEach { task ->
                                 key(task.id) {
@@ -591,11 +643,13 @@ fun TodayScreen(
                                         sourceDocuments = sourceDocuments,
                                         indicatorIcon = Icons.Default.Timer,
                                         indicatorContentDescription = stringResource(R.string.pull_ahead_suggestions),
+                                        showSource = false,
                                         primaryAction = TodayTaskActionSpec(
                                             label = stringResource(R.string.pull_in),
                                             onClick = { onTaskAction(today, task.id, TodaySessionTaskAction.PullIn) },
                                         ),
                                         reducedMotion = reducedMotion,
+                                        compact = true,
                                     )
                                 }
                             }
@@ -604,29 +658,65 @@ fun TodayScreen(
                 }
             }
             if (todayPlan.removedFromPlanTasks.isNotEmpty()) {
-                item(key = "today-removed-header") {
-                    TodaySectionHeader(
-                        title = stringResource(R.string.removed_from_plan),
-                        reducedMotion = reducedMotion,
+                item(key = "today-removed-section") {
+                    Column(
                         modifier = Modifier.animateItem(),
-                    )
-                }
-                items(todayPlan.removedFromPlanTasks, key = { "removed-${it.id}" }) { task ->
-                    TodayTaskRow(
-                        task = task,
-                        sourceDocuments = sourceDocuments,
-                        indicatorIcon = Icons.Default.Close,
-                        indicatorContentDescription = stringResource(R.string.removed_from_plan),
-                        supportingText = stringResource(R.string.removed_from_plan_message),
-                        actions = listOf(
-                            TodayTaskActionSpec(
-                                label = stringResource(R.string.restore),
-                                onClick = { onTaskAction(today, task.id, TodaySessionTaskAction.RestoreRemoved) },
+                    ) {
+                        TodaySectionHeader(
+                            title = stringResource(R.string.removed_from_plan),
+                            reducedMotion = reducedMotion,
+                            countLabel = collapsedSectionTaskCountLabel(
+                                count = if (isRemovedFromPlanExpanded) 0 else todayPlan.removedFromPlanTasks.size,
                             ),
-                        ),
-                        reducedMotion = reducedMotion,
-                        modifier = Modifier.animateItem(),
-                    )
+                            trailingActions = listOf(
+                                TodaySectionAction(
+                                    label = "",
+                                    icon = Icons.Outlined.Info,
+                                    onClick = { showRemovedFromPlanInfo = true },
+                                    contentDescription = stringResource(R.string.removed_from_plan_info),
+                                ),
+                                TodaySectionAction(
+                                    label = if (isRemovedFromPlanExpanded) {
+                                        stringResource(R.string.collapse_section)
+                                    } else {
+                                        stringResource(R.string.expand_section)
+                                    },
+                                    icon = if (isRemovedFromPlanExpanded) {
+                                        Icons.Default.ExpandLess
+                                    } else {
+                                        Icons.Default.ExpandMore
+                                    },
+                                    onClick = { isRemovedFromPlanExpanded = !isRemovedFromPlanExpanded },
+                                ),
+                            ),
+                        )
+                        TodayCollapsibleSectionContent(
+                            expanded = isRemovedFromPlanExpanded,
+                            reducedMotion = reducedMotion,
+                            compact = true,
+                        ) {
+                            todayPlan.removedFromPlanTasks.forEach { task ->
+                                key(task.id) {
+                                    TodayTaskRow(
+                                        task = task,
+                                        sourceDocuments = sourceDocuments,
+                                        indicatorIcon = Icons.Default.Close,
+                                        indicatorContentDescription = stringResource(R.string.removed_from_plan),
+                                        indicatorColor = MaterialTheme.colorScheme.error,
+                                        showSource = false,
+                                        actions = listOf(
+                                            TodayTaskActionSpec(
+                                                label = stringResource(R.string.restore),
+                                                onClick = { onTaskAction(today, task.id, TodaySessionTaskAction.RestoreRemoved) },
+                                            ),
+                                        ),
+                                        reducedMotion = reducedMotion,
+                                        compact = true,
+                                    )
+                                }
+                            }
+                        }
+                    }
                 }
             }
             if (todayPlan.doneTodayTasks.isNotEmpty()) {
@@ -665,6 +755,7 @@ fun TodayScreen(
                         TodayCollapsibleSectionContent(
                             expanded = isDoneTodayExpanded,
                             reducedMotion = reducedMotion,
+                            compact = true,
                         ) {
                             todayPlan.doneTodayTasks.forEach { task ->
                                 key(task.id) {
@@ -684,8 +775,11 @@ fun TodayScreen(
                                         sourceDocuments = sourceDocuments,
                                         indicatorIcon = Icons.Default.CheckCircle,
                                         indicatorContentDescription = stringResource(R.string.done_today),
+                                        showSource = false,
+                                        showDuration = false,
                                         actions = actions,
                                         reducedMotion = reducedMotion,
+                                        compact = true,
                                     )
                                 }
                             }
@@ -757,7 +851,7 @@ private fun TodayHeader(
             onClick = onTimeBudgetClick,
             shape = RoundedCornerShape(50),
             color = Color.Black,
-            contentColor = MaterialTheme.colorScheme.primary,
+            contentColor = Color.White,
             border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.58f)),
         ) {
             Row(
@@ -766,16 +860,16 @@ private fun TodayHeader(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 Icon(
-                    imageVector = Icons.Default.Timer,
+                    imageVector = Icons.Default.Schedule,
                     contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
+                    tint = Color.White,
                     modifier = Modifier.size(18.dp),
                 )
                 Text(
                     text = stringResource(R.string.time_budget),
                     style = MaterialTheme.typography.labelLarge,
                     fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.primary,
+                    color = Color.White,
                 )
             }
         }
@@ -1309,8 +1403,11 @@ private fun collapsedSectionTaskCountLabel(count: Int): String? {
 private fun TodayCollapsibleSectionContent(
     expanded: Boolean,
     reducedMotion: Boolean,
+    compact: Boolean = false,
     content: @Composable () -> Unit,
 ) {
+    val topPadding = if (compact) 8.dp else 12.dp
+    val itemSpacing = if (compact) 8.dp else 10.dp
     AnimatedVisibility(
         visible = expanded,
         enter = fadeIn(todayMotionSpec(reducedMotion)) + expandVertically(todayMotionSpec(reducedMotion)),
@@ -1319,8 +1416,8 @@ private fun TodayCollapsibleSectionContent(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(top = 12.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
+                .padding(top = topPadding),
+            verticalArrangement = Arrangement.spacedBy(itemSpacing),
         ) {
             content()
         }
@@ -1771,6 +1868,10 @@ private fun TodayTaskRow(
     position: Int? = null,
     indicatorIcon: ImageVector? = null,
     indicatorContentDescription: String? = null,
+    indicatorColor: Color? = null,
+    showDuration: Boolean = true,
+    showTaskType: Boolean = true,
+    showSource: Boolean = true,
     supportingText: String? = null,
     primaryAction: TodayTaskActionSpec? = null,
     actions: List<TodayTaskActionSpec> = emptyList(),
@@ -1782,6 +1883,7 @@ private fun TodayTaskRow(
     onDragStateChanged: (Boolean) -> Unit = {},
     reducedMotion: Boolean,
     modifier: Modifier = Modifier,
+    compact: Boolean = false,
 ) {
     var menuExpanded by remember(task.id) { mutableStateOf(false) }
     var dragOffsetY by remember(task.id) { mutableStateOf(0f) }
@@ -1790,17 +1892,31 @@ private fun TodayTaskRow(
     val canMoveDownState = rememberUpdatedState(canMoveDown)
     val onMoveUpState = rememberUpdatedState(onMoveUp)
     val onMoveDownState = rememberUpdatedState(onMoveDown)
-    val moveStepPx = with(LocalDensity.current) { 72.dp.toPx() }
+    val moveStepPx = with(LocalDensity.current) { if (compact) 56.dp.toPx() else 72.dp.toPx() }
     val draggedShadowElevationPx = with(LocalDensity.current) { 16.dp.toPx() }
     val moveStepPxState = rememberUpdatedState(moveStepPx)
-    val sourceText = todayTaskSourceText(task, sourceDocuments)
+    val sourceText = if (showSource) todayTaskSourceText(task, sourceDocuments) else null
     val supportingTextValue = supportingText.orEmpty()
+    val metadataText = todayTaskMetadataText(
+        task = task,
+        showDuration = showDuration,
+        showTaskType = showTaskType,
+    )
     val trailingMode = when {
         isReorderMode -> TodayTaskTrailingMode.Reorder
         primaryAction != null -> TodayTaskTrailingMode.PrimaryAction
         actions.isNotEmpty() -> TodayTaskTrailingMode.Menu
         else -> TodayTaskTrailingMode.Empty
     }
+    val shape = if (compact) 14.dp else 16.dp
+    val rowStartPadding = if (compact) 12.dp else 14.dp
+    val rowEndPadding = if (compact) 6.dp else 8.dp
+    val rowVerticalPadding = if (compact) 8.dp else 12.dp
+    val rowSpacing = if (compact) 9.dp else 12.dp
+    val contentSpacing = if (compact) 2.dp else 3.dp
+    val titleStyle = if (compact) MaterialTheme.typography.titleSmall else MaterialTheme.typography.titleMedium
+    val metaStyle = if (compact) MaterialTheme.typography.bodySmall else MaterialTheme.typography.bodyMedium
+    val actionSpacerWidth = if (compact) 8.dp else 12.dp
     val cardScale by animateFloatAsState(
         targetValue = if (isDragging) 1.012f else 1f,
         animationSpec = todayMotionSpec(reducedMotion),
@@ -1832,39 +1948,48 @@ private fun TodayTaskRow(
             }
             .offset { IntOffset(0, dragOffsetY.roundToInt()) }
             .zIndex(if (isDragging || dragOffsetY != 0f) 10f else 0f),
-        shape = RoundedCornerShape(16.dp),
+        shape = RoundedCornerShape(shape),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.24f)),
         border = BorderStroke(width = 1.dp, color = borderColor),
         elevation = CardDefaults.cardElevation(defaultElevation = cardElevation),
     ) {
         Row(
-            modifier = Modifier.padding(start = 14.dp, end = 8.dp, top = 12.dp, bottom = 12.dp),
+            modifier = Modifier.padding(
+                start = rowStartPadding,
+                end = rowEndPadding,
+                top = rowVerticalPadding,
+                bottom = rowVerticalPadding,
+            ),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            horizontalArrangement = Arrangement.spacedBy(rowSpacing),
         ) {
             TodayTaskIndicator(
                 position = position,
                 icon = indicatorIcon,
                 contentDescription = indicatorContentDescription,
+                color = indicatorColor,
+                compact = compact,
             )
             Column(
                 modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(3.dp),
+                verticalArrangement = Arrangement.spacedBy(contentSpacing),
             ) {
                 Text(
                     text = task.title,
-                    style = MaterialTheme.typography.titleMedium,
+                    style = titleStyle,
                     fontWeight = FontWeight.SemiBold,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                 )
-                Text(
-                    text = "${formatMinutes(task.likelyStudyMinutes)} · ${taskTypeLabel(task.taskType)}",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
+                if (metadataText != null) {
+                    Text(
+                        text = metadataText,
+                        style = metaStyle,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
                 if (sourceText != null) {
                     Text(
                         text = sourceText,
@@ -1898,6 +2023,7 @@ private fun TodayTaskRow(
                         ReorderTaskHandle(
                             isDragging = isDragging,
                             reducedMotion = reducedMotion,
+                            compact = compact,
                             modifier = Modifier
                                 .padding(start = 2.dp)
                                 .pointerInput(task.id) {
@@ -1948,19 +2074,43 @@ private fun TodayTaskRow(
                     }
                     TodayTaskTrailingMode.PrimaryAction -> {
                         primaryAction?.let { action ->
-                            TextButton(onClick = action.onClick) {
+                            TextButton(
+                                onClick = action.onClick,
+                                contentPadding = androidx.compose.foundation.layout.PaddingValues(
+                                    horizontal = if (compact) 8.dp else 12.dp,
+                                    vertical = if (compact) 4.dp else 8.dp,
+                                ),
+                            ) {
                                 Text(action.label)
                             }
-                        } ?: Spacer(Modifier.width(12.dp))
+                        } ?: Spacer(Modifier.width(actionSpacerWidth))
                     }
                     TodayTaskTrailingMode.Menu -> {
                         Box {
-                            IconButton(onClick = { menuExpanded = true }) {
-                                Icon(
-                                    imageVector = Icons.Default.MoreVert,
-                                    contentDescription = stringResource(R.string.today_task_actions),
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
+                            if (compact) {
+                                CompositionLocalProvider(LocalMinimumInteractiveComponentSize provides 0.dp) {
+                                    IconButton(
+                                        onClick = { menuExpanded = true },
+                                        modifier = Modifier.size(34.dp),
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.MoreVert,
+                                            contentDescription = stringResource(R.string.today_task_actions),
+                                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            modifier = Modifier.size(18.dp),
+                                        )
+                                    }
+                                }
+                            } else {
+                                IconButton(
+                                    onClick = { menuExpanded = true },
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.MoreVert,
+                                        contentDescription = stringResource(R.string.today_task_actions),
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
                             }
                             DropdownMenu(
                                 expanded = menuExpanded,
@@ -1980,7 +2130,7 @@ private fun TodayTaskRow(
                             }
                         }
                     }
-                    TodayTaskTrailingMode.Empty -> Spacer(Modifier.width(12.dp))
+                    TodayTaskTrailingMode.Empty -> Spacer(Modifier.width(actionSpacerWidth))
                 }
             }
         }
@@ -1992,25 +2142,37 @@ private fun TodayTaskIndicator(
     position: Int?,
     icon: ImageVector?,
     contentDescription: String?,
+    color: Color? = null,
+    compact: Boolean = false,
 ) {
+    val containerSize = if (compact) 34.dp else 40.dp
+    val iconSize = if (compact) 18.dp else 22.dp
+    val numberStyle = if (compact) MaterialTheme.typography.labelLarge else MaterialTheme.typography.titleSmall
+    val indicatorColor = color ?: MaterialTheme.colorScheme.primary
+    val containerColor = if (color == null) {
+        MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.26f)
+    } else {
+        indicatorColor.copy(alpha = 0.12f)
+    }
+    val borderColor = indicatorColor.copy(alpha = if (color == null) 0.34f else 0.32f)
     Surface(
-        modifier = Modifier.size(40.dp),
+        modifier = Modifier.size(containerSize),
         shape = CircleShape,
-        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.26f),
-        contentColor = MaterialTheme.colorScheme.primary,
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.34f)),
+        color = containerColor,
+        contentColor = indicatorColor,
+        border = BorderStroke(1.dp, borderColor),
     ) {
         Box(contentAlignment = Alignment.Center) {
             when {
                 position != null -> Text(
                     text = position.toString(),
-                    style = MaterialTheme.typography.titleSmall,
+                    style = numberStyle,
                     fontWeight = FontWeight.Bold,
                 )
                 icon != null -> Icon(
                     imageVector = icon,
                     contentDescription = contentDescription,
-                    modifier = Modifier.size(22.dp),
+                    modifier = Modifier.size(iconSize),
                 )
             }
         }
@@ -2022,6 +2184,7 @@ private fun ReorderTaskHandle(
     isDragging: Boolean,
     reducedMotion: Boolean,
     modifier: Modifier = Modifier,
+    compact: Boolean = false,
 ) {
     val handleAlpha by animateFloatAsState(
         targetValue = if (isDragging) 1f else 0.72f,
@@ -2030,7 +2193,7 @@ private fun ReorderTaskHandle(
     )
     Surface(
         modifier = modifier
-            .size(40.dp)
+            .size(if (compact) 34.dp else 40.dp)
             .alpha(handleAlpha),
         shape = CircleShape,
         color = MaterialTheme.colorScheme.surface,
@@ -2041,10 +2204,23 @@ private fun ReorderTaskHandle(
             Icon(
                 imageVector = Icons.Default.DragIndicator,
                 contentDescription = stringResource(R.string.drag_to_reorder_task),
-                modifier = Modifier.size(22.dp),
+                modifier = Modifier.size(if (compact) 18.dp else 22.dp),
             )
         }
     }
+}
+
+@Composable
+private fun todayTaskMetadataText(
+    task: GeneratedStudyBlock,
+    showDuration: Boolean,
+    showTaskType: Boolean,
+): String? {
+    val parts = buildList {
+        if (showDuration) add(formatMinutes(task.likelyStudyMinutes))
+        if (showTaskType) add(taskTypeLabel(task.taskType))
+    }
+    return parts.joinToString(" · ").takeIf { it.isNotBlank() }
 }
 
 @Composable
@@ -2183,6 +2359,62 @@ private fun ConfirmRemoveFromTodayDialog(
         dismissButton = {
             TextButton(onClick = onDismiss) {
                 Text(stringResource(R.string.cancel))
+            }
+        },
+    )
+}
+
+@Composable
+private fun WontFitTodayInfoDialog(
+    onDismiss: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        icon = {
+            Icon(
+                imageVector = Icons.Outlined.Info,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+            )
+        },
+        title = { Text(stringResource(R.string.wont_fit_today_info_title)) },
+        text = {
+            Text(
+                text = stringResource(R.string.wont_fit_today_info_message),
+                style = MaterialTheme.typography.bodyMedium,
+            )
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.ok))
+            }
+        },
+    )
+}
+
+@Composable
+private fun RemovedFromPlanInfoDialog(
+    onDismiss: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        icon = {
+            Icon(
+                imageVector = Icons.Outlined.Info,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+            )
+        },
+        title = { Text(stringResource(R.string.removed_from_plan_info_title)) },
+        text = {
+            Text(
+                text = stringResource(R.string.removed_from_plan_info_message),
+                style = MaterialTheme.typography.bodyMedium,
+            )
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.ok))
             }
         },
     )
