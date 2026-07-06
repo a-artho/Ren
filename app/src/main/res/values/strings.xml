@@ -87,6 +87,9 @@
     <string name="wont_fit_today">Won\'t fit today</string>
     <string name="move_later_at_wrap_up">Will move later if you wrap up with this plan.</string>
     <string name="moved_later">Moved later</string>
+    <string name="moved_later_info">Moved later info</string>
+    <string name="moved_later_info_title">Moved later</string>
+    <string name="moved_later_info_message">These tasks stay in your plan and move forward when you wrap up today. Restore one if you want it back in today\'s work.</string>
     <string name="moved_later_message">Will be rescheduled after wrap-up.</string>
     <string name="moved_later_can_restore_message">Extra time available; restore to put this back today.</string>
     <string name="pulled_in_today">Pulled in</string>

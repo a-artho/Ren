@@ -1,5 +1,17 @@
 package com.hci.ren.feature.studymap
 
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.animateIntAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.gestures.detectDragGestures
@@ -19,7 +31,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -39,6 +50,7 @@ import androidx.compose.material.icons.filled.RestartAlt
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Timer
 import androidx.compose.material.icons.filled.WarningAmber
+import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -60,9 +72,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -93,8 +105,11 @@ import com.hci.ren.feature.plangeneration.StudySourceDocument
 import com.hci.ren.feature.plangeneration.StudyTaskStatus
 import com.hci.ren.feature.plangeneration.StudyTaskType
 import com.hci.ren.feature.plangeneration.likelyStudyMinutes
+import com.hci.ren.ui.motion.RenMotionDurationMillis
+import com.hci.ren.ui.motion.RenMotionEasing
+import com.hci.ren.ui.motion.isReducedMotionEnabled
+import com.hci.ren.ui.motion.renFadeThroughTransform
 import com.hci.ren.ui.theme.RenContextMenuSurface
-import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
 @Composable
@@ -119,6 +134,7 @@ fun TodayScreen(
         taskStateById = project.taskStateById,
     )
     val today = currentStudyCalendar(project.preferences).toStudyDate()
+    val reducedMotion = isReducedMotionEnabled()
     val baseAvailableMinutes = todayBaseAvailableMinutes(project, data, today)
     val isTodayClosed = project.dailyAvailableMinutesByDate[today] == 0
     val todaySession = session?.takeIf { it.date == today }
@@ -137,13 +153,13 @@ fun TodayScreen(
     var showTimeBudgetDialog by remember(today) { mutableStateOf(false) }
     var pendingRemovalTask by remember(today) { mutableStateOf<GeneratedStudyBlock?>(null) }
     var showUseExtraTimeInfo by rememberSaveable(today) { mutableStateOf(false) }
+    var showMovedLaterInfo by rememberSaveable(today) { mutableStateOf(false) }
     var showDoneTodayInfo by rememberSaveable(today) { mutableStateOf(false) }
     var isUseExtraTimeExpanded by rememberSaveable(today) { mutableStateOf(true) }
+    var isMovedLaterExpanded by rememberSaveable(today) { mutableStateOf(true) }
     var isDoneTodayExpanded by rememberSaveable(today) { mutableStateOf(true) }
     var visibleWrapUpResult by rememberSaveable(today) { mutableStateOf<String?>(null) }
     var visibleNotice by rememberSaveable(today) { mutableStateOf<String?>(null) }
-    val listState = rememberLazyListState()
-    val coroutineScope = rememberCoroutineScope()
     val emptyState = todayPlan.emptyState(data, isTodayClosed)
     val canWrapUpToday = todayPlan.canWrapUpToday(isTodayClosed)
     val impactPreviewService = remember { TodayImpactPreviewService() }
@@ -163,6 +179,7 @@ fun TodayScreen(
     val pulledInTaskIds = todayPlan.pulledInTasks.mapTo(mutableSetOf()) { it.id }
     var isUpNextReorderMode by rememberSaveable(today) { mutableStateOf(false) }
     var upNextOrderIds by rememberSaveable(today) { mutableStateOf(upNextPlanIds) }
+    var draggedUpNextTaskId by remember(today) { mutableStateOf<String?>(null) }
     val orderedUpNextIds = upNextOrderIds.ifEmpty { upNextPlanIds }
     val upNextTasksById = upNextPlanTasks.associateBy { it.id }
     val visibleUpNextTasks = orderedUpNextIds
@@ -190,12 +207,6 @@ fun TodayScreen(
         upNextOrderIds = updated
         return true
     }
-    fun scrollToSection(index: Int) {
-        coroutineScope.launch {
-            listState.animateScrollToItem(index)
-        }
-    }
-
     LaunchedEffect(upNextPlanIds) {
         val retainedIds = upNextOrderIds.filter { it in upNextPlanIds }
         val addedIds = upNextPlanIds.filterNot { it in retainedIds }
@@ -205,6 +216,12 @@ fun TodayScreen(
         }
         if (upNextPlanIds.size <= 1) {
             isUpNextReorderMode = false
+        }
+    }
+
+    LaunchedEffect(isUpNextReorderMode) {
+        if (!isUpNextReorderMode) {
+            draggedUpNextTaskId = null
         }
     }
 
@@ -245,6 +262,7 @@ fun TodayScreen(
             },
             onReset = { onAvailableTimeChanged(today, null) },
             onDismiss = { showTimeBudgetDialog = false },
+            reducedMotion = reducedMotion,
         )
     }
     pendingRemovalTask?.let { task ->
@@ -260,12 +278,14 @@ fun TodayScreen(
     if (showUseExtraTimeInfo) {
         UseExtraTimeInfoDialog(onDismiss = { showUseExtraTimeInfo = false })
     }
+    if (showMovedLaterInfo) {
+        MovedLaterInfoDialog(onDismiss = { showMovedLaterInfo = false })
+    }
     if (showDoneTodayInfo) {
         DoneTodayInfoDialog(onDismiss = { showDoneTodayInfo = false })
     }
 
     LazyColumn(
-        state = listState,
         modifier = modifier
             .fillMaxSize()
             .statusBarsPadding(),
@@ -277,50 +297,65 @@ fun TodayScreen(
         ),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        var nextItemIndex = 0
-        item {
+        item(key = "today-header") {
             TodayHeader(
                 onTimeBudgetClick = { showTimeBudgetDialog = true },
+                modifier = Modifier.animateItem(),
             )
         }
-        nextItemIndex += 1
-        item {
-            TodayBudgetCard(todayPlan, isTodayClosed)
+        item(key = "today-budget") {
+            TodayBudgetCard(
+                todayPlan = todayPlan,
+                reducedMotion = reducedMotion,
+                modifier = Modifier.animateItem(),
+            )
         }
-        nextItemIndex += 1
         if (startHereTask != null) {
-            item {
-                val isPulledIn = startHereTask.id in pulledInTaskIds
-                TodayStartHereCard(
-                    task = startHereTask,
-                    sourceDocuments = sourceDocuments,
-                    actions = upNextTaskActions(
-                        today = today,
-                        task = startHereTask,
-                        isPulledIn = isPulledIn,
-                        onTaskAction = onTaskAction,
-                        includeMarkDone = false,
-                        onRemoveFromPlan = { pendingRemovalTask = it },
-                    ),
-                    onStartFocus = { onStartFocusTask(startHereTask.id) },
-                    onMarkDone = { onTaskAction(today, startHereTask.id, TodaySessionTaskAction.MarkDone) },
-                )
+            item(key = "today-start-here") {
+                AnimatedContent(
+                    targetState = startHereTask.id,
+                    transitionSpec = { renFadeThroughTransform(reducedMotion = reducedMotion) },
+                    contentKey = { it },
+                    label = "today-start-task",
+                    modifier = Modifier.animateItem(),
+                ) { taskId ->
+                    val animatedTask = visibleUpNextTasks.firstOrNull { it.id == taskId } ?: startHereTask
+                    val isPulledIn = animatedTask.id in pulledInTaskIds
+                    TodayStartHereCard(
+                        task = animatedTask,
+                        sourceDocuments = sourceDocuments,
+                        actions = upNextTaskActions(
+                            today = today,
+                            task = animatedTask,
+                            isPulledIn = isPulledIn,
+                            onTaskAction = onTaskAction,
+                            includeMarkDone = false,
+                            onRemoveFromPlan = { pendingRemovalTask = it },
+                        ),
+                        onStartFocus = { onStartFocusTask(animatedTask.id) },
+                        onMarkDone = { onTaskAction(today, animatedTask.id, TodaySessionTaskAction.MarkDone) },
+                        reducedMotion = reducedMotion,
+                    )
+                }
             }
-            nextItemIndex += 1
         }
         if (isTodayClosed && visibleWrapUpResult != null) {
-            item {
-                TodayWrapUpResultCard(message = visibleWrapUpResult.orEmpty())
+            item(key = "today-wrap-up-result") {
+                TodayWrapUpResultCard(
+                    message = visibleWrapUpResult.orEmpty(),
+                    modifier = Modifier.animateItem(),
+                )
             }
-            nextItemIndex += 1
         }
         if (visibleNotice != null) {
-            item {
-                TodayNoticeCard(message = visibleNotice.orEmpty())
+            item(key = "today-notice") {
+                TodayNoticeCard(
+                    message = visibleNotice.orEmpty(),
+                    modifier = Modifier.animateItem(),
+                )
             }
-            nextItemIndex += 1
         }
-        item {
+        item(key = "today-wrap-action") {
             if (todayPlan.hasPendingChanges || isTodayClosed) {
                 TodayRebalancedRow(
                     title = if (isTodayClosed) {
@@ -336,16 +371,18 @@ fun TodayScreen(
                     actionText = wrapUpButtonText,
                     showAction = canWrapUpToday,
                     onActionClick = { showWrapUpDialog = true },
+                    reducedMotion = reducedMotion,
+                    modifier = Modifier.animateItem(),
                 )
             } else {
                 TodayWrapUpButton(
                     text = wrapUpButtonText,
                     enabled = canWrapUpToday,
                     onClick = { showWrapUpDialog = true },
+                    modifier = Modifier.animateItem(),
                 )
             }
         }
-        nextItemIndex += 1
         if (
             upNextPlanTasks.isEmpty() &&
             todayPlan.doneTodayTasks.isEmpty() &&
@@ -354,14 +391,20 @@ fun TodayScreen(
             todayPlan.removedFromPlanTasks.isEmpty() &&
             todayPlan.pullInCandidates.isEmpty()
         ) {
-            item { EmptyTodayCard(emptyState) }
-            nextItemIndex += 1
+            item(key = "today-empty") {
+                EmptyTodayCard(
+                    state = emptyState,
+                    modifier = Modifier.animateItem(),
+                )
+            }
         } else {
             if (listedUpNextTasks.isNotEmpty()) {
-                item {
+                item(key = "today-up-next-header") {
                     TodaySectionHeader(
                         title = stringResource(R.string.up_next),
                         count = listedUpNextTasks.size,
+                        reducedMotion = reducedMotion,
+                        modifier = Modifier.animateItem(),
                         trailingAction = if (visibleUpNextTasks.size > 1) {
                             TodaySectionAction(
                                 label = if (isUpNextReorderMode) {
@@ -377,9 +420,9 @@ fun TodayScreen(
                         },
                     )
                 }
-                nextItemIndex += 1
                 itemsIndexed(listedUpNextTasks, key = { _, task -> "up-next-${task.id}" }) { index, task ->
                     val isPulledIn = task.id in pulledInTaskIds
+                    val isActivelyDragged = draggedUpNextTaskId == task.id
                     val actions = upNextTaskActions(
                         today = today,
                         task = task,
@@ -398,18 +441,27 @@ fun TodayScreen(
                         canMoveDown = index < visibleUpNextTasks.lastIndex,
                         onMoveUp = { moveUpNextTask(task.id, -1) },
                         onMoveDown = { moveUpNextTask(task.id, 1) },
+                        onDragStateChanged = { isDragging ->
+                            draggedUpNextTaskId = task.id.takeIf { isDragging }
+                        },
+                        reducedMotion = reducedMotion,
+                        modifier = if (isActivelyDragged) {
+                            Modifier.zIndex(10f)
+                        } else {
+                            Modifier.animateItem()
+                        },
                     )
                 }
-                nextItemIndex += listedUpNextTasks.size
             }
             if (todayPlan.wontFitTodayTasks.isNotEmpty()) {
-                item {
+                item(key = "today-wont-fit-header") {
                     TodaySectionHeader(
                         title = stringResource(R.string.wont_fit_today),
                         count = todayPlan.wontFitTodayTasks.size,
+                        reducedMotion = reducedMotion,
+                        modifier = Modifier.animateItem(),
                     )
                 }
-                nextItemIndex += 1
                 items(todayPlan.wontFitTodayTasks, key = { "wont-fit-${it.id}" }) { task ->
                     TodayTaskRow(
                         task = task,
@@ -427,99 +479,133 @@ fun TodayScreen(
                                 onClick = { pendingRemovalTask = task },
                             ),
                         ),
+                        reducedMotion = reducedMotion,
+                        modifier = Modifier.animateItem(),
                     )
                 }
-                nextItemIndex += todayPlan.wontFitTodayTasks.size
             }
             if (todayPlan.movedLaterTasks.isNotEmpty()) {
-                item {
-                    TodaySectionHeader(
-                        title = stringResource(R.string.moved_later),
-                        count = todayPlan.movedLaterTasks.size,
-                    )
-                }
-                nextItemIndex += 1
-                items(todayPlan.movedLaterTasks, key = { "moved-${it.id}" }) { task ->
-                    TodayTaskRow(
-                        task = task,
-                        sourceDocuments = sourceDocuments,
-                        indicatorIcon = Icons.Default.Schedule,
-                        indicatorContentDescription = stringResource(R.string.moved_later),
-                        supportingText = if (todayPlan.remainingMinutes > 0) {
-                            stringResource(R.string.moved_later_can_restore_message)
-                        } else {
-                            stringResource(R.string.moved_later_message)
-                        },
-                        actions = listOf(
-                            TodayTaskActionSpec(
-                                label = stringResource(R.string.restore),
-                                onClick = { onTaskAction(today, task.id, TodaySessionTaskAction.RestoreMovedLater) },
-                            ),
-                            TodayTaskActionSpec(
-                                label = stringResource(R.string.remove_from_plan),
-                                onClick = { pendingRemovalTask = task },
-                            ),
-                        ),
-                    )
-                }
-                nextItemIndex += todayPlan.movedLaterTasks.size
-            }
-            if (todayPlan.pullInCandidates.isNotEmpty()) {
-                val useExtraTimeHeaderIndex = nextItemIndex
-                item {
-                    TodaySectionHeader(
-                        title = stringResource(R.string.pull_ahead_suggestions),
-                        count = todayPlan.pullInCandidates.size,
-                        trailingActions = listOf(
-                            TodaySectionAction(
-                                label = "",
-                                icon = Icons.Default.Info,
-                                onClick = { showUseExtraTimeInfo = true },
-                                contentDescription = stringResource(R.string.use_extra_time_info),
-                            ),
-                            TodaySectionAction(
-                                label = if (isUseExtraTimeExpanded) {
-                                    stringResource(R.string.collapse_section)
-                                } else {
-                                    stringResource(R.string.expand_section)
-                                },
-                                icon = if (isUseExtraTimeExpanded) {
-                                    Icons.Default.ExpandLess
-                                } else {
-                                    Icons.Default.ExpandMore
-                                },
-                                onClick = {
-                                    isUseExtraTimeExpanded = !isUseExtraTimeExpanded
-                                    scrollToSection(useExtraTimeHeaderIndex)
-                                },
-                            ),
-                        ),
-                    )
-                }
-                nextItemIndex += 1
-                if (isUseExtraTimeExpanded) {
-                    itemsIndexed(todayPlan.pullInCandidates, key = { _, task -> "pull-${task.id}" }) { index, task ->
-                        TodayTaskRow(
-                            task = task,
-                            sourceDocuments = sourceDocuments,
-                            position = index + 1,
-                            primaryAction = TodayTaskActionSpec(
-                                label = stringResource(R.string.pull_in),
-                                onClick = { onTaskAction(today, task.id, TodaySessionTaskAction.PullIn) },
+                item(key = "today-moved-later-section") {
+                    Column(
+                        modifier = Modifier.animateItem(),
+                    ) {
+                        TodaySectionHeader(
+                            title = stringResource(R.string.moved_later),
+                            count = todayPlan.movedLaterTasks.size,
+                            reducedMotion = reducedMotion,
+                            trailingActions = listOf(
+                                TodaySectionAction(
+                                    label = "",
+                                    icon = Icons.Outlined.Info,
+                                    onClick = { showMovedLaterInfo = true },
+                                    contentDescription = stringResource(R.string.moved_later_info),
+                                ),
+                                TodaySectionAction(
+                                    label = if (isMovedLaterExpanded) {
+                                        stringResource(R.string.collapse_section)
+                                    } else {
+                                        stringResource(R.string.expand_section)
+                                    },
+                                    icon = if (isMovedLaterExpanded) {
+                                        Icons.Default.ExpandLess
+                                    } else {
+                                        Icons.Default.ExpandMore
+                                    },
+                                    onClick = { isMovedLaterExpanded = !isMovedLaterExpanded },
+                                ),
                             ),
                         )
+                        TodayCollapsibleSectionContent(
+                            expanded = isMovedLaterExpanded,
+                            reducedMotion = reducedMotion,
+                        ) {
+                            todayPlan.movedLaterTasks.forEach { task ->
+                                key(task.id) {
+                                    TodayTaskRow(
+                                        task = task,
+                                        sourceDocuments = sourceDocuments,
+                                        indicatorIcon = Icons.Default.Schedule,
+                                        indicatorContentDescription = stringResource(R.string.moved_later),
+                                        actions = listOf(
+                                            TodayTaskActionSpec(
+                                                label = stringResource(R.string.restore),
+                                                onClick = { onTaskAction(today, task.id, TodaySessionTaskAction.RestoreMovedLater) },
+                                            ),
+                                            TodayTaskActionSpec(
+                                                label = stringResource(R.string.remove_from_plan),
+                                                onClick = { pendingRemovalTask = task },
+                                            ),
+                                        ),
+                                        reducedMotion = reducedMotion,
+                                    )
+                                }
+                            }
+                        }
                     }
-                    nextItemIndex += todayPlan.pullInCandidates.size
+                }
+            }
+            if (todayPlan.pullInCandidates.isNotEmpty()) {
+                item(key = "today-pull-in-section") {
+                    Column(
+                        modifier = Modifier.animateItem(),
+                    ) {
+                        TodaySectionHeader(
+                            title = stringResource(R.string.pull_ahead_suggestions),
+                            count = todayPlan.pullInCandidates.size,
+                            reducedMotion = reducedMotion,
+                            trailingActions = listOf(
+                                TodaySectionAction(
+                                    label = "",
+                                    icon = Icons.Outlined.Info,
+                                    onClick = { showUseExtraTimeInfo = true },
+                                    contentDescription = stringResource(R.string.use_extra_time_info),
+                                ),
+                                TodaySectionAction(
+                                    label = if (isUseExtraTimeExpanded) {
+                                        stringResource(R.string.collapse_section)
+                                    } else {
+                                        stringResource(R.string.expand_section)
+                                    },
+                                    icon = if (isUseExtraTimeExpanded) {
+                                        Icons.Default.ExpandLess
+                                    } else {
+                                        Icons.Default.ExpandMore
+                                    },
+                                    onClick = { isUseExtraTimeExpanded = !isUseExtraTimeExpanded },
+                                ),
+                            ),
+                        )
+                        TodayCollapsibleSectionContent(
+                            expanded = isUseExtraTimeExpanded,
+                            reducedMotion = reducedMotion,
+                        ) {
+                            todayPlan.pullInCandidates.forEachIndexed { index, task ->
+                                key(task.id) {
+                                    TodayTaskRow(
+                                        task = task,
+                                        sourceDocuments = sourceDocuments,
+                                        position = index + 1,
+                                        primaryAction = TodayTaskActionSpec(
+                                            label = stringResource(R.string.pull_in),
+                                            onClick = { onTaskAction(today, task.id, TodaySessionTaskAction.PullIn) },
+                                        ),
+                                        reducedMotion = reducedMotion,
+                                    )
+                                }
+                            }
+                        }
+                    }
                 }
             }
             if (todayPlan.removedFromPlanTasks.isNotEmpty()) {
-                item {
+                item(key = "today-removed-header") {
                     TodaySectionHeader(
                         title = stringResource(R.string.removed_from_plan),
                         count = todayPlan.removedFromPlanTasks.size,
+                        reducedMotion = reducedMotion,
+                        modifier = Modifier.animateItem(),
                     )
                 }
-                nextItemIndex += 1
                 items(todayPlan.removedFromPlanTasks, key = { "removed-${it.id}" }) { task ->
                     TodayTaskRow(
                         task = task,
@@ -533,65 +619,71 @@ fun TodayScreen(
                                 onClick = { onTaskAction(today, task.id, TodaySessionTaskAction.RestoreRemoved) },
                             ),
                         ),
+                        reducedMotion = reducedMotion,
+                        modifier = Modifier.animateItem(),
                     )
                 }
-                nextItemIndex += todayPlan.removedFromPlanTasks.size
             }
             if (todayPlan.doneTodayTasks.isNotEmpty()) {
-                val doneTodayHeaderIndex = nextItemIndex
-                item {
-                    TodaySectionHeader(
-                        title = stringResource(R.string.done_today),
-                        count = todayPlan.doneTodayTasks.size,
-                        trailingActions = listOf(
-                            TodaySectionAction(
-                                label = "",
-                                icon = Icons.Default.Info,
-                                onClick = { showDoneTodayInfo = true },
-                                contentDescription = stringResource(R.string.done_today_info),
-                            ),
-                            TodaySectionAction(
-                                label = if (isDoneTodayExpanded) {
-                                    stringResource(R.string.collapse_section)
-                                } else {
-                                    stringResource(R.string.expand_section)
-                                },
-                                icon = if (isDoneTodayExpanded) {
-                                    Icons.Default.ExpandLess
-                                } else {
-                                    Icons.Default.ExpandMore
-                                },
-                                onClick = {
-                                    isDoneTodayExpanded = !isDoneTodayExpanded
-                                    scrollToSection(doneTodayHeaderIndex)
-                                },
-                            ),
-                        ),
-                    )
-                }
-                nextItemIndex += 1
-                if (isDoneTodayExpanded) {
-                    items(todayPlan.doneTodayTasks, key = { "done-${it.id}" }) { task ->
-                        val isTemporaryDone = task.id in todaySession?.doneTodayTaskIds.orEmpty()
-                        val actions = if (isTemporaryDone) {
-                            listOf(
-                                TodayTaskActionSpec(
-                                    label = stringResource(R.string.undo),
-                                    onClick = { onTaskAction(today, task.id, TodaySessionTaskAction.UndoDone) },
+                item(key = "today-done-section") {
+                    Column(
+                        modifier = Modifier.animateItem(),
+                    ) {
+                        TodaySectionHeader(
+                            title = stringResource(R.string.done_today),
+                            count = todayPlan.doneTodayTasks.size,
+                            reducedMotion = reducedMotion,
+                            trailingActions = listOf(
+                                TodaySectionAction(
+                                    label = "",
+                                    icon = Icons.Outlined.Info,
+                                    onClick = { showDoneTodayInfo = true },
+                                    contentDescription = stringResource(R.string.done_today_info),
                                 ),
-                            )
-                        } else {
-                            emptyList()
-                        }
-                        TodayTaskRow(
-                            task = task,
-                            sourceDocuments = sourceDocuments,
-                            indicatorIcon = Icons.Default.CheckCircle,
-                            indicatorContentDescription = stringResource(R.string.done_today),
-                            actions = actions,
+                                TodaySectionAction(
+                                    label = if (isDoneTodayExpanded) {
+                                        stringResource(R.string.collapse_section)
+                                    } else {
+                                        stringResource(R.string.expand_section)
+                                    },
+                                    icon = if (isDoneTodayExpanded) {
+                                        Icons.Default.ExpandLess
+                                    } else {
+                                        Icons.Default.ExpandMore
+                                    },
+                                    onClick = { isDoneTodayExpanded = !isDoneTodayExpanded },
+                                ),
+                            ),
                         )
+                        TodayCollapsibleSectionContent(
+                            expanded = isDoneTodayExpanded,
+                            reducedMotion = reducedMotion,
+                        ) {
+                            todayPlan.doneTodayTasks.forEach { task ->
+                                key(task.id) {
+                                    val isTemporaryDone = task.id in todaySession?.doneTodayTaskIds.orEmpty()
+                                    val actions = if (isTemporaryDone) {
+                                        listOf(
+                                            TodayTaskActionSpec(
+                                                label = stringResource(R.string.undo),
+                                                onClick = { onTaskAction(today, task.id, TodaySessionTaskAction.UndoDone) },
+                                            ),
+                                        )
+                                    } else {
+                                        emptyList()
+                                    }
+                                    TodayTaskRow(
+                                        task = task,
+                                        sourceDocuments = sourceDocuments,
+                                        indicatorIcon = Icons.Default.CheckCircle,
+                                        indicatorContentDescription = stringResource(R.string.done_today),
+                                        actions = actions,
+                                        reducedMotion = reducedMotion,
+                                    )
+                                }
+                            }
+                        }
                     }
-                    nextItemIndex += todayPlan.doneTodayTasks.size
                 }
             }
         }
@@ -686,27 +778,56 @@ private fun TodayHeader(
 @Composable
 private fun TodayBudgetCard(
     todayPlan: TodaySessionPlan,
-    isTodayClosed: Boolean,
+    reducedMotion: Boolean,
+    modifier: Modifier = Modifier,
 ) {
     val pressureMinutes = maxOf(todayPlan.overPlannedMinutes, todayPlan.overflowMinutes)
+    val animatedAvailableMinutes by animateIntAsState(
+        targetValue = todayPlan.availableMinutes,
+        animationSpec = todayMotionSpec(reducedMotion),
+        label = "today-budget-available",
+    )
+    val animatedPlannedMinutes by animateIntAsState(
+        targetValue = todayPlan.plannedMinutes,
+        animationSpec = todayMotionSpec(reducedMotion),
+        label = "today-budget-planned",
+    )
+    val animatedRemainingOrOverMinutes by animateIntAsState(
+        targetValue = if (pressureMinutes > 0) pressureMinutes else todayPlan.remainingMinutes,
+        animationSpec = todayMotionSpec(reducedMotion),
+        label = "today-budget-remaining",
+    )
+    val animatedCompletedMinutes by animateIntAsState(
+        targetValue = todayPlan.completedMinutes,
+        animationSpec = todayMotionSpec(reducedMotion),
+        label = "today-budget-completed",
+    )
+    val animatedMovingLaterMinutes by animateIntAsState(
+        targetValue = todayPlan.overflowMinutes + todayPlan.movedLaterMinutes,
+        animationSpec = todayMotionSpec(reducedMotion),
+        label = "today-budget-moving-later",
+    )
+    val animatedRemovedMinutes by animateIntAsState(
+        targetValue = todayPlan.removedMinutes,
+        animationSpec = todayMotionSpec(reducedMotion),
+        label = "today-budget-removed",
+    )
     val remainingOrOverLabel = if (pressureMinutes > 0) {
         stringResource(R.string.over_budget_metric_label)
     } else {
         stringResource(R.string.remaining_metric_label)
     }
-    val remainingOrOverValue = if (pressureMinutes > 0) {
-        formatMinutes(pressureMinutes)
-    } else {
-        formatMinutes(todayPlan.remainingMinutes)
-    }
-    val remainingOrOverColor = if (pressureMinutes > 0) {
-        MaterialTheme.colorScheme.error
-    } else {
-        MaterialTheme.colorScheme.primary
-    }
+    val targetRemainingOrOverColor = if (pressureMinutes > 0) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
+    val remainingOrOverColor by animateColorAsState(
+        targetValue = targetRemainingOrOverColor,
+        animationSpec = todayMotionSpec(reducedMotion),
+        label = "today-budget-remaining-color",
+    )
 
     Card(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = modifier
+            .fillMaxWidth()
+            .animateContentSize(animationSpec = todayMotionSpec(reducedMotion)),
         shape = RoundedCornerShape(24.dp),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
@@ -723,7 +844,7 @@ private fun TodayBudgetCard(
             ) {
                 TodayBudgetMetric(
                     label = stringResource(R.string.available_metric_label),
-                    value = formatMinutes(todayPlan.availableMinutes),
+                    value = formatMinutes(animatedAvailableMinutes),
                     icon = Icons.Default.Timer,
                     iconTint = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.weight(1f),
@@ -736,7 +857,7 @@ private fun TodayBudgetCard(
                 )
                 TodayBudgetMetric(
                     label = stringResource(R.string.planned_metric_label),
-                    value = formatMinutes(todayPlan.plannedMinutes),
+                    value = formatMinutes(animatedPlannedMinutes),
                     icon = Icons.Default.CalendarMonth,
                     iconTint = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.weight(1f),
@@ -749,7 +870,7 @@ private fun TodayBudgetCard(
                 )
                 TodayBudgetMetric(
                     label = remainingOrOverLabel,
-                    value = remainingOrOverValue,
+                    value = formatMinutes(animatedRemainingOrOverMinutes),
                     icon = Icons.Default.WarningAmber,
                     iconTint = remainingOrOverColor,
                     valueColor = remainingOrOverColor,
@@ -765,7 +886,7 @@ private fun TodayBudgetCard(
             ) {
                 TodayBudgetMetric(
                     label = stringResource(R.string.completed),
-                    value = formatMinutes(todayPlan.completedMinutes),
+                    value = formatMinutes(animatedCompletedMinutes),
                     icon = Icons.Default.CheckCircle,
                     iconTint = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.weight(1f),
@@ -778,7 +899,7 @@ private fun TodayBudgetCard(
                 )
                 TodayBudgetMetric(
                     label = stringResource(R.string.moving_later_metric_label),
-                    value = formatMinutes(todayPlan.overflowMinutes + todayPlan.movedLaterMinutes),
+                    value = formatMinutes(animatedMovingLaterMinutes),
                     icon = Icons.Default.Schedule,
                     iconTint = MaterialTheme.colorScheme.tertiary,
                     modifier = Modifier.weight(1f),
@@ -791,7 +912,7 @@ private fun TodayBudgetCard(
                 )
                 TodayBudgetMetric(
                     label = stringResource(R.string.removed_metric_label),
-                    value = formatMinutes(todayPlan.removedMinutes),
+                    value = formatMinutes(animatedRemovedMinutes),
                     icon = Icons.Default.Close,
                     iconTint = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.weight(1f),
@@ -852,12 +973,20 @@ private fun TimeBudgetDialog(
     onIncrease: () -> Unit,
     onReset: () -> Unit,
     onDismiss: () -> Unit,
+    reducedMotion: Boolean,
 ) {
     val hasTimeOverride = availableMinutes != baseAvailableMinutes
+    val animatedAvailableMinutes by animateIntAsState(
+        targetValue = availableMinutes,
+        animationSpec = todayMotionSpec(reducedMotion),
+        label = "today-dialog-available-minutes",
+    )
 
     Dialog(onDismissRequest = onDismiss) {
         Card(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .animateContentSize(animationSpec = todayMotionSpec(reducedMotion)),
             shape = RoundedCornerShape(24.dp),
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
             border = CardDefaults.outlinedCardBorder(),
@@ -921,7 +1050,7 @@ private fun TimeBudgetDialog(
                         Icon(Icons.Default.Remove, contentDescription = stringResource(R.string.decrease_available_time))
                     }
                     Text(
-                        text = formatMinutes(availableMinutes),
+                        text = formatMinutes(animatedAvailableMinutes),
                         modifier = Modifier.weight(1f),
                         style = MaterialTheme.typography.headlineSmall,
                         fontWeight = FontWeight.Bold,
@@ -965,9 +1094,13 @@ private fun TodayRebalancedRow(
     actionText: String,
     showAction: Boolean,
     onActionClick: () -> Unit,
+    reducedMotion: Boolean,
+    modifier: Modifier = Modifier,
 ) {
     Surface(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = modifier
+            .fillMaxWidth()
+            .animateContentSize(animationSpec = todayMotionSpec(reducedMotion)),
         shape = RoundedCornerShape(18.dp),
         color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.28f),
         contentColor = MaterialTheme.colorScheme.onSurface,
@@ -996,20 +1129,28 @@ private fun TodayRebalancedRow(
                 modifier = Modifier.weight(1f),
                 verticalArrangement = Arrangement.spacedBy(2.dp),
             ) {
-                Text(
-                    text = title,
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.Bold,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                Text(
-                    text = message,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                )
+                AnimatedContent(
+                    targetState = title to message,
+                    transitionSpec = { renFadeThroughTransform(reducedMotion = reducedMotion) },
+                    label = "today-rebalanced-copy",
+                ) { (targetTitle, targetMessage) ->
+                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Text(
+                            text = targetTitle,
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        Text(
+                            text = targetMessage,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
             }
             if (showAction) {
                 OutlinedButton(
@@ -1035,11 +1176,12 @@ private fun TodayWrapUpButton(
     text: String,
     enabled: Boolean,
     onClick: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     OutlinedButton(
         onClick = onClick,
         enabled = enabled,
-        modifier = Modifier.fillMaxWidth(),
+        modifier = modifier.fillMaxWidth(),
         shape = RoundedCornerShape(50),
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = if (enabled) 0.72f else 0.28f)),
     ) {
@@ -1057,12 +1199,21 @@ private fun TodayWrapUpButton(
 private fun TodaySectionHeader(
     title: String,
     count: Int,
+    reducedMotion: Boolean,
+    modifier: Modifier = Modifier,
     trailingAction: TodaySectionAction? = null,
     trailingActions: List<TodaySectionAction> = emptyList(),
 ) {
     val actions = listOfNotNull(trailingAction) + trailingActions
+    val animatedCount by animateIntAsState(
+        targetValue = count,
+        animationSpec = todayMotionSpec(reducedMotion),
+        label = "today-section-count",
+    )
     Row(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = modifier
+            .fillMaxWidth()
+            .animateContentSize(animationSpec = todayMotionSpec(reducedMotion)),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
@@ -1081,7 +1232,7 @@ private fun TodaySectionHeader(
         ) {
             Box(contentAlignment = Alignment.Center) {
                 Text(
-                    text = count.toString(),
+                    text = animatedCount.toString(),
                     style = MaterialTheme.typography.labelLarge,
                     fontWeight = FontWeight.Bold,
                 )
@@ -1090,26 +1241,27 @@ private fun TodaySectionHeader(
         Spacer(Modifier.weight(1f))
         Row(
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(2.dp),
+            horizontalArrangement = Arrangement.spacedBy(0.dp),
         ) {
             actions.forEach { action ->
                 if (action.label.isBlank()) {
-                    IconButton(onClick = action.onClick, modifier = Modifier.size(36.dp)) {
-                        Icon(
-                            imageVector = action.icon,
-                            contentDescription = action.contentDescription,
-                            tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(20.dp),
-                        )
-                    }
+                    TodaySectionIconAction(action = action)
                 } else {
-                    TextButton(onClick = action.onClick) {
+                    TextButton(
+                        onClick = action.onClick,
+                        contentPadding = androidx.compose.foundation.layout.PaddingValues(
+                            start = 6.dp,
+                            end = 2.dp,
+                            top = 4.dp,
+                            bottom = 4.dp,
+                        ),
+                    ) {
                         Icon(
                             imageVector = action.icon,
                             contentDescription = action.contentDescription,
-                            modifier = Modifier.size(18.dp),
+                            modifier = Modifier.size(17.dp),
                         )
-                        Spacer(Modifier.width(6.dp))
+                        Spacer(Modifier.width(4.dp))
                         Text(
                             text = action.label,
                             maxLines = 1,
@@ -1118,6 +1270,47 @@ private fun TodaySectionHeader(
                     }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun TodayCollapsibleSectionContent(
+    expanded: Boolean,
+    reducedMotion: Boolean,
+    content: @Composable () -> Unit,
+) {
+    AnimatedVisibility(
+        visible = expanded,
+        enter = fadeIn(todayMotionSpec(reducedMotion)) + expandVertically(todayMotionSpec(reducedMotion)),
+        exit = fadeOut(todayMotionSpec(reducedMotion)) + shrinkVertically(todayMotionSpec(reducedMotion)),
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            content()
+        }
+    }
+}
+
+@Composable
+private fun TodaySectionIconAction(
+    action: TodaySectionAction,
+) {
+    CompositionLocalProvider(LocalMinimumInteractiveComponentSize provides 0.dp) {
+        IconButton(
+            onClick = action.onClick,
+            modifier = Modifier.size(28.dp),
+        ) {
+            Icon(
+                imageVector = action.icon,
+                contentDescription = action.contentDescription,
+                tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.82f),
+                modifier = Modifier.size(16.dp),
+            )
         }
     }
 }
@@ -1140,9 +1333,12 @@ private fun TodayImpactPreview.message(): String = when (status) {
 }
 
 @Composable
-private fun TodayWrapUpResultCard(message: String) {
+private fun TodayWrapUpResultCard(
+    message: String,
+    modifier: Modifier = Modifier,
+) {
     Card(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = modifier.fillMaxWidth(),
         shape = RoundedCornerShape(18.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
     ) {
@@ -1171,9 +1367,12 @@ private fun TodayWrapUpResultCard(message: String) {
 }
 
 @Composable
-private fun TodayNoticeCard(message: String) {
+private fun TodayNoticeCard(
+    message: String,
+    modifier: Modifier = Modifier,
+) {
     Card(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = modifier.fillMaxWidth(),
         shape = RoundedCornerShape(18.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
     ) {
@@ -1187,7 +1386,10 @@ private fun TodayNoticeCard(message: String) {
 }
 
 @Composable
-private fun EmptyTodayCard(state: TodayEmptyState) {
+private fun EmptyTodayCard(
+    state: TodayEmptyState,
+    modifier: Modifier = Modifier,
+) {
     val title = when (state) {
         TodayEmptyState.Closed -> stringResource(R.string.today_closed_empty_title)
         TodayEmptyState.NoAvailableTime -> stringResource(R.string.today_no_available_time_title)
@@ -1201,7 +1403,7 @@ private fun EmptyTodayCard(state: TodayEmptyState) {
         TodayEmptyState.NoScheduledTasks -> stringResource(R.string.no_tasks_today_message)
     }
     Card(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = modifier.fillMaxWidth(),
         shape = RoundedCornerShape(18.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         border = CardDefaults.outlinedCardBorder(),
@@ -1231,8 +1433,14 @@ private fun TodayStartHereCard(
     actions: List<TodayTaskActionSpec>,
     onStartFocus: () -> Unit,
     onMarkDone: () -> Unit,
+    reducedMotion: Boolean,
+    modifier: Modifier = Modifier,
 ) {
     var menuExpanded by remember(task.id) { mutableStateOf(false) }
+    var isRingVisible by remember(task.id) { mutableStateOf(false) }
+    LaunchedEffect(task.id) {
+        isRingVisible = true
+    }
     val sourceText = todayTaskSourceText(task, sourceDocuments)
     val durationValue = if (task.likelyStudyMinutes < 60) {
         task.likelyStudyMinutes.toString()
@@ -1241,11 +1449,23 @@ private fun TodayStartHereCard(
     }
     val durationUnit = if (task.likelyStudyMinutes < 60) "min" else null
     val startLabelShape = RoundedCornerShape(8.dp)
-    val startLabelGlowElevation = with(LocalDensity.current) { 10.dp.toPx() }
+    val startLabelGlowDp by animateDpAsState(
+        targetValue = if (isRingVisible) 10.dp else 0.dp,
+        animationSpec = todayEmphasisMotionSpec(reducedMotion),
+        label = "today-start-label-glow",
+    )
+    val startLabelGlowElevation = with(LocalDensity.current) { startLabelGlowDp.toPx() }
     val startLabelGlowColor = MaterialTheme.colorScheme.primary
+    val ringProgress by animateFloatAsState(
+        targetValue = if (isRingVisible) 1f else 0f,
+        animationSpec = todayEmphasisMotionSpec(reducedMotion),
+        label = "today-start-duration-ring",
+    )
 
     Card(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = modifier
+            .fillMaxWidth()
+            .animateContentSize(animationSpec = todayMotionSpec(reducedMotion)),
         shape = RoundedCornerShape(24.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.18f)),
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.58f)),
@@ -1356,6 +1576,7 @@ private fun TodayStartHereCard(
                 TodayDurationRing(
                     durationValue = durationValue,
                     durationUnit = durationUnit,
+                    progress = ringProgress,
                 )
             }
 
@@ -1412,6 +1633,7 @@ private fun TodayStartHereCard(
 private fun TodayDurationRing(
     durationValue: String,
     durationUnit: String?,
+    progress: Float,
 ) {
     val primary = MaterialTheme.colorScheme.primary
     Box(
@@ -1432,6 +1654,7 @@ private fun TodayDurationRing(
             val ringSize = Size(ringDiameter, ringDiameter)
             repeat(ringSegments) { segmentIndex ->
                 val startAngle = -90f + segmentIndex * (360f / ringSegments) + gapDegrees / 2f
+                val segmentProgress = (progress * ringSegments - segmentIndex).coerceIn(0f, 1f)
                 drawArc(
                     color = primary.copy(alpha = 0.16f),
                     startAngle = startAngle,
@@ -1441,15 +1664,17 @@ private fun TodayDurationRing(
                     size = ringSize,
                     style = Stroke(width = glowStrokeWidth, cap = StrokeCap.Round),
                 )
-                drawArc(
-                    color = primary.copy(alpha = 0.92f),
-                    startAngle = startAngle,
-                    sweepAngle = sweepDegrees,
-                    useCenter = false,
-                    topLeft = ringTopLeft,
-                    size = ringSize,
-                    style = Stroke(width = segmentStrokeWidth, cap = StrokeCap.Round),
-                )
+                if (segmentProgress > 0f) {
+                    drawArc(
+                        color = primary.copy(alpha = 0.92f),
+                        startAngle = startAngle,
+                        sweepAngle = sweepDegrees * segmentProgress,
+                        useCenter = false,
+                        topLeft = ringTopLeft,
+                        size = ringSize,
+                        style = Stroke(width = segmentStrokeWidth, cap = StrokeCap.Round),
+                    )
+                }
             }
         }
         Surface(
@@ -1523,6 +1748,9 @@ private fun TodayTaskRow(
     canMoveDown: Boolean = false,
     onMoveUp: () -> Boolean = { false },
     onMoveDown: () -> Boolean = { false },
+    onDragStateChanged: (Boolean) -> Unit = {},
+    reducedMotion: Boolean,
+    modifier: Modifier = Modifier,
 ) {
     var menuExpanded by remember(task.id) { mutableStateOf(false) }
     var dragOffsetY by remember(task.id) { mutableStateOf(0f) }
@@ -1532,28 +1760,51 @@ private fun TodayTaskRow(
     val onMoveUpState = rememberUpdatedState(onMoveUp)
     val onMoveDownState = rememberUpdatedState(onMoveDown)
     val moveStepPx = with(LocalDensity.current) { 72.dp.toPx() }
+    val draggedShadowElevationPx = with(LocalDensity.current) { 16.dp.toPx() }
     val moveStepPxState = rememberUpdatedState(moveStepPx)
     val sourceText = todayTaskSourceText(task, sourceDocuments)
+    val supportingTextValue = supportingText.orEmpty()
+    val trailingMode = when {
+        isReorderMode -> TodayTaskTrailingMode.Reorder
+        primaryAction != null -> TodayTaskTrailingMode.PrimaryAction
+        actions.isNotEmpty() -> TodayTaskTrailingMode.Menu
+        else -> TodayTaskTrailingMode.Empty
+    }
+    val cardScale by animateFloatAsState(
+        targetValue = if (isDragging) 1.012f else 1f,
+        animationSpec = todayMotionSpec(reducedMotion),
+        label = "today-task-row-scale",
+    )
+    val cardElevation by animateDpAsState(
+        targetValue = if (isDragging) 8.dp else 0.dp,
+        animationSpec = todayMotionSpec(reducedMotion),
+        label = "today-task-row-elevation",
+    )
+    val borderColor by animateColorAsState(
+        targetValue = if (isDragging) {
+            MaterialTheme.colorScheme.primary.copy(alpha = 0.62f)
+        } else {
+            MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.52f)
+        },
+        animationSpec = todayMotionSpec(reducedMotion),
+        label = "today-task-row-border",
+    )
 
     Card(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
+            .animateContentSize(animationSpec = todayMotionSpec(reducedMotion))
             .graphicsLayer {
-                scaleX = if (isDragging) 1.01f else 1f
-                scaleY = if (isDragging) 1.01f else 1f
+                scaleX = cardScale
+                scaleY = cardScale
+                shadowElevation = if (isDragging) draggedShadowElevationPx else 0f
             }
             .offset { IntOffset(0, dragOffsetY.roundToInt()) }
-            .zIndex(if (isDragging || dragOffsetY != 0f) 1f else 0f),
+            .zIndex(if (isDragging || dragOffsetY != 0f) 10f else 0f),
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.24f)),
-        border = BorderStroke(
-            width = 1.dp,
-            color = if (isDragging) {
-                MaterialTheme.colorScheme.primary.copy(alpha = 0.62f)
-            } else {
-                MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.52f)
-            },
-        ),
+        border = BorderStroke(width = 1.dp, color = borderColor),
+        elevation = CardDefaults.cardElevation(defaultElevation = cardElevation),
     ) {
         Row(
             modifier = Modifier.padding(start = 14.dp, end = 8.dp, top = 12.dp, bottom = 12.dp),
@@ -1592,9 +1843,13 @@ private fun TodayTaskRow(
                         overflow = TextOverflow.Ellipsis,
                     )
                 }
-                if (supportingText != null) {
+                AnimatedVisibility(
+                    visible = supportingText != null,
+                    enter = fadeIn(todayMotionSpec(reducedMotion)) + expandVertically(todayMotionSpec(reducedMotion)),
+                    exit = fadeOut(todayMotionSpec(reducedMotion)) + shrinkVertically(todayMotionSpec(reducedMotion)),
+                ) {
                     Text(
-                        text = supportingText,
+                        text = supportingTextValue,
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.primary,
                         maxLines = 2,
@@ -1602,83 +1857,100 @@ private fun TodayTaskRow(
                     )
                 }
             }
-            if (isReorderMode) {
-                ReorderTaskHandle(
-                    isDragging = isDragging,
-                    modifier = Modifier
-                        .padding(start = 2.dp)
-                        .pointerInput(task.id) {
-                            detectDragGestures(
-                                onDragStart = { isDragging = true },
-                                onDragEnd = {
-                                    isDragging = false
-                                    dragOffsetY = 0f
-                                },
-                                onDragCancel = {
-                                    isDragging = false
-                                    dragOffsetY = 0f
-                                },
-                                onDrag = { change, dragAmount ->
-                                    change.consume()
-                                    val stepPx = moveStepPxState.value
-                                    dragOffsetY += dragAmount.y
-                                    when {
-                                        dragOffsetY <= -stepPx && canMoveUpState.value -> {
-                                            if (onMoveUpState.value()) {
-                                                dragOffsetY += stepPx
-                                            } else {
-                                                dragOffsetY = 0f
+            AnimatedContent(
+                targetState = trailingMode,
+                transitionSpec = { renFadeThroughTransform(reducedMotion = reducedMotion) },
+                label = "today-task-row-action",
+            ) { mode ->
+                when (mode) {
+                    TodayTaskTrailingMode.Reorder -> {
+                        ReorderTaskHandle(
+                            isDragging = isDragging,
+                            reducedMotion = reducedMotion,
+                            modifier = Modifier
+                                .padding(start = 2.dp)
+                                .pointerInput(task.id) {
+                                    detectDragGestures(
+                                        onDragStart = {
+                                            isDragging = true
+                                            onDragStateChanged(true)
+                                        },
+                                        onDragEnd = {
+                                            isDragging = false
+                                            dragOffsetY = 0f
+                                            onDragStateChanged(false)
+                                        },
+                                        onDragCancel = {
+                                            isDragging = false
+                                            dragOffsetY = 0f
+                                            onDragStateChanged(false)
+                                        },
+                                        onDrag = { change, dragAmount ->
+                                            change.consume()
+                                            val stepPx = moveStepPxState.value
+                                            dragOffsetY += dragAmount.y
+                                            when {
+                                                dragOffsetY <= -stepPx && canMoveUpState.value -> {
+                                                    if (onMoveUpState.value()) {
+                                                        dragOffsetY += stepPx
+                                                    } else {
+                                                        dragOffsetY = 0f
+                                                    }
+                                                }
+                                                dragOffsetY >= stepPx && canMoveDownState.value -> {
+                                                    if (onMoveDownState.value()) {
+                                                        dragOffsetY -= stepPx
+                                                    } else {
+                                                        dragOffsetY = 0f
+                                                    }
+                                                }
+                                                else -> {
+                                                    val minOffset = if (canMoveUpState.value) -stepPx else 0f
+                                                    val maxOffset = if (canMoveDownState.value) stepPx else 0f
+                                                    dragOffsetY = dragOffsetY.coerceIn(minOffset, maxOffset)
+                                                }
                                             }
-                                        }
-                                        dragOffsetY >= stepPx && canMoveDownState.value -> {
-                                            if (onMoveDownState.value()) {
-                                                dragOffsetY -= stepPx
-                                            } else {
-                                                dragOffsetY = 0f
-                                            }
-                                        }
-                                        else -> {
-                                            val minOffset = if (canMoveUpState.value) -stepPx else 0f
-                                            val maxOffset = if (canMoveDownState.value) stepPx else 0f
-                                            dragOffsetY = dragOffsetY.coerceIn(minOffset, maxOffset)
-                                        }
-                                    }
+                                        },
+                                    )
                                 },
-                            )
-                        },
-                )
-            } else if (primaryAction != null) {
-                TextButton(onClick = primaryAction.onClick) {
-                    Text(primaryAction.label)
-                }
-            } else if (actions.isNotEmpty()) {
-                Box {
-                    IconButton(onClick = { menuExpanded = true }) {
-                        Icon(
-                            imageVector = Icons.Default.MoreVert,
-                            contentDescription = stringResource(R.string.today_task_actions),
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
-                    DropdownMenu(
-                        expanded = menuExpanded,
-                        onDismissRequest = { menuExpanded = false },
-                        containerColor = RenContextMenuSurface,
-                        tonalElevation = 0.dp,
-                    ) {
-                        actions.forEach { action ->
-                            DropdownMenuItem(
-                                text = { Text(action.label) },
-                                onClick = {
-                                    menuExpanded = false
-                                    action.onClick()
-                                },
-                            )
+                    TodayTaskTrailingMode.PrimaryAction -> {
+                        primaryAction?.let { action ->
+                            TextButton(onClick = action.onClick) {
+                                Text(action.label)
+                            }
+                        } ?: Spacer(Modifier.width(12.dp))
+                    }
+                    TodayTaskTrailingMode.Menu -> {
+                        Box {
+                            IconButton(onClick = { menuExpanded = true }) {
+                                Icon(
+                                    imageVector = Icons.Default.MoreVert,
+                                    contentDescription = stringResource(R.string.today_task_actions),
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                            DropdownMenu(
+                                expanded = menuExpanded,
+                                onDismissRequest = { menuExpanded = false },
+                                containerColor = RenContextMenuSurface,
+                                tonalElevation = 0.dp,
+                            ) {
+                                actions.forEach { action ->
+                                    DropdownMenuItem(
+                                        text = { Text(action.label) },
+                                        onClick = {
+                                            menuExpanded = false
+                                            action.onClick()
+                                        },
+                                    )
+                                }
+                            }
                         }
                     }
+                    TodayTaskTrailingMode.Empty -> Spacer(Modifier.width(12.dp))
                 }
-            } else {
-                Spacer(Modifier.width(12.dp))
             }
         }
     }
@@ -1717,12 +1989,18 @@ private fun TodayTaskIndicator(
 @Composable
 private fun ReorderTaskHandle(
     isDragging: Boolean,
+    reducedMotion: Boolean,
     modifier: Modifier = Modifier,
 ) {
+    val handleAlpha by animateFloatAsState(
+        targetValue = if (isDragging) 1f else 0.72f,
+        animationSpec = todayMotionSpec(reducedMotion),
+        label = "today-reorder-handle-alpha",
+    )
     Surface(
         modifier = modifier
             .size(40.dp)
-            .alpha(if (isDragging) 1f else 0.72f),
+            .alpha(handleAlpha),
         shape = CircleShape,
         color = MaterialTheme.colorScheme.surface,
         contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -1887,7 +2165,7 @@ private fun UseExtraTimeInfoDialog(
         onDismissRequest = onDismiss,
         icon = {
             Icon(
-                imageVector = Icons.Default.Info,
+                imageVector = Icons.Outlined.Info,
                 contentDescription = null,
                 tint = MaterialTheme.colorScheme.primary,
             )
@@ -1908,6 +2186,34 @@ private fun UseExtraTimeInfoDialog(
 }
 
 @Composable
+private fun MovedLaterInfoDialog(
+    onDismiss: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        icon = {
+            Icon(
+                imageVector = Icons.Outlined.Info,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+            )
+        },
+        title = { Text(stringResource(R.string.moved_later_info_title)) },
+        text = {
+            Text(
+                text = stringResource(R.string.moved_later_info_message),
+                style = MaterialTheme.typography.bodyMedium,
+            )
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.ok))
+            }
+        },
+    )
+}
+
+@Composable
 private fun DoneTodayInfoDialog(
     onDismiss: () -> Unit,
 ) {
@@ -1915,7 +2221,7 @@ private fun DoneTodayInfoDialog(
         onDismissRequest = onDismiss,
         icon = {
             Icon(
-                imageVector = Icons.Default.Info,
+                imageVector = Icons.Outlined.Info,
                 contentDescription = null,
                 tint = MaterialTheme.colorScheme.primary,
             )
@@ -2055,6 +2361,23 @@ private data class TodaySectionAction(
 private data class TodayTaskActionSpec(
     val label: String,
     val onClick: () -> Unit,
+)
+
+private enum class TodayTaskTrailingMode {
+    Reorder,
+    PrimaryAction,
+    Menu,
+    Empty,
+}
+
+private fun <T> todayMotionSpec(reducedMotion: Boolean) = tween<T>(
+    durationMillis = if (reducedMotion) 0 else RenMotionDurationMillis,
+    easing = RenMotionEasing,
+)
+
+private fun <T> todayEmphasisMotionSpec(reducedMotion: Boolean) = tween<T>(
+    durationMillis = if (reducedMotion) 0 else 650,
+    easing = RenMotionEasing,
 )
 
 private const val TimeAdjustmentStepMinutes = 15
