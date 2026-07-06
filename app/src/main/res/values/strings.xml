@@ -143,7 +143,7 @@
     <string name="today_time_exact_message">The current plan uses all available time for today.</string>
     <string name="remaining_metric_label">Remaining</string>
     <string name="overflow_metric_label">Overflow</string>
-    <string name="moving_later_metric_label">Moving later</string>
+    <string name="moved_later_metric_label">Moved later</string>
     <string name="moving_forward_metric_label">Moving forward</string>
     <string name="removed_metric_label">Removed</string>
     <string name="adjusted_for_your_pace">Adjusted for your pace</string>
@@ -221,6 +221,10 @@
     <string name="available_metric_label">Available time</string>
     <string name="next_task_preview">Next: %1$s</string>
     <string name="open_today">Tap to view</string>
+    <plurals name="today_collapsed_section_task_count">
+        <item quantity="one">· %1$d task</item>
+        <item quantity="other">· %1$d tasks</item>
+    </plurals>
     <plurals name="study_day_task_count">
         <item quantity="one">%1$d leaf</item>
         <item quantity="other">%1$d leaves</item>

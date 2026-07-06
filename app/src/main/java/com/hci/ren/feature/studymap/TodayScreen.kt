@@ -92,6 +92,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.vector.path
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -402,7 +403,6 @@ fun TodayScreen(
                 item(key = "today-up-next-header") {
                     TodaySectionHeader(
                         title = stringResource(R.string.up_next),
-                        count = listedUpNextTasks.size,
                         reducedMotion = reducedMotion,
                         modifier = Modifier.animateItem(),
                         trailingAction = if (visibleUpNextTasks.size > 1) {
@@ -433,7 +433,9 @@ fun TodayScreen(
                     TodayTaskRow(
                         task = task,
                         sourceDocuments = sourceDocuments,
-                        position = index + 1,
+                        position = if (isUpNextReorderMode) index + 1 else null,
+                        indicatorIcon = Icons.Default.Timer,
+                        indicatorContentDescription = stringResource(R.string.up_next),
                         supportingText = if (isPulledIn) stringResource(R.string.pulled_in_today_message) else null,
                         actions = actions,
                         isReorderMode = isUpNextReorderMode,
@@ -457,7 +459,6 @@ fun TodayScreen(
                 item(key = "today-wont-fit-header") {
                     TodaySectionHeader(
                         title = stringResource(R.string.wont_fit_today),
-                        count = todayPlan.wontFitTodayTasks.size,
                         reducedMotion = reducedMotion,
                         modifier = Modifier.animateItem(),
                     )
@@ -491,8 +492,10 @@ fun TodayScreen(
                     ) {
                         TodaySectionHeader(
                             title = stringResource(R.string.moved_later),
-                            count = todayPlan.movedLaterTasks.size,
                             reducedMotion = reducedMotion,
+                            countLabel = collapsedSectionTaskCountLabel(
+                                count = if (isMovedLaterExpanded) 0 else todayPlan.movedLaterTasks.size,
+                            ),
                             trailingActions = listOf(
                                 TodaySectionAction(
                                     label = "",
@@ -551,8 +554,10 @@ fun TodayScreen(
                     ) {
                         TodaySectionHeader(
                             title = stringResource(R.string.pull_ahead_suggestions),
-                            count = todayPlan.pullInCandidates.size,
                             reducedMotion = reducedMotion,
+                            countLabel = collapsedSectionTaskCountLabel(
+                                count = if (isUseExtraTimeExpanded) 0 else todayPlan.pullInCandidates.size,
+                            ),
                             trailingActions = listOf(
                                 TodaySectionAction(
                                     label = "",
@@ -579,12 +584,13 @@ fun TodayScreen(
                             expanded = isUseExtraTimeExpanded,
                             reducedMotion = reducedMotion,
                         ) {
-                            todayPlan.pullInCandidates.forEachIndexed { index, task ->
+                            todayPlan.pullInCandidates.forEach { task ->
                                 key(task.id) {
                                     TodayTaskRow(
                                         task = task,
                                         sourceDocuments = sourceDocuments,
-                                        position = index + 1,
+                                        indicatorIcon = Icons.Default.Timer,
+                                        indicatorContentDescription = stringResource(R.string.pull_ahead_suggestions),
                                         primaryAction = TodayTaskActionSpec(
                                             label = stringResource(R.string.pull_in),
                                             onClick = { onTaskAction(today, task.id, TodaySessionTaskAction.PullIn) },
@@ -601,7 +607,6 @@ fun TodayScreen(
                 item(key = "today-removed-header") {
                     TodaySectionHeader(
                         title = stringResource(R.string.removed_from_plan),
-                        count = todayPlan.removedFromPlanTasks.size,
                         reducedMotion = reducedMotion,
                         modifier = Modifier.animateItem(),
                     )
@@ -631,8 +636,10 @@ fun TodayScreen(
                     ) {
                         TodaySectionHeader(
                             title = stringResource(R.string.done_today),
-                            count = todayPlan.doneTodayTasks.size,
                             reducedMotion = reducedMotion,
+                            countLabel = collapsedSectionTaskCountLabel(
+                                count = if (isDoneTodayExpanded) 0 else todayPlan.doneTodayTasks.size,
+                            ),
                             trailingActions = listOf(
                                 TodaySectionAction(
                                     label = "",
@@ -889,24 +896,26 @@ private fun TodayBudgetCard(
                     value = formatMinutes(animatedCompletedMinutes),
                     icon = Icons.Default.CheckCircle,
                     iconTint = MaterialTheme.colorScheme.primary,
+                    compact = true,
                     modifier = Modifier.weight(1f),
                 )
                 VerticalDivider(
                     modifier = Modifier
-                        .height(36.dp)
+                        .height(30.dp)
                         .padding(horizontal = 4.dp),
                     color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
                 )
                 TodayBudgetMetric(
-                    label = stringResource(R.string.moving_later_metric_label),
+                    label = stringResource(R.string.moved_later_metric_label),
                     value = formatMinutes(animatedMovingLaterMinutes),
                     icon = Icons.Default.Schedule,
                     iconTint = MaterialTheme.colorScheme.tertiary,
+                    compact = true,
                     modifier = Modifier.weight(1f),
                 )
                 VerticalDivider(
                     modifier = Modifier
-                        .height(36.dp)
+                        .height(30.dp)
                         .padding(horizontal = 4.dp),
                     color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
                 )
@@ -915,6 +924,7 @@ private fun TodayBudgetCard(
                     value = formatMinutes(animatedRemovedMinutes),
                     icon = Icons.Default.Close,
                     iconTint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    compact = true,
                     modifier = Modifier.weight(1f),
                 )
             }
@@ -930,21 +940,29 @@ private fun TodayBudgetMetric(
     iconTint: androidx.compose.ui.graphics.Color,
     modifier: Modifier = Modifier,
     valueColor: androidx.compose.ui.graphics.Color = MaterialTheme.colorScheme.onSurface,
+    compact: Boolean = false,
 ) {
+    val horizontalPadding = if (compact) 4.dp else 6.dp
+    val contentSpacing = if (compact) 2.dp else 4.dp
+    val labelSpacing = if (compact) 4.dp else 6.dp
+    val iconSize = if (compact) 12.dp else 14.dp
+    val valueStyle = if (compact) MaterialTheme.typography.labelLarge else MaterialTheme.typography.titleMedium
+    val valueWeight = if (compact) FontWeight.SemiBold else FontWeight.Bold
+
     Column(
-        modifier = modifier.padding(horizontal = 6.dp),
-        verticalArrangement = Arrangement.spacedBy(4.dp),
+        modifier = modifier.padding(horizontal = horizontalPadding),
+        verticalArrangement = Arrangement.spacedBy(contentSpacing),
         horizontalAlignment = Alignment.Start,
     ) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            horizontalArrangement = Arrangement.spacedBy(labelSpacing),
         ) {
             Icon(
                 imageVector = icon,
                 contentDescription = null,
                 tint = iconTint,
-                modifier = Modifier.size(14.dp),
+                modifier = Modifier.size(iconSize),
             )
             Text(
                 text = label,
@@ -956,8 +974,8 @@ private fun TodayBudgetMetric(
         }
         Text(
             text = value,
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.Bold,
+            style = valueStyle,
+            fontWeight = valueWeight,
             color = valueColor,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
@@ -1198,18 +1216,13 @@ private fun TodayWrapUpButton(
 @Composable
 private fun TodaySectionHeader(
     title: String,
-    count: Int,
     reducedMotion: Boolean,
     modifier: Modifier = Modifier,
+    countLabel: String? = null,
     trailingAction: TodaySectionAction? = null,
     trailingActions: List<TodaySectionAction> = emptyList(),
 ) {
     val actions = listOfNotNull(trailingAction) + trailingActions
-    val animatedCount by animateIntAsState(
-        targetValue = count,
-        animationSpec = todayMotionSpec(reducedMotion),
-        label = "today-section-count",
-    )
     Row(
         modifier = modifier
             .fillMaxWidth()
@@ -1217,61 +1230,79 @@ private fun TodaySectionHeader(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        Text(
-            text = title,
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.onBackground,
-        )
-        Surface(
-            modifier = Modifier.size(28.dp),
-            shape = CircleShape,
-            color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.28f),
-            contentColor = MaterialTheme.colorScheme.primary,
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.42f)),
+        Row(
+            modifier = Modifier.weight(1f),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
         ) {
-            Box(contentAlignment = Alignment.Center) {
+            val titleModifier = if (countLabel == null) {
+                Modifier
+            } else {
+                Modifier
+                    .weight(1f, fill = false)
+                    .alignByBaseline()
+            }
+            Text(
+                text = title,
+                modifier = titleModifier,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onBackground,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            if (countLabel != null) {
                 Text(
-                    text = animatedCount.toString(),
+                    text = countLabel,
+                    modifier = Modifier.alignByBaseline(),
                     style = MaterialTheme.typography.labelLarge,
-                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                 )
             }
         }
-        Spacer(Modifier.weight(1f))
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(0.dp),
-        ) {
-            actions.forEach { action ->
-                if (action.label.isBlank()) {
-                    TodaySectionIconAction(action = action)
-                } else {
-                    TextButton(
-                        onClick = action.onClick,
-                        contentPadding = androidx.compose.foundation.layout.PaddingValues(
-                            start = 6.dp,
-                            end = 2.dp,
-                            top = 4.dp,
-                            bottom = 4.dp,
-                        ),
-                    ) {
-                        Icon(
-                            imageVector = action.icon,
-                            contentDescription = action.contentDescription,
-                            modifier = Modifier.size(17.dp),
-                        )
-                        Spacer(Modifier.width(4.dp))
-                        Text(
-                            text = action.label,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
+        if (actions.isNotEmpty()) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(0.dp),
+            ) {
+                actions.forEach { action ->
+                    if (action.label.isBlank()) {
+                        TodaySectionIconAction(action = action)
+                    } else {
+                        TextButton(
+                            onClick = action.onClick,
+                            contentPadding = androidx.compose.foundation.layout.PaddingValues(
+                                start = 6.dp,
+                                end = 2.dp,
+                                top = 4.dp,
+                                bottom = 4.dp,
+                            ),
+                        ) {
+                            Icon(
+                                imageVector = action.icon,
+                                contentDescription = action.contentDescription,
+                                modifier = Modifier.size(17.dp),
+                            )
+                            Spacer(Modifier.width(4.dp))
+                            Text(
+                                text = action.label,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
                     }
                 }
             }
         }
     }
+}
+
+@Composable
+private fun collapsedSectionTaskCountLabel(count: Int): String? {
+    if (count <= 0) return null
+    return pluralStringResource(R.plurals.today_collapsed_section_task_count, count, count)
 }
 
 @Composable
