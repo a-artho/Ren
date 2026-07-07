@@ -45,7 +45,7 @@ class ProgressModelsTest {
         assertEquals(3, summary.studyDays)
     }
 
-    @Test fun weeklyFocusSummaryRoundsChartMaximumToTwoHourIntervalsWithGoalHeadroom() {
+    @Test fun weeklyFocusSummaryBuildsDynamicAxisForLargeFocusDays() {
         val summary = buildWeeklyFocusSummary(
             project(
                 dailyMinutes = 240,
@@ -56,7 +56,26 @@ class ProgressModelsTest {
             today = "2026-07-06",
         )
 
-        assertEquals(600, summary.maxChartMinutes)
+        assertEquals(540, summary.chartAxis.max)
+        assertEquals(180, summary.chartAxis.step)
+        assertEquals(listOf(0, 180, 360, 540), summary.chartAxis.ticks)
+        assertEquals(summary.chartAxis.max, summary.maxChartMinutes)
+    }
+
+    @Test fun weeklyFocusSummaryBuildsDynamicAxisForSmallFocusDaysWithGoalHeadroom() {
+        val summary = buildWeeklyFocusSummary(
+            project(
+                dailyMinutes = 45,
+                focusHistory = mapOf(
+                    "2026-07-06" to listOf(focusRecord(focusSeconds = 1_800)),
+                ),
+            ),
+            today = "2026-07-06",
+        )
+
+        assertEquals(60, summary.chartAxis.max)
+        assertEquals(15, summary.chartAxis.step)
+        assertEquals(listOf(0, 15, 30, 45, 60), summary.chartAxis.ticks)
     }
 
     @Test fun weeklyFocusSummaryRoundsPartialSecondsUpToVisibleMinutes() {
@@ -172,6 +191,25 @@ class ProgressModelsTest {
         assertEquals(2, summary.buckets[1].cleanRounds)
         assertEquals(67, summary.buckets[1].cleanRatePercent)
         assertEquals(15, summary.bestBucket?.plannedFocusMinutes)
+        assertEquals(75, summary.percentAxis.max)
+        assertEquals(listOf(0, 25, 50, 75), summary.percentAxis.ticks)
+    }
+
+    @Test fun bestRhythmSummaryUsesFullPercentAxisWhenAnyBucketIsPerfect() {
+        val summary = buildBestRhythmSummary(
+            project(
+                dailyMinutes = 120,
+                focusHistory = mapOf(
+                    "2026-07-07" to listOf(
+                        focusRecord(plannedFocusMinutes = 25, focusSeconds = 1_500),
+                    ),
+                ),
+            ),
+        )
+
+        assertEquals(100, summary.buckets.single().cleanRatePercent)
+        assertEquals(100, summary.percentAxis.max)
+        assertEquals(listOf(0, 25, 50, 75, 100), summary.percentAxis.ticks)
     }
 
     @Test fun bestRhythmSummaryHasNoBestBucketWithoutFocusAttempts() {

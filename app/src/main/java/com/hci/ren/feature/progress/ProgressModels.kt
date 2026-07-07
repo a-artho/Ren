@@ -19,14 +19,15 @@ data class WeeklyFocusSummary(
 ) {
     val totalFocusMinutes: Int get() = days.sumOf { it.focusMinutes }
     val studyDays: Int get() = days.count { it.focusMinutes > 0 }
-    val maxChartMinutes: Int
-        get() = roundChartMaximum(
-            maxOf(
-                goalMinutesPerDay + ChartMinuteStep,
-                (goalMinutesPerDay * 4 + 2) / 3,
+    val chartAxis: ProgressChartAxis
+        get() = minuteChartAxis(
+            maxValue = maxOf(
+                goalMinutesPerDay,
                 days.maxOfOrNull { it.focusMinutes } ?: 0,
             ),
+            headroomValue = goalMinutesPerDay,
         )
+    val maxChartMinutes: Int get() = chartAxis.max
 }
 
 data class StudyConsistencyDay(
@@ -70,6 +71,24 @@ data class BestRhythmSummary(
     val bestBucket: BestRhythmBucket?,
 ) {
     val hasData: Boolean get() = buckets.any { it.hasRounds }
+    val percentAxis: ProgressChartAxis
+        get() = percentChartAxis(buckets.maxOfOrNull { it.cleanRatePercent } ?: 0)
+}
+
+data class ProgressChartAxis(
+    val max: Int,
+    val step: Int,
+) {
+    val ticks: List<Int> = generateSequence(0) { value ->
+        (value + step).takeIf { it <= max }
+    }.toList()
+
+    fun ratio(value: Int): Float = ratio(value.toFloat())
+
+    fun ratio(value: Float): Float {
+        if (max <= 0) return 0f
+        return (value / max.toFloat()).coerceIn(0f, 1f)
+    }
 }
 
 fun buildWeeklyFocusSummary(
@@ -191,16 +210,39 @@ private fun Int.toCeilMinutes(): Int =
 
 private fun Float.roundToNearestInt(): Int = (this + 0.5f).toInt()
 
-private fun roundChartMaximum(minutes: Int): Int {
-    val normalized = minutes.coerceAtLeast(ChartMinuteStep)
-    val step = chartMinuteStepFor(normalized)
-    return ((normalized + step - 1) / step) * step
+private fun minuteChartAxis(maxValue: Int, headroomValue: Int): ProgressChartAxis {
+    val normalized = maxValue.coerceAtLeast(MinChartMinutes)
+    val step = minuteChartStepFor(normalized)
+    var max = normalized.roundUpToStep(step)
+    if (headroomValue > 0 && headroomValue >= max) {
+        max += step
+    }
+    return ProgressChartAxis(max = max, step = step)
 }
 
-private fun chartMinuteStepFor(minutes: Int): Int = ChartMinuteStep
+private fun minuteChartStepFor(minutes: Int): Int {
+    val idealStep = minutes.toFloat() / TargetChartIntervals
+    return MinuteChartSteps.firstOrNull { it >= idealStep } ?: run {
+        val largestStep = MinuteChartSteps.last()
+        ((idealStep.toInt() + largestStep - 1) / largestStep) * largestStep
+    }
+}
+
+private fun percentChartAxis(maxPercent: Int): ProgressChartAxis {
+    val max = PercentChartMaxValues.firstOrNull { it >= maxPercent.coerceAtLeast(0) }
+        ?: PercentChartMaxValues.last()
+    return ProgressChartAxis(max = max, step = PercentChartStep)
+}
+
+private fun Int.roundUpToStep(step: Int): Int =
+    ((this + step - 1) / step) * step
 
 private const val DaysPerWeek = 7
 private const val ConsistencyWeekCount = 4
 private const val SecondsPerMinute = 60
-private const val ChartMinuteStep = 120
+private const val MinChartMinutes = 30
+private const val TargetChartIntervals = 4
+private val MinuteChartSteps = listOf(5, 10, 15, 30, 60, 120, 180, 240, 360, 480, 720)
+private const val PercentChartStep = 25
+private val PercentChartMaxValues = listOf(25, 50, 75, 100)
 private const val MaxProgressGoalMinutes = 1_440

@@ -38,7 +38,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.PathEffect
-import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.pluralStringResource
@@ -57,10 +57,12 @@ import com.hci.ren.feature.progress.StudyConsistencySummary
 import com.hci.ren.R
 import com.hci.ren.feature.progress.WeeklyFocusDay
 import com.hci.ren.feature.progress.WeeklyFocusSummary
+import com.hci.ren.feature.progress.ProgressChartAxis
 import com.hci.ren.feature.progress.buildBestRhythmSummary
 import com.hci.ren.feature.progress.buildStudyConsistencySummary
 import com.hci.ren.feature.progress.buildWeeklyFocusSummary
 import com.hci.ren.feature.studymap.StudyProject
+import kotlin.math.roundToInt
 
 @Composable
 fun ProgressScreen(
@@ -233,6 +235,7 @@ private fun GoalPill(goalMinutes: Int) {
 @Composable
 private fun WeeklyFocusChart(summary: WeeklyFocusSummary) {
     val dayLabels = stringArrayResource(R.array.progress_weekday_short_labels)
+    val chartAxis = summary.chartAxis
     val chartDescription = stringResource(
         R.string.progress_weekly_chart_description,
         focusDurationLabel(summary.totalFocusMinutes),
@@ -255,11 +258,16 @@ private fun WeeklyFocusChart(summary: WeeklyFocusSummary) {
                 .height(196.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            ChartAxisLabels(maxMinutes = summary.maxChartMinutes)
+            ChartAxisLabels(
+                axis = chartAxis,
+                topInset = ChartValueLabelSlot,
+                bottomInset = ChartWeekdayLabelSlot,
+                label = { minutes -> focusDurationLabel(minutes) },
+            )
             WeeklyBars(
                 days = summary.days,
                 dayLabels = dayLabels,
-                maxMinutes = summary.maxChartMinutes,
+                axis = chartAxis,
                 goalMinutes = summary.goalMinutesPerDay,
                 modifier = Modifier.weight(1f),
             )
@@ -275,51 +283,54 @@ private fun WeeklyFocusChart(summary: WeeklyFocusSummary) {
 }
 
 @Composable
-private fun ChartAxisLabels(maxMinutes: Int) {
-    val axisValues = chartAxisValues(maxMinutes)
-    BoxWithConstraints(
+private fun ChartAxisLabels(
+    axis: ProgressChartAxis,
+    topInset: androidx.compose.ui.unit.Dp,
+    bottomInset: androidx.compose.ui.unit.Dp,
+    label: @Composable (Int) -> String,
+) {
+    val values = axis.ticks.asReversed()
+    Layout(
+        content = {
+            values.forEach { value ->
+                Text(
+                    text = label(value),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.82f),
+                    textAlign = TextAlign.End,
+                    maxLines = 1,
+                    overflow = TextOverflow.Clip,
+                )
+            }
+        },
         modifier = Modifier
             .width(48.dp)
-            .fillMaxHeight()
-            .padding(
-                top = ChartValueLabelSlot,
-                bottom = ChartWeekdayLabelSlot,
-            ),
-    ) {
-        val chartHeight = maxHeight
-        axisValues.forEach { minutes ->
-            Text(
-                text = focusDurationLabel(minutes),
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.82f),
-                textAlign = TextAlign.End,
-                maxLines = 1,
-                overflow = TextOverflow.Clip,
-                modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .graphicsLayer {
-                        val ratio = if (maxMinutes == 0) 0f else minutes.toFloat() / maxMinutes.toFloat()
-                        val y = chartHeight * (1f - ratio.coerceIn(0f, 1f))
-                        translationY = (y - AxisLabelHalfHeight)
-                            .coerceIn(0.dp, chartHeight - AxisLabelHeight)
-                            .toPx()
-                    },
-            )
+            .fillMaxHeight(),
+    ) { measurables, constraints ->
+        val placeables = measurables.map { it.measure(constraints.copy(minWidth = 0, minHeight = 0)) }
+        val width = constraints.maxWidth
+        val height = constraints.maxHeight
+        val topInsetPx = topInset.roundToPx()
+        val bottomInsetPx = bottomInset.roundToPx()
+        val plotHeight = (height - topInsetPx - bottomInsetPx).coerceAtLeast(0)
+        layout(width, height) {
+            placeables.forEachIndexed { index, placeable ->
+                val tick = values[index]
+                val tickCenterY = topInsetPx + (plotHeight * (1f - axis.ratio(tick))).roundToInt()
+                placeable.placeRelative(
+                    x = width - placeable.width,
+                    y = tickCenterY - placeable.height / 2,
+                )
+            }
         }
     }
-}
-
-private fun chartAxisValues(maxMinutes: Int): List<Int> {
-    val step = ChartAxisMinuteStep
-    return generateSequence(maxMinutes) { value -> (value - step).takeIf { it > 0 } }
-        .toList() + 0
 }
 
 @Composable
 private fun WeeklyBars(
     days: List<WeeklyFocusDay>,
     dayLabels: Array<String>,
-    maxMinutes: Int,
+    axis: ProgressChartAxis,
     goalMinutes: Int,
     modifier: Modifier = Modifier,
 ) {
@@ -332,7 +343,7 @@ private fun WeeklyBars(
             val density = LocalDensity.current
             val labelSlot = ChartValueLabelSlot
             val barAreaHeight = maxHeight - labelSlot
-            val goalRatio = if (maxMinutes == 0) 0f else goalMinutes.toFloat() / maxMinutes.toFloat()
+            val goalRatio = axis.ratio(goalMinutes)
             val axisColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.78f)
             val goalColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.54f)
             val dash = with(density) { PathEffect.dashPathEffect(floatArrayOf(8.dp.toPx(), 8.dp.toPx())) }
@@ -362,7 +373,7 @@ private fun WeeklyBars(
                 days.forEach { day ->
                     FocusBar(
                         day = day,
-                        maxMinutes = maxMinutes,
+                        axis = axis,
                         maxBarHeight = barAreaHeight,
                         modifier = Modifier.weight(1f),
                     )
@@ -404,15 +415,11 @@ private fun WeeklyBars(
 @Composable
 private fun FocusBar(
     day: WeeklyFocusDay,
-    maxMinutes: Int,
+    axis: ProgressChartAxis,
     maxBarHeight: androidx.compose.ui.unit.Dp,
     modifier: Modifier = Modifier,
 ) {
-    val barHeight = maxBarHeight * if (maxMinutes == 0) {
-        0f
-    } else {
-        (day.focusMinutes.toFloat() / maxMinutes.toFloat()).coerceIn(0f, 1f)
-    }
+    val barHeight = maxBarHeight * axis.ratio(day.focusMinutes)
     Column(
         modifier = modifier.fillMaxHeight(),
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -626,6 +633,7 @@ private fun BestRhythmBadge(bestBucket: BestRhythmBucket) {
 
 @Composable
 private fun BestRhythmChart(summary: BestRhythmSummary) {
+    val chartAxis = summary.percentAxis
     Column(
         modifier = Modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -636,10 +644,16 @@ private fun BestRhythmChart(summary: BestRhythmSummary) {
                 .height(168.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            RhythmAxisLabels()
+            ChartAxisLabels(
+                axis = chartAxis,
+                topInset = RhythmPercentLabelSlot,
+                bottomInset = RhythmDurationLabelSlot,
+                label = { percent -> stringResource(R.string.progress_percent, percent) },
+            )
             RhythmBars(
                 buckets = summary.buckets,
                 bestBucket = summary.bestBucket,
+                axis = chartAxis,
                 modifier = Modifier.weight(1f),
             )
         }
@@ -654,39 +668,10 @@ private fun BestRhythmChart(summary: BestRhythmSummary) {
 }
 
 @Composable
-private fun RhythmAxisLabels() {
-    val axisValues = listOf(100, 75, 50, 25, 0)
-    BoxWithConstraints(
-        modifier = Modifier
-            .width(48.dp)
-            .fillMaxHeight(),
-    ) {
-        val chartHeight = maxHeight - RhythmPercentLabelSlot - RhythmDurationLabelSlot
-        axisValues.forEach { percent ->
-            Text(
-                text = stringResource(R.string.progress_percent, percent),
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.82f),
-                textAlign = TextAlign.End,
-                maxLines = 1,
-                overflow = TextOverflow.Clip,
-                modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .graphicsLayer {
-                        val y = RhythmPercentLabelSlot + chartHeight * (1f - percent.toFloat() / 100f)
-                        translationY = (y - AxisLabelHalfHeight)
-                            .coerceIn(0.dp, RhythmPercentLabelSlot + chartHeight - AxisLabelHeight)
-                            .toPx()
-                    },
-            )
-        }
-    }
-}
-
-@Composable
 private fun RhythmBars(
     buckets: List<BestRhythmBucket>,
     bestBucket: BestRhythmBucket?,
+    axis: ProgressChartAxis,
     modifier: Modifier = Modifier,
 ) {
     BoxWithConstraints(modifier = modifier.fillMaxHeight()) {
@@ -720,6 +705,7 @@ private fun RhythmBars(
                 RhythmBucketMarker(
                     bucket = bucket,
                     isBest = bucket == bestBucket,
+                    axis = axis,
                     maxMarkerHeight = chartHeight,
                     modifier = Modifier.weight(1f),
                 )
@@ -732,10 +718,11 @@ private fun RhythmBars(
 private fun RhythmBucketMarker(
     bucket: BestRhythmBucket,
     isBest: Boolean,
+    axis: ProgressChartAxis,
     maxMarkerHeight: androidx.compose.ui.unit.Dp,
     modifier: Modifier = Modifier,
 ) {
-    val markerHeight = maxMarkerHeight * bucket.cleanRate.coerceIn(0f, 1f)
+    val markerHeight = maxMarkerHeight * axis.ratio(bucket.cleanRatePercent)
     val activeColor = if (isBest) {
         MaterialTheme.colorScheme.primary
     } else {
@@ -1027,6 +1014,3 @@ private val ChartValueLabelSlot = 28.dp
 private val ChartWeekdayLabelSlot = 28.dp
 private val RhythmDurationLabelSlot = 28.dp
 private val RhythmPercentLabelSlot = 26.dp
-private val AxisLabelHeight = 16.dp
-private val AxisLabelHalfHeight = 8.dp
-private const val ChartAxisMinuteStep = 120

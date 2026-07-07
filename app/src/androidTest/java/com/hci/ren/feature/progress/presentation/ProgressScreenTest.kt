@@ -18,6 +18,27 @@ class ProgressScreenTest {
     val composeRule = createAndroidComposeRule<MainActivity>()
 
     @Test
+    fun progressScreenShowsDynamicWeeklyFocusAxis() {
+        composeRule.activity.setContent {
+            RenTheme {
+                ProgressScreen(
+                    project = ProgressScreenFixtures.project(
+                        dailyStudyMinutes = 45,
+                        focusHistory = mapOf(
+                            "2026-07-06" to listOf(ProgressScreenFixtures.focusRecord(focusSeconds = 1_800)),
+                        ),
+                    ),
+                    today = "2026-07-06",
+                )
+            }
+        }
+
+        composeRule.onNodeWithText("Weekly focus").assertIsDisplayed()
+        composeRule.onNodeWithText("15m").assertIsDisplayed()
+        composeRule.onNodeWithText("1h").assertIsDisplayed()
+    }
+
+    @Test
     fun progressScreenShowsStudyConsistencyFromFocusHistory() {
         composeRule.activity.setContent {
             RenTheme {
@@ -83,6 +104,7 @@ class ProgressScreenTest {
         composeRule.onNodeWithText("Best rhythm").assertIsDisplayed()
         composeRule.onNodeWithText("Clean round success rate").assertIsDisplayed()
         composeRule.onNodeWithText("67%").assertIsDisplayed()
+        composeRule.onNodeWithText("75%").assertIsDisplayed()
         composeRule.onNodeWithContentDescription(
             "15m is your best rhythm at 67% clean success.",
         ).assertIsDisplayed()
