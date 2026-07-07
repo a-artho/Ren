@@ -56,7 +56,7 @@ data class StudyConsistencySummary(
 }
 
 data class BestRhythmBucket(
-    val plannedFocusMinutes: Int,
+    val focusMinutes: Int,
     val attemptedRounds: Int,
     val cleanRounds: Int,
 ) {
@@ -152,21 +152,21 @@ fun buildBestRhythmSummary(project: StudyProject): BestRhythmSummary {
     val buckets = project.focusSessionHistoryByDate.values
         .flatten()
         .filter { it.focusSeconds > 0 && it.plannedFocusSeconds > 0 }
-        .groupBy { it.plannedFocusSeconds.toCeilMinutes() }
-        .map { (plannedFocusMinutes, records) ->
+        .groupBy { it.focusSeconds.toCeilMinutes() }
+        .map { (focusMinutes, records) ->
             BestRhythmBucket(
-                plannedFocusMinutes = plannedFocusMinutes,
+                focusMinutes = focusMinutes,
                 attemptedRounds = records.size,
                 cleanRounds = records.count { it.isCleanCompletedRound },
             )
         }
-        .sortedBy { it.plannedFocusMinutes }
+        .sortedBy { it.focusMinutes }
     return BestRhythmSummary(
         buckets = buckets,
         bestBucket = buckets.maxWithOrNull(
             compareBy<BestRhythmBucket> { it.cleanRate }
                 .thenBy { it.cleanRounds }
-                .thenByDescending { it.plannedFocusMinutes },
+                .thenBy { it.focusMinutes },
         ),
     )
 }

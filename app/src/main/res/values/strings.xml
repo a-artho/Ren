@@ -111,7 +111,7 @@
     <string name="progress_best_rhythm_title">Best rhythm</string>
     <string name="progress_best_rhythm_subtitle">Clean round success rate</string>
     <string name="progress_best_rhythm_your_best">your best</string>
-    <string name="progress_best_rhythm_based_on">Based on clean rounds completed</string>
+    <string name="progress_best_rhythm_based_on">Based on actual focus duration</string>
     <string name="progress_best_rhythm_empty">Complete focus rounds from Today to find your best rhythm.</string>
     <string name="progress_best_rhythm_chart_description">%1$s is your best rhythm at %2$d%% clean success.</string>
     <plurals name="progress_focus_round_count">

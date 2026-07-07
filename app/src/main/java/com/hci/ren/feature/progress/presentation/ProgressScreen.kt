@@ -528,7 +528,7 @@ private fun BestRhythmCard(
     } else {
         stringResource(
             R.string.progress_best_rhythm_chart_description,
-            focusDurationLabel(bestBucket.plannedFocusMinutes),
+            focusDurationLabel(bestBucket.focusMinutes),
             bestBucket.cleanRatePercent,
         )
     }
@@ -609,7 +609,7 @@ private fun BestRhythmBadge(bestBucket: BestRhythmBucket) {
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
-                text = focusDurationLabel(bestBucket.plannedFocusMinutes),
+                text = focusDurationLabel(bestBucket.focusMinutes),
                 style = MaterialTheme.typography.titleMedium,
                 color = MaterialTheme.colorScheme.primary,
                 fontWeight = FontWeight.SemiBold,
@@ -637,7 +637,7 @@ private fun BestRhythmChart(summary: BestRhythmSummary) {
         summary.buckets.sortedWith(
             compareByDescending<BestRhythmBucket> { it.cleanRate }
                 .thenByDescending { it.cleanRounds }
-                .thenByDescending { it.plannedFocusMinutes },
+                .thenByDescending { it.focusMinutes },
         )
     }
     Column(
@@ -685,7 +685,7 @@ private fun RhythmBulletRow(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
-                text = focusDurationLabel(bucket.plannedFocusMinutes),
+                text = focusDurationLabel(bucket.focusMinutes),
                 style = MaterialTheme.typography.titleMedium,
                 color = if (isBest) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
                 fontWeight = if (isBest) FontWeight.SemiBold else FontWeight.Normal,

@@ -80,13 +80,14 @@ class ProgressScreenTest {
                                 ProgressScreenFixtures.focusRecord(plannedFocusMinutes = 10, focusSeconds = 600),
                                 ProgressScreenFixtures.focusRecord(
                                     plannedFocusMinutes = 10,
-                                    focusSeconds = 360,
+                                    focusSeconds = 600,
                                     outcome = FocusSessionOutcome.FocusStopped,
                                 ),
+                                ProgressScreenFixtures.focusRecord(plannedFocusMinutes = 20, focusSeconds = 300),
                             ),
                             "2026-07-08" to listOf(
                                 ProgressScreenFixtures.focusRecord(plannedFocusMinutes = 15, focusSeconds = 900),
-                                ProgressScreenFixtures.focusRecord(plannedFocusMinutes = 15, focusSeconds = 960),
+                                ProgressScreenFixtures.focusRecord(plannedFocusMinutes = 15, focusSeconds = 900),
                                 ProgressScreenFixtures.focusRecord(
                                     plannedFocusMinutes = 15,
                                     focusSeconds = 900,
@@ -103,10 +104,10 @@ class ProgressScreenTest {
         composeRule.onNodeWithTag("best-rhythm-card").performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithText("Best rhythm").assertIsDisplayed()
         composeRule.onNodeWithText("Clean round success rate").assertIsDisplayed()
-        composeRule.onNodeWithText("67%").assertIsDisplayed()
-        composeRule.onNodeWithText("3 rounds").assertIsDisplayed()
+        composeRule.onNodeWithText("100%").assertIsDisplayed()
+        composeRule.onNodeWithText("1 round").assertIsDisplayed()
         composeRule.onNodeWithContentDescription(
-            "15m is your best rhythm at 67% clean success.",
+            "5m is your best rhythm at 100% clean success.",
         ).assertIsDisplayed()
     }
 }

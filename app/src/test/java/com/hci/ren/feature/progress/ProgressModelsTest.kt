@@ -154,7 +154,7 @@ class ProgressModelsTest {
         assertEquals(null, summary.mostConsistentWeeksAgo)
     }
 
-    @Test fun bestRhythmSummaryGroupsFocusHistoryByPlannedRoundLength() {
+    @Test fun bestRhythmSummaryGroupsFocusHistoryByActualRoundLength() {
         val summary = buildBestRhythmSummary(
             project(
                 dailyMinutes = 120,
@@ -166,6 +166,7 @@ class ProgressModelsTest {
                             focusSeconds = 420,
                             outcome = FocusSessionOutcome.FocusStopped,
                         ),
+                        focusRecord(plannedFocusMinutes = 20, focusSeconds = 300),
                     ),
                     "2026-07-08" to listOf(
                         focusRecord(plannedFocusMinutes = 15, focusSeconds = 900),
@@ -183,14 +184,23 @@ class ProgressModelsTest {
             ),
         )
 
-        assertEquals(listOf(10, 15), summary.buckets.map { it.plannedFocusMinutes })
-        assertEquals(2, summary.buckets[0].attemptedRounds)
+        assertEquals(listOf(5, 7, 10, 15, 16), summary.buckets.map { it.focusMinutes })
+        assertEquals(1, summary.buckets[0].attemptedRounds)
         assertEquals(1, summary.buckets[0].cleanRounds)
-        assertEquals(50, summary.buckets[0].cleanRatePercent)
-        assertEquals(3, summary.buckets[1].attemptedRounds)
-        assertEquals(2, summary.buckets[1].cleanRounds)
-        assertEquals(67, summary.buckets[1].cleanRatePercent)
-        assertEquals(15, summary.bestBucket?.plannedFocusMinutes)
+        assertEquals(100, summary.buckets[0].cleanRatePercent)
+        assertEquals(1, summary.buckets[1].attemptedRounds)
+        assertEquals(0, summary.buckets[1].cleanRounds)
+        assertEquals(0, summary.buckets[1].cleanRatePercent)
+        assertEquals(1, summary.buckets[2].attemptedRounds)
+        assertEquals(1, summary.buckets[2].cleanRounds)
+        assertEquals(100, summary.buckets[2].cleanRatePercent)
+        assertEquals(2, summary.buckets[3].attemptedRounds)
+        assertEquals(1, summary.buckets[3].cleanRounds)
+        assertEquals(50, summary.buckets[3].cleanRatePercent)
+        assertEquals(1, summary.buckets[4].attemptedRounds)
+        assertEquals(1, summary.buckets[4].cleanRounds)
+        assertEquals(100, summary.buckets[4].cleanRatePercent)
+        assertEquals(16, summary.bestBucket?.focusMinutes)
     }
 
     @Test fun bestRhythmSummaryHasNoBestBucketWithoutFocusAttempts() {

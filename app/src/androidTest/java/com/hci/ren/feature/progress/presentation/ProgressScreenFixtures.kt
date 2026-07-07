@@ -50,6 +50,7 @@ internal object ProgressScreenFixtures {
             ),
             "2026-07-07" to listOf(
                 focusRecord(plannedFocusMinutes = 15, focusSeconds = 900),
+                focusRecord(plannedFocusMinutes = 25, focusSeconds = 300),
             ),
             "2026-07-08" to listOf(
                 focusRecord(plannedFocusMinutes = 25, focusSeconds = 1_500),
