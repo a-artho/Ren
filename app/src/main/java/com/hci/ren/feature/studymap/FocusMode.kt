@@ -720,15 +720,17 @@ fun AdaptiveFocusMode(
     }
 
     fun finishCurrentLeaf() {
-        if (phase == FocusPhase.FlowOvertime) {
-            completeFocusRound(
+        when (phase) {
+            FocusPhase.Focus,
+            FocusPhase.FlowOvertime -> completeFocusRound(
                 completed = true,
                 nextPhase = FocusPhase.LeafDone,
             )
-        } else {
-            persistPartialFocusProgress()
+            else -> {
+                persistPartialFocusProgress()
+                persistPartialBreakProgress()
+            }
         }
-        persistPartialBreakProgress()
         onMarkDone(today, currentTask.id)
         completedLeavesThisSession += 1
         leafDoneChoicePending = true

@@ -14,6 +14,9 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.util.Calendar
+import java.util.GregorianCalendar
+import java.util.TimeZone
 
 class TodaySessionModelsTest {
     @Test fun reducedTodayAvailabilityMovesOrderedSuffixToWontFitToday() {
@@ -73,6 +76,55 @@ class TodaySessionModelsTest {
         assertEquals(emptyList<String>(), session.wontFitTodayTasks.map { it.id })
         assertEquals(52, session.plannedMinutes)
         assertEquals(0, session.overflowMinutes)
+    }
+
+    @Test fun clockPressureUsesActiveWorkInsteadOfCompletedFallback() {
+        val done = task("done", 45).copy(order = 1)
+        val active = task("active", 30).copy(order = 2)
+        val data = dataFor(todayTasks = listOf(done, active), dailyMinutes = 90)
+        val state = TodaySessionState(
+            date = "2026-06-22",
+            doneTodayTaskIds = setOf(done.id),
+        )
+
+        val session = TodaySessionPlanner().plan(
+            data = data,
+            date = "2026-06-22",
+            availableMinutes = 90,
+            session = state,
+        )
+        val pressure = todayClockPressure(
+            activeWorkMinutes = session.activeWorkMinutes,
+            minutesUntilReset = 60,
+        )
+
+        assertEquals(75, session.plannedMinutes)
+        assertEquals(30, session.activeWorkMinutes)
+        assertEquals(TodayClockPressureStatus.StartSoon, pressure.status)
+        assertEquals(30, pressure.bufferMinutes)
+    }
+
+    @Test fun minutesUntilStudyDayResetUsesNextResetBoundary() {
+        val timeZone = TimeZone.getTimeZone("UTC")
+        val now = GregorianCalendar(timeZone).apply {
+            set(2026, Calendar.JULY, 6, 3, 30, 0)
+            set(Calendar.MILLISECOND, 0)
+        }
+
+        assertEquals(
+            30,
+            minutesUntilStudyDayReset(
+                nowMillis = now.timeInMillis,
+                resetOffsetHours = 4,
+                timeZone = timeZone,
+            ),
+        )
+    }
+
+    @Test fun effectiveTodayAvailableMinutesCapsToStudyDayResetWindow() {
+        assertEquals(240, effectiveTodayAvailableMinutes(requestedMinutes = 480, minutesUntilReset = 240))
+        assertEquals(180, effectiveTodayAvailableMinutes(requestedMinutes = 180, minutesUntilReset = 240))
+        assertEquals(0, effectiveTodayAvailableMinutes(requestedMinutes = 480, minutesUntilReset = 0))
     }
 
     @Test fun todayInheritsLikelyFallbackFromScheduledDay() {
@@ -214,6 +266,78 @@ class TodaySessionModelsTest {
         assertEquals(listOf("done"), session.doneTodayTasks.map { it.id })
         assertEquals(listOf("later"), session.wontFitTodayTasks.map { it.id })
         assertEquals(45, session.completedMinutes)
+    }
+
+    @Test fun manuallyCompletedTodayTaskStillConsumesEstimatedBudget() {
+        val done = task("done", 30).copy(order = 1)
+        val keep = task("keep", 20).copy(order = 2)
+        val future = task("future", 30).copy(order = 3)
+        val data = dataFor(
+            todayTasks = listOf(done, keep),
+            futureTasks = listOf(future),
+            dailyMinutes = 50,
+        )
+        val state = TodaySessionState(
+            date = "2026-06-22",
+            doneTodayTaskIds = setOf("done"),
+        )
+
+        val session = TodaySessionPlanner().plan(
+            data = data,
+            date = "2026-06-22",
+            availableMinutes = 50,
+            session = state,
+        )
+
+        assertEquals(listOf("keep"), session.doTodayTasks.map { it.id })
+        assertEquals(listOf("done"), session.doneTodayTasks.map { it.id })
+        assertEquals(50, session.plannedMinutes)
+        assertEquals(30, session.untrackedCompletedMinutes)
+        assertEquals(0, session.remainingMinutes)
+        assertEquals(emptyList<String>(), session.pullInCandidates.map { it.id })
+    }
+
+    @Test fun focusTrackedCompletedTaskUsesActualElapsedBudgetOnly() {
+        val done = task("done", 30).copy(order = 1)
+        val keep = task("keep", 20).copy(order = 2)
+        val future = task("future", 30).copy(order = 3)
+        val data = dataFor(
+            todayTasks = listOf(done, keep),
+            futureTasks = listOf(future),
+            dailyMinutes = 60,
+        )
+        val state = TodaySessionState(
+            date = "2026-06-22",
+            availableMinutes = 50,
+            doneTodayTaskIds = setOf("done"),
+            focusSessions = listOf(
+                FocusSessionRecord(
+                    taskId = "done",
+                    plannedFocusMinutes = 10,
+                    plannedBreakMinutes = 0,
+                    focusSeconds = 10 * 60,
+                    breakSeconds = 0,
+                    awaySeconds = 0,
+                    interruptionCount = 0,
+                    outcome = FocusSessionOutcome.FocusRoundEnded,
+                    endedAtMillis = 0L,
+                ),
+            ),
+        )
+
+        val session = TodaySessionPlanner().plan(
+            data = data,
+            date = "2026-06-22",
+            availableMinutes = state.availableMinutes ?: 60,
+            session = state,
+        )
+
+        assertEquals(listOf("keep"), session.doTodayTasks.map { it.id })
+        assertEquals(listOf("done"), session.doneTodayTasks.map { it.id })
+        assertEquals(20, session.plannedMinutes)
+        assertEquals(0, session.untrackedCompletedMinutes)
+        assertEquals(30, session.remainingMinutes)
+        assertEquals(listOf("future"), session.pullInCandidates.map { it.id })
     }
 
     @Test fun sessionActionsCreateOrderedTemporaryBuckets() {

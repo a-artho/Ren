@@ -30,14 +30,24 @@ class TodayWrapUpService {
             taskStateById = project.taskStateById,
             today = date.toStudyCalendar() ?: return null,
         )
-        val baseAvailableMinutes = todayBaseAvailableMinutes(project, data, date)
-        val availableMinutes = activeSession.availableMinutes ?: baseAvailableMinutes
+        val minutesUntilReset = minutesUntilStudyDayReset(
+            nowMillis = System.currentTimeMillis(),
+            resetOffsetHours = project.preferences.studyDayResetOffsetHours,
+        )
+        val baseAvailableMinutes = effectiveTodayAvailableMinutes(
+            requestedMinutes = todayBaseAvailableMinutes(project, data, date),
+            minutesUntilReset = minutesUntilReset,
+        )
+        val availableMinutes = effectiveTodayAvailableMinutes(
+            requestedMinutes = activeSession.availableMinutes ?: baseAvailableMinutes,
+            minutesUntilReset = minutesUntilReset,
+        )
         val todayPlan = TodaySessionPlanner().plan(
             data = data,
             date = date,
             availableMinutes = availableMinutes,
             session = activeSession,
-            hasAvailabilityOverride = activeSession.availableMinutes != null,
+            hasAvailabilityOverride = activeSession.availableMinutes != null && availableMinutes != baseAvailableMinutes,
         )
         val sourceTaskIds = project.plan.blocks.mapTo(mutableSetOf()) { it.id }
         val state = project.taskStateById.toMutableMap()

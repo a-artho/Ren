@@ -4,19 +4,21 @@ import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.animateContentSize
-import androidx.compose.animation.core.animateDpAsState
-import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.animateIntAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -27,20 +29,27 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.automirrored.filled.Assignment
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.DragIndicator
 import androidx.compose.material.icons.filled.Eco
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material.icons.filled.Flag
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PlayArrow
@@ -66,7 +75,6 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
@@ -75,28 +83,26 @@ import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.SolidColor
-import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.graphics.vector.path
-import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.zIndex
 import com.hci.ren.R
 import com.hci.ren.feature.plangeneration.GeneratedStudyBlock
 import com.hci.ren.feature.plangeneration.StudySourceDocument
@@ -108,8 +114,8 @@ import com.hci.ren.ui.motion.RenMotionEasing
 import com.hci.ren.ui.motion.isReducedMotionEnabled
 import com.hci.ren.ui.motion.renFadeThroughTransform
 import com.hci.ren.ui.theme.RenContextMenuSurface
+import com.hci.ren.ui.theme.RenSelectedCardSurface
 import kotlinx.coroutines.delay
-import kotlin.math.roundToInt
 
 @Composable
 fun TodayScreen(
@@ -176,21 +182,14 @@ fun TodayScreen(
     var showDoneTodayInfo by rememberSaveable(today) { mutableStateOf(false) }
     var showWontFitTodayInfo by rememberSaveable(today) { mutableStateOf(false) }
     var showRemovedFromPlanInfo by rememberSaveable(today) { mutableStateOf(false) }
-    var isUseExtraTimeExpanded by rememberSaveable(today) { mutableStateOf(true) }
+    var isUseExtraTimeExpanded by rememberSaveable(today) { mutableStateOf(false) }
     var isMovedLaterExpanded by rememberSaveable(today) { mutableStateOf(true) }
     var isDoneTodayExpanded by rememberSaveable(today) { mutableStateOf(true) }
     var isWontFitTodayExpanded by rememberSaveable(today) { mutableStateOf(true) }
     var isRemovedFromPlanExpanded by rememberSaveable(today) { mutableStateOf(true) }
-    var visibleWrapUpMessage by rememberSaveable(today) { mutableStateOf<String?>(null) }
     var visibleNotice by rememberSaveable(today) { mutableStateOf<String?>(null) }
     val emptyState = todayPlan.emptyState(data, isTodayClosed)
     val canWrapUpToday = todayPlan.canWrapUpToday(isTodayClosed)
-    val impactPreviewService = remember { TodayImpactPreviewService() }
-    val impactPreview = if (canWrapUpToday) {
-        impactPreviewService.preview(project, today, todaySession)
-    } else {
-        null
-    }
     val wrapUpButtonText = when {
         canWrapUpToday -> stringResource(R.string.wrap_up_today)
         isTodayClosed -> stringResource(R.string.today_wrapped_up_button)
@@ -199,21 +198,19 @@ fun TodayScreen(
     val sourceDocuments = project.plan.sourceDocuments
     val showUpNextSource = sourceDocuments.size > 1
     val upNextPlanTasks = todayPlan.doTodayTasks + todayPlan.pulledInTasks
-    val upNextPlanIds = upNextPlanTasks.map { it.id }
     val pulledInTaskIds = todayPlan.pulledInTasks.mapTo(mutableSetOf()) { it.id }
-    var isUpNextReorderMode by rememberSaveable(today) { mutableStateOf(false) }
-    var upNextOrderIds by rememberSaveable(today) { mutableStateOf(upNextPlanIds) }
-    var draggedUpNextTaskId by remember(today) { mutableStateOf<String?>(null) }
-    val orderedUpNextIds = upNextOrderIds.ifEmpty { upNextPlanIds }
-    val upNextTasksById = upNextPlanTasks.associateBy { it.id }
-    val visibleUpNextTasks = orderedUpNextIds
-        .mapNotNull { upNextTasksById[it] } +
-        upNextPlanTasks.filterNot { it.id in orderedUpNextIds }
-    val startHereTask = visibleUpNextTasks.firstOrNull().takeUnless { isUpNextReorderMode }
+    var isNextExpanded by rememberSaveable(today) { mutableStateOf(false) }
+    val visibleUpNextTasks = upNextPlanTasks
+    val startHereTask = visibleUpNextTasks.firstOrNull()
     val listedUpNextTasks = if (startHereTask == null) {
         visibleUpNextTasks
     } else {
         visibleUpNextTasks.drop(1)
+    }
+    val visibleListedUpNextTasks = if (isNextExpanded) {
+        listedUpNextTasks
+    } else {
+        listedUpNextTasks.take(2)
     }
     fun updateAvailableMinutes(minutes: Int) {
         val normalized = effectiveTodayAvailableMinutes(
@@ -222,39 +219,10 @@ fun TodayScreen(
         )
         onAvailableTimeChanged(today, normalized.takeUnless { it == baseAvailableMinutes })
     }
-    fun moveUpNextTask(taskId: String, offset: Int): Boolean {
-        val current = upNextOrderIds.ifEmpty { upNextPlanIds }
-        val currentIndex = current.indexOf(taskId)
-        if (currentIndex == -1) return false
-        val targetIndex = (currentIndex + offset).coerceIn(current.indices)
-        if (targetIndex == currentIndex) return false
-        val updated = current.toMutableList()
-        val moved = updated.removeAt(currentIndex)
-        updated.add(targetIndex, moved)
-        upNextOrderIds = updated
-        return true
-    }
-    LaunchedEffect(upNextPlanIds) {
-        val retainedIds = upNextOrderIds.filter { it in upNextPlanIds }
-        val addedIds = upNextPlanIds.filterNot { it in retainedIds }
-        val mergedIds = retainedIds + addedIds
-        if (mergedIds != upNextOrderIds) {
-            upNextOrderIds = mergedIds
-        }
-        if (upNextPlanIds.size <= 1) {
-            isUpNextReorderMode = false
-        }
-    }
-
-    LaunchedEffect(isUpNextReorderMode) {
-        if (!isUpNextReorderMode) {
-            draggedUpNextTaskId = null
-        }
-    }
 
     LaunchedEffect(wrapUpResultMessage) {
         if (wrapUpResultMessage != null) {
-            visibleWrapUpMessage = wrapUpResultMessage
+            visibleNotice = wrapUpResultMessage
             onConsumeWrapUpResult()
         }
     }
@@ -266,10 +234,16 @@ fun TodayScreen(
         }
     }
 
+    LaunchedEffect(visibleNotice) {
+        if (visibleNotice != null) {
+            delay(3_200L)
+            visibleNotice = null
+        }
+    }
+
     if (showWrapUpDialog) {
         WrapUpTodayDialog(
             todayPlan = todayPlan,
-            impactPreview = impactPreview,
             onDismiss = { showWrapUpDialog = false },
             onConfirm = {
                 showWrapUpDialog = false
@@ -288,6 +262,7 @@ fun TodayScreen(
             onIncrease = {
                 updateAvailableMinutes(todayPlan.availableMinutes + TimeAdjustmentStepMinutes)
             },
+            onSetAvailableMinutes = { minutes -> updateAvailableMinutes(minutes) },
             onReset = { onAvailableTimeChanged(today, null) },
             onDismiss = { showTimeBudgetDialog = false },
             reducedMotion = reducedMotion,
@@ -319,25 +294,49 @@ fun TodayScreen(
         RemovedFromPlanInfoDialog(onDismiss = { showRemovedFromPlanInfo = false })
     }
 
-    LazyColumn(
-        modifier = modifier
-            .fillMaxSize()
-            .statusBarsPadding(),
-        contentPadding = androidx.compose.foundation.layout.PaddingValues(
-            start = 20.dp,
-            end = 20.dp,
-            top = 10.dp,
-            bottom = 20.dp,
-        ),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
-    ) {
+    Box(modifier = modifier.fillMaxSize()) {
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxSize()
+                .statusBarsPadding(),
+            contentPadding = androidx.compose.foundation.layout.PaddingValues(
+                start = 20.dp,
+                end = 20.dp,
+                top = 10.dp,
+                bottom = 20.dp,
+            ),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
         item(key = "today-header") {
-            TodayHeader(
-                todayPlan = todayPlan,
-                clockPressure = clockPressure,
-                isTodayClosed = isTodayClosed,
-                modifier = Modifier.animateItem(),
-            )
+            val headerMessage = todayPlan.headerMessage(clockPressure, isTodayClosed)
+            Column(
+                modifier = Modifier
+                    .animateItem()
+                    .fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                TodayHeader(
+                    todayPlan = todayPlan,
+                    clockPressure = clockPressure,
+                    isTodayClosed = isTodayClosed,
+                    onAdjustClick = { showTimeBudgetDialog = true },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                AnimatedVisibility(
+                    visible = headerMessage != null,
+                    enter = fadeIn(todayMotionSpec(reducedMotion)) +
+                        expandVertically(todayMotionSpec(reducedMotion), expandFrom = Alignment.Top),
+                    exit = fadeOut(todayMotionSpec(reducedMotion)) +
+                        shrinkVertically(todayMotionSpec(reducedMotion), shrinkTowards = Alignment.Top),
+                ) {
+                    if (headerMessage != null) {
+                        TodayHeaderSubtitle(
+                            message = headerMessage,
+                            color = todayPlan.headerColor(clockPressure, isTodayClosed),
+                        )
+                    }
+                }
+            }
         }
         item(key = "today-budget") {
             TodayBudgetCard(
@@ -346,45 +345,37 @@ fun TodayScreen(
                 modifier = Modifier.animateItem(),
             )
         }
-        item(key = "today-actions") {
-            TodayActionRow(
-                wrapUpText = wrapUpButtonText,
-                wrapUpEnabled = canWrapUpToday,
-                onAdjustClick = { showTimeBudgetDialog = true },
-                onWrapUpClick = { showWrapUpDialog = true },
-                modifier = Modifier.animateItem(),
-            )
-        }
-        if (todayPlan.hasPendingChanges || isTodayClosed) {
-            item(key = "today-status") {
-                TodayRebalancedRow(
-                    title = if (isTodayClosed) {
-                        stringResource(R.string.today_wrapped_up_button)
-                    } else {
-                        stringResource(R.string.today_rebalanced)
-                    },
-                    message = if (isTodayClosed) {
-                        visibleWrapUpMessage ?: stringResource(R.string.today_time_closed_message)
-                    } else {
-                        impactPreview?.message() ?: todayPlan.replanFeedbackMessage()
-                    },
-                    reducedMotion = reducedMotion,
-                    modifier = Modifier.animateItem(),
-                )
-            }
-        }
         if (startHereTask != null) {
-            item(key = "today-start-here") {
+            item(key = "today-do-now-section") {
+                Column(
+                    modifier = Modifier
+                        .animateItem(
+                            fadeInSpec = todayMotionSpec(reducedMotion),
+                            placementSpec = todayMotionSpec(reducedMotion),
+                            fadeOutSpec = todayMotionSpec(reducedMotion),
+                        )
+                        .padding(top = 8.dp, bottom = 0.dp),
+                    verticalArrangement = Arrangement.spacedBy(0.dp),
+                ) {
+                    TodayDoNowSectionLabel()
+                    TodayDoNowConnector(modifier = Modifier.padding(top = 2.dp))
+                }
+            }
+            item(key = "today-do-now") {
                 AnimatedContent(
                     targetState = startHereTask.id,
                     transitionSpec = { renFadeThroughTransform(reducedMotion = reducedMotion) },
                     contentKey = { it },
-                    label = "today-start-task",
-                    modifier = Modifier.animateItem(),
+                    label = "today-do-now-task",
+                    modifier = Modifier.animateItem(
+                        fadeInSpec = todayMotionSpec(reducedMotion),
+                        placementSpec = todayMotionSpec(reducedMotion),
+                        fadeOutSpec = todayMotionSpec(reducedMotion),
+                    ),
                 ) { taskId ->
                     val animatedTask = visibleUpNextTasks.firstOrNull { it.id == taskId } ?: startHereTask
                     val isPulledIn = animatedTask.id in pulledInTaskIds
-                    TodayStartHereCard(
+                    TodayDoNowCard(
                         task = animatedTask,
                         sourceDocuments = sourceDocuments,
                         actions = upNextTaskActions(
@@ -400,14 +391,6 @@ fun TodayScreen(
                         reducedMotion = reducedMotion,
                     )
                 }
-            }
-        }
-        if (visibleNotice != null) {
-            item(key = "today-notice") {
-                TodayNoticeCard(
-                    message = visibleNotice.orEmpty(),
-                    modifier = Modifier.animateItem(),
-                )
             }
         }
         if (
@@ -433,24 +416,31 @@ fun TodayScreen(
                         title = stringResource(R.string.up_next),
                         reducedMotion = reducedMotion,
                         modifier = Modifier.animateItem(),
-                        trailingAction = if (visibleUpNextTasks.size > 1) {
-                            TodaySectionAction(
-                                label = if (isUpNextReorderMode) {
-                                    stringResource(R.string.done_reordering)
-                                } else {
-                                    stringResource(R.string.reorder)
-                                },
-                                icon = Icons.Default.DragIndicator,
-                                onClick = { isUpNextReorderMode = !isUpNextReorderMode },
-                            )
-                        } else {
-                            null
+                        countLabel = leafCountLabel(listedUpNextTasks.size),
+                        countIcon = Icons.Default.Eco,
+                        trailingActions = buildList {
+                            if (listedUpNextTasks.size > 1) {
+                                add(
+                                    TodaySectionAction(
+                                        label = if (isNextExpanded) {
+                                            stringResource(R.string.collapse_section)
+                                        } else {
+                                            stringResource(R.string.expand_section)
+                                        },
+                                        icon = if (isNextExpanded) {
+                                            Icons.Default.ExpandLess
+                                        } else {
+                                            Icons.Default.ExpandMore
+                                        },
+                                        onClick = { isNextExpanded = !isNextExpanded },
+                                    ),
+                                )
+                            }
                         },
                     )
                 }
-                itemsIndexed(listedUpNextTasks, key = { _, task -> "up-next-${task.id}" }) { index, task ->
+                items(visibleListedUpNextTasks, key = { task -> "up-next-${task.id}" }) { task ->
                     val isPulledIn = task.id in pulledInTaskIds
-                    val isActivelyDragged = draggedUpNextTaskId == task.id
                     val actions = upNextTaskActions(
                         today = today,
                         task = task,
@@ -461,27 +451,20 @@ fun TodayScreen(
                     TodayTaskRow(
                         task = task,
                         sourceDocuments = sourceDocuments,
-                        position = if (isUpNextReorderMode) index + 1 else null,
                         indicatorIcon = Icons.AutoMirrored.Filled.ArrowForward,
                         indicatorContentDescription = stringResource(R.string.up_next),
                         showSource = showUpNextSource,
                         supportingText = if (isPulledIn) stringResource(R.string.pulled_in_today_message) else null,
                         actions = actions,
-                        isReorderMode = isUpNextReorderMode,
-                        canMoveUp = index > 0,
-                        canMoveDown = index < visibleUpNextTasks.lastIndex,
-                        onMoveUp = { moveUpNextTask(task.id, -1) },
-                        onMoveDown = { moveUpNextTask(task.id, 1) },
-                        onDragStateChanged = { isDragging ->
-                            draggedUpNextTaskId = task.id.takeIf { isDragging }
-                        },
                         reducedMotion = reducedMotion,
                         compact = true,
-                        modifier = if (isActivelyDragged) {
-                            Modifier.zIndex(10f)
-                        } else {
-                            Modifier.animateItem()
-                        },
+                        indicatorCompact = true,
+                        plainIndicator = true,
+                        modifier = Modifier.animateItem(
+                            fadeInSpec = todayMotionSpec(reducedMotion),
+                            placementSpec = todayMotionSpec(reducedMotion),
+                            fadeOutSpec = todayMotionSpec(reducedMotion),
+                        ),
                     )
                 }
             }
@@ -543,6 +526,8 @@ fun TodayScreen(
                                         ),
                                         reducedMotion = reducedMotion,
                                         compact = true,
+                                        indicatorCompact = true,
+                                        plainIndicator = true,
                                     )
                                 }
                             }
@@ -608,6 +593,8 @@ fun TodayScreen(
                                         ),
                                         reducedMotion = reducedMotion,
                                         compact = true,
+                                        indicatorCompact = true,
+                                        plainIndicator = true,
                                     )
                                 }
                             }
@@ -615,63 +602,38 @@ fun TodayScreen(
                     }
                 }
             }
-            if (todayPlan.pullInCandidates.isNotEmpty()) {
-                item(key = "today-pull-in-section") {
-                    Column(
-                        modifier = Modifier.animateItem(),
-                    ) {
-                        TodaySectionHeader(
-                            title = stringResource(R.string.pull_ahead_suggestions),
-                            reducedMotion = reducedMotion,
-                            countLabel = collapsedSectionTaskCountLabel(
-                                count = if (isUseExtraTimeExpanded) 0 else todayPlan.pullInCandidates.size,
-                            ),
-                            trailingActions = listOf(
-                                TodaySectionAction(
-                                    label = "",
-                                    icon = Icons.Outlined.Info,
-                                    onClick = { showUseExtraTimeInfo = true },
-                                    contentDescription = stringResource(R.string.use_extra_time_info),
-                                ),
-                                TodaySectionAction(
-                                    label = if (isUseExtraTimeExpanded) {
-                                        stringResource(R.string.collapse_section)
-                                    } else {
-                                        stringResource(R.string.expand_section)
-                                    },
-                                    icon = if (isUseExtraTimeExpanded) {
-                                        Icons.Default.ExpandLess
-                                    } else {
-                                        Icons.Default.ExpandMore
-                                    },
-                                    onClick = { isUseExtraTimeExpanded = !isUseExtraTimeExpanded },
-                                ),
-                            ),
-                        )
-                        TodayCollapsibleSectionContent(
-                            expanded = isUseExtraTimeExpanded,
-                            reducedMotion = reducedMotion,
-                            compact = true,
-                        ) {
-                            todayPlan.pullInCandidates.forEach { task ->
-                                key(task.id) {
-                                    TodayTaskRow(
-                                        task = task,
-                                        sourceDocuments = sourceDocuments,
-                                        indicatorIcon = Icons.Default.Timer,
-                                        indicatorContentDescription = stringResource(R.string.pull_ahead_suggestions),
-                                        showSource = false,
-                                        primaryAction = TodayTaskActionSpec(
-                                            label = stringResource(R.string.pull_in),
-                                            onClick = { onTaskAction(today, task.id, TodaySessionTaskAction.PullIn) },
-                                        ),
-                                        reducedMotion = reducedMotion,
-                                        compact = true,
-                                    )
-                                }
-                            }
-                        }
-                    }
+            item(key = "today-wrap-up-section") {
+                TodaySectionAnchor(
+                    label = stringResource(R.string.wrap_up_today_confirm),
+                    icon = Icons.Default.Flag,
+                    modifier = Modifier
+                        .animateItem()
+                        .padding(top = 8.dp, bottom = 6.dp),
+                )
+            }
+            item(key = "today-wrap-up-action") {
+                Column(
+                    modifier = Modifier
+                        .animateItem()
+                        .animateContentSize(animationSpec = todayMotionSpec(reducedMotion)),
+                    verticalArrangement = Arrangement.spacedBy(14.dp),
+                ) {
+                    TodayWrapUpAction(
+                        wrapUpText = wrapUpButtonText,
+                        wrapUpEnabled = canWrapUpToday,
+                        doMoreEnabled = todayPlan.pullInCandidates.isNotEmpty(),
+                        onDoMoreClick = { isUseExtraTimeExpanded = true },
+                        onWrapUpClick = { showWrapUpDialog = true },
+                    )
+                    TodayTomorrowReveal(
+                        expanded = todayPlan.pullInCandidates.isNotEmpty() && isUseExtraTimeExpanded,
+                        tasks = todayPlan.pullInCandidates,
+                        sourceDocuments = sourceDocuments,
+                        onInfoClick = { showUseExtraTimeInfo = true },
+                        onCollapseClick = { isUseExtraTimeExpanded = false },
+                        onPullIn = { taskId -> onTaskAction(today, taskId, TodaySessionTaskAction.PullIn) },
+                        reducedMotion = reducedMotion,
+                    )
                 }
             }
             if (todayPlan.removedFromPlanTasks.isNotEmpty()) {
@@ -806,46 +768,31 @@ fun TodayScreen(
             }
         }
     }
+    AnimatedVisibility(
+        visible = visibleNotice != null,
+        enter = fadeIn(todayMotionSpec(reducedMotion)) +
+            slideInVertically(todayMotionSpec(reducedMotion)) { -it / 2 },
+        exit = fadeOut(todayMotionSpec(reducedMotion)) +
+            slideOutVertically(todayMotionSpec(reducedMotion)) { -it / 2 },
+        modifier = Modifier
+            .align(Alignment.TopCenter)
+            .statusBarsPadding()
+            .padding(horizontal = 20.dp, vertical = 10.dp),
+    ) {
+        TodayTopNotification(message = visibleNotice.orEmpty())
+    }
 }
-
-private val SparklesIcon: ImageVector = ImageVector.Builder(
-    name = "Sparkles",
-    defaultWidth = 24.dp,
-    defaultHeight = 24.dp,
-    viewportWidth = 24f,
-    viewportHeight = 24f,
-).apply {
-    path(
-        fill = SolidColor(Color.Black),
-    ) {
-        moveTo(10f, 4f)
-        quadTo(10f, 13f, 19f, 13f)
-        quadTo(10f, 13f, 10f, 22f)
-        quadTo(10f, 13f, 1f, 13f)
-        quadTo(10f, 13f, 10f, 4f)
-        close()
-    }
-    path(
-        fill = SolidColor(Color.Black),
-    ) {
-        moveTo(18f, 1f)
-        quadTo(18f, 5f, 22f, 5f)
-        quadTo(18f, 5f, 18f, 9f)
-        quadTo(18f, 5f, 14f, 5f)
-        quadTo(18f, 5f, 18f, 1f)
-        close()
-    }
-}.build()
+}
 
 @Composable
 private fun TodayHeader(
     todayPlan: TodaySessionPlan,
     clockPressure: TodayClockPressure,
     isTodayClosed: Boolean,
+    onAdjustClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val title = todayPlan.headerTitle(clockPressure, isTodayClosed)
-    val message = todayPlan.headerMessage(clockPressure, isTodayClosed)
     val dayBoundary = todayPlan.headerDayBoundary(clockPressure, isTodayClosed)
 
     Row(
@@ -864,25 +811,29 @@ private fun TodayHeader(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
-            if (message != null) {
-                Text(
-                    text = message,
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = FontWeight.Medium,
-                    color = todayPlan.headerColor(clockPressure, isTodayClosed),
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
         }
 
         if (dayBoundary != null) {
-            VerticalDivider(
-                modifier = Modifier
-                    .height(38.dp)
-                    .padding(horizontal = 14.dp),
-                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.36f),
-            )
+            CompositionLocalProvider(LocalMinimumInteractiveComponentSize provides 0.dp) {
+                Button(
+                    onClick = onAdjustClick,
+                    modifier = Modifier
+                        .padding(horizontal = 10.dp)
+                        .size(32.dp),
+                    shape = CircleShape,
+                    contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = RenSelectedCardSurface,
+                        contentColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.72f),
+                    ),
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Edit,
+                        contentDescription = stringResource(R.string.adjust_time),
+                        modifier = Modifier.size(16.dp),
+                    )
+                }
+            }
             Text(
                 text = dayBoundary,
                 modifier = Modifier.weight(1f),
@@ -895,6 +846,23 @@ private fun TodayHeader(
             )
         }
     }
+}
+
+@Composable
+private fun TodayHeaderSubtitle(
+    message: String,
+    color: Color,
+    modifier: Modifier = Modifier,
+) {
+    Text(
+        text = message,
+        modifier = modifier.fillMaxWidth(),
+        style = MaterialTheme.typography.bodyMedium,
+        fontWeight = FontWeight.Medium,
+        color = color.copy(alpha = 0.86f),
+        maxLines = 2,
+        overflow = TextOverflow.Ellipsis,
+    )
 }
 
 @Composable
@@ -951,8 +919,6 @@ private fun TodaySessionPlan.headerDayBoundary(
     isTodayClosed: Boolean,
 ): String? = when {
     isTodayClosed -> null
-    outsideTodayBudgetMinutes > 0 -> null
-    activeWorkMinutes == 0 -> null
     else -> "Day ends in ${formatMinutes(clockPressure.minutesUntilReset)}."
 }
 
@@ -1015,169 +981,125 @@ private fun TodayBudgetCard(
         animationSpec = todayMotionSpec(reducedMotion),
         label = "today-budget-moved-leaves",
     )
-    val remainingOrOverLabel = if (pressureMinutes > 0) {
-        "Over"
-    } else {
-        "Free"
-    }
-    val targetRemainingOrOverColor = if (pressureMinutes > 0) {
-        MaterialTheme.colorScheme.error
-    } else {
-        MaterialTheme.colorScheme.primary
-    }
-    val remainingOrOverColor by animateColorAsState(
-        targetValue = targetRemainingOrOverColor,
+    val balanceValueColor by animateColorAsState(
+        targetValue = if (pressureMinutes > 0) {
+            MaterialTheme.colorScheme.error.copy(alpha = 0.86f)
+        } else {
+            MaterialTheme.colorScheme.onSurface.copy(alpha = 0.9f)
+        },
         animationSpec = todayMotionSpec(reducedMotion),
-        label = "today-budget-remaining-color",
+        label = "today-budget-balance-color",
     )
-    val mutedMetricIconColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.62f)
-    val warningMetricIconColor = MaterialTheme.colorScheme.error.copy(alpha = 0.72f)
 
     Column(
         modifier = modifier
             .fillMaxWidth()
             .animateContentSize(animationSpec = todayMotionSpec(reducedMotion))
             .padding(vertical = 4.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.42f))
-
+        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.22f))
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            TodayBudgetMetric(
-                label = "Budget",
+            TodayBalanceToken(
+                label = "Day",
                 value = formatMinutes(animatedAvailableMinutes),
                 icon = Icons.Default.Timer,
-                iconTint = mutedMetricIconColor,
                 modifier = Modifier.weight(1f),
             )
-            VerticalDivider(
-                modifier = Modifier
-                    .height(36.dp)
-                    .padding(horizontal = 4.dp),
-                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.42f),
-            )
-            TodayBudgetMetric(
+            TodayBalanceToken(
                 label = "Planned",
                 value = formatMinutes(animatedPlannedMinutes),
                 icon = Icons.AutoMirrored.Filled.Assignment,
-                iconTint = mutedMetricIconColor,
                 modifier = Modifier.weight(1f),
             )
-            VerticalDivider(
-                modifier = Modifier
-                    .height(36.dp)
-                    .padding(horizontal = 4.dp),
-                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.42f),
-            )
-            TodayBudgetMetric(
-                label = remainingOrOverLabel,
+            TodayBalanceToken(
+                label = if (pressureMinutes > 0) "Over" else "Free",
                 value = formatMinutes(animatedRemainingOrOverMinutes),
                 icon = if (pressureMinutes > 0) Icons.Default.WarningAmber else Icons.Default.Schedule,
-                iconTint = if (pressureMinutes > 0) warningMetricIconColor else mutedMetricIconColor,
-                valueColor = remainingOrOverColor,
+                valueColor = balanceValueColor,
                 modifier = Modifier.weight(1f),
             )
         }
-
-        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.42f))
 
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            TodayBudgetMetric(
+            TodayBalanceToken(
                 label = "Left",
                 value = leafCountLabel(animatedRemainingLeaves),
                 icon = Icons.Default.Eco,
-                iconTint = mutedMetricIconColor,
-                compact = true,
                 modifier = Modifier.weight(1f),
             )
-            VerticalDivider(
-                modifier = Modifier
-                    .height(30.dp)
-                    .padding(horizontal = 4.dp),
-                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.42f),
-            )
-            TodayBudgetMetric(
+            TodayBalanceToken(
                 label = "Done",
                 value = leafCountLabel(animatedDoneLeaves),
                 icon = Icons.Default.CheckCircle,
-                iconTint = mutedMetricIconColor,
-                compact = true,
                 modifier = Modifier.weight(1f),
             )
-            VerticalDivider(
-                modifier = Modifier
-                    .height(30.dp)
-                    .padding(horizontal = 4.dp),
-                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.42f),
-            )
-            TodayBudgetMetric(
+            TodayBalanceToken(
                 label = "Moved",
                 value = leafCountLabel(animatedMovedLeaves),
                 icon = Icons.Default.RestartAlt,
-                iconTint = mutedMetricIconColor,
-                compact = true,
                 modifier = Modifier.weight(1f),
             )
         }
 
-        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.42f))
+        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.20f))
     }
 }
 
 @Composable
-private fun TodayBudgetMetric(
+private fun TodayBalanceToken(
     label: String,
     value: String,
     icon: ImageVector,
-    iconTint: Color,
     modifier: Modifier = Modifier,
-    valueColor: Color = MaterialTheme.colorScheme.onSurface,
-    compact: Boolean = false,
+    valueColor: Color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.88f),
 ) {
-    val horizontalPadding = if (compact) 4.dp else 6.dp
-    val contentSpacing = if (compact) 2.dp else 4.dp
-    val labelSpacing = if (compact) 4.dp else 6.dp
-    val iconSize = if (compact) 12.dp else 14.dp
-    val valueStyle = if (compact) MaterialTheme.typography.labelLarge else MaterialTheme.typography.titleMedium
-    val valueWeight = if (compact) FontWeight.SemiBold else FontWeight.Bold
-
-    Column(
-        modifier = modifier.padding(horizontal = horizontalPadding),
-        verticalArrangement = Arrangement.spacedBy(contentSpacing),
-        horizontalAlignment = Alignment.Start,
+    Surface(
+        modifier = modifier,
+        shape = RoundedCornerShape(12.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.10f),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.14f)),
     ) {
         Row(
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 7.dp),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(labelSpacing),
+            horizontalArrangement = Arrangement.spacedBy(7.dp),
         ) {
             Icon(
                 imageVector = icon,
                 contentDescription = null,
-                tint = iconTint,
-                modifier = Modifier.size(iconSize),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.58f),
+                modifier = Modifier.size(13.dp),
             )
-            Text(
-                text = label,
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(1.dp),
+            ) {
+                Text(
+                    text = value,
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.SemiBold,
+                    color = valueColor,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    text = label,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.68f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
         }
-        Text(
-            text = value,
-            style = valueStyle,
-            fontWeight = valueWeight,
-            color = valueColor,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
     }
 }
 
@@ -1186,35 +1108,355 @@ private fun leafCountLabel(count: Int): String =
     pluralStringResource(R.plurals.study_leaf_count, count, count)
 
 @Composable
+private fun TodayWrapUpAction(
+    wrapUpText: String,
+    wrapUpEnabled: Boolean,
+    doMoreEnabled: Boolean,
+    onDoMoreClick: () -> Unit,
+    onWrapUpClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val pullContainer = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.16f)
+    val pullContent = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.78f)
+    val pullBorder = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.34f)
+    val wrapContainer = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.30f)
+    val wrapContent = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.88f)
+    val wrapBorder = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.50f)
+    val disabledContainer = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.14f)
+    val disabledContent = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.42f)
+
+    Column(
+        modifier = modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        TodayWrapUpBranchDiagram()
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            OutlinedButton(
+                onClick = onDoMoreClick,
+                enabled = doMoreEnabled,
+                modifier = Modifier.weight(1f),
+                shape = RoundedCornerShape(50),
+                border = BorderStroke(1.dp, pullBorder),
+                colors = ButtonDefaults.outlinedButtonColors(
+                    containerColor = pullContainer,
+                    contentColor = pullContent,
+                    disabledContainerColor = disabledContainer,
+                    disabledContentColor = disabledContent,
+                ),
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Eco,
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp),
+                )
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    text = stringResource(R.string.pull_in_next_task),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            OutlinedButton(
+                onClick = onWrapUpClick,
+                enabled = wrapUpEnabled,
+                modifier = Modifier.weight(1f),
+                shape = RoundedCornerShape(50),
+                border = BorderStroke(1.dp, wrapBorder),
+                colors = ButtonDefaults.outlinedButtonColors(
+                    containerColor = wrapContainer,
+                    contentColor = wrapContent,
+                    disabledContainerColor = disabledContainer,
+                    disabledContentColor = disabledContent,
+                ),
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Flag,
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp),
+                )
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    text = wrapUpText,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun TodayTomorrowReveal(
+    expanded: Boolean,
+    tasks: List<GeneratedStudyBlock>,
+    sourceDocuments: List<StudySourceDocument>,
+    onInfoClick: () -> Unit,
+    onCollapseClick: () -> Unit,
+    onPullIn: (String) -> Unit,
+    reducedMotion: Boolean,
+    modifier: Modifier = Modifier,
+) {
+    val firstLeafBringIntoViewRequester = remember { BringIntoViewRequester() }
+    val firstTaskId = tasks.firstOrNull()?.id
+
+    LaunchedEffect(expanded, firstTaskId) {
+        if (expanded && firstTaskId != null) {
+            delay(if (reducedMotion) 0L else RenMotionDurationMillis.toLong())
+            firstLeafBringIntoViewRequester.bringIntoView()
+        }
+    }
+
+    AnimatedVisibility(
+        visible = expanded,
+        enter = fadeIn(todayMotionSpec(reducedMotion)) +
+            expandVertically(
+                animationSpec = todayMotionSpec(reducedMotion),
+                expandFrom = Alignment.Top,
+            ),
+        exit = fadeOut(todayMotionSpec(reducedMotion)) +
+            shrinkVertically(
+                animationSpec = todayMotionSpec(reducedMotion),
+                shrinkTowards = Alignment.Top,
+            ),
+        modifier = modifier,
+    ) {
+        Surface(
+            modifier = Modifier
+                .fillMaxWidth()
+                .animateContentSize(animationSpec = todayMotionSpec(reducedMotion)),
+            shape = RoundedCornerShape(18.dp),
+            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.12f),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.28f)),
+        ) {
+            Column(
+                modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Eco,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.64f),
+                        modifier = Modifier.size(16.dp),
+                    )
+                    Text(
+                        text = stringResource(R.string.pull_ahead_suggestions),
+                        modifier = Modifier.weight(1f),
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.9f),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    CompositionLocalProvider(LocalMinimumInteractiveComponentSize provides 0.dp) {
+                        IconButton(
+                            onClick = onInfoClick,
+                            modifier = Modifier.size(30.dp),
+                        ) {
+                            Icon(
+                                imageVector = Icons.Outlined.Info,
+                                contentDescription = stringResource(R.string.use_extra_time_info),
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.68f),
+                                modifier = Modifier.size(16.dp),
+                            )
+                        }
+                        IconButton(
+                            onClick = onCollapseClick,
+                            modifier = Modifier.size(30.dp),
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.ExpandLess,
+                                contentDescription = stringResource(R.string.collapse_section),
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.68f),
+                                modifier = Modifier.size(17.dp),
+                            )
+                        }
+                    }
+                }
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.18f))
+                tasks.forEachIndexed { index, task ->
+                    TomorrowLeafRow(
+                        task = task,
+                        sourceDocuments = sourceDocuments,
+                        onPullIn = { onPullIn(task.id) },
+                        modifier = if (index == 0) {
+                            Modifier.bringIntoViewRequester(firstLeafBringIntoViewRequester)
+                        } else {
+                            Modifier
+                        },
+                    )
+                    if (index < tasks.lastIndex) {
+                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.14f))
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun TomorrowLeafRow(
+    task: GeneratedStudyBlock,
+    sourceDocuments: List<StudySourceDocument>,
+    onPullIn: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val metadataText = todayTaskMetadataText(
+        task = task,
+        showDuration = true,
+        showTaskType = true,
+    )
+    val sourceText = todayTaskSourceText(task, sourceDocuments)
+
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(vertical = 2.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Icon(
+            imageVector = Icons.Default.Eco,
+            contentDescription = stringResource(R.string.pull_ahead_suggestions),
+            tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.64f),
+            modifier = Modifier.size(16.dp),
+        )
+        Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(2.dp),
+        ) {
+            Text(
+                text = task.title,
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.92f),
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+            if (metadataText != null) {
+                Text(
+                    text = metadataText,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            if (sourceText != null) {
+                Text(
+                    text = sourceText,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
+        CompositionLocalProvider(LocalMinimumInteractiveComponentSize provides 0.dp) {
+            TextButton(
+                onClick = onPullIn,
+                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                colors = ButtonDefaults.textButtonColors(
+                    contentColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.82f),
+                ),
+            ) {
+                Text(
+                    text = stringResource(R.string.pull_in),
+                    style = MaterialTheme.typography.labelMedium,
+                    maxLines = 1,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun TodayWrapUpBranchDiagram(
+    modifier: Modifier = Modifier,
+) {
+    val branchColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.28f)
+    Canvas(
+        modifier = modifier
+            .fillMaxWidth()
+            .height(28.dp),
+    ) {
+        val centerX = size.width / 2f
+        val splitY = size.height * 0.36f
+        val endY = size.height - 1.dp.toPx()
+        val leftEndX = size.width * 0.25f
+        val rightEndX = size.width * 0.75f
+        val stroke = Stroke(width = 1.4.dp.toPx(), cap = StrokeCap.Round)
+
+        drawLine(
+            color = branchColor,
+            start = androidx.compose.ui.geometry.Offset(centerX, 0f),
+            end = androidx.compose.ui.geometry.Offset(centerX, splitY),
+            strokeWidth = stroke.width,
+            cap = StrokeCap.Round,
+        )
+
+        val leftPath = Path().apply {
+            moveTo(centerX, splitY)
+            cubicTo(
+                centerX - size.width * 0.10f,
+                splitY,
+                leftEndX + size.width * 0.08f,
+                endY,
+                leftEndX,
+                endY,
+            )
+        }
+        val rightPath = Path().apply {
+            moveTo(centerX, splitY)
+            cubicTo(
+                centerX + size.width * 0.10f,
+                splitY,
+                rightEndX - size.width * 0.08f,
+                endY,
+                rightEndX,
+                endY,
+            )
+        }
+        drawPath(path = leftPath, color = branchColor, style = stroke)
+        drawPath(path = rightPath, color = branchColor, style = stroke)
+    }
+}
+
+@Composable
 private fun TimeBudgetDialog(
     availableMinutes: Int,
     baseAvailableMinutes: Int,
     maxAvailableMinutes: Int,
     onDecrease: () -> Unit,
     onIncrease: () -> Unit,
+    onSetAvailableMinutes: (Int) -> Unit,
     onReset: () -> Unit,
     onDismiss: () -> Unit,
     reducedMotion: Boolean,
 ) {
     val hasTimeOverride = availableMinutes != baseAvailableMinutes
-    val animatedAvailableMinutes by animateIntAsState(
-        targetValue = availableMinutes,
-        animationSpec = todayMotionSpec(reducedMotion),
-        label = "today-dialog-available-minutes",
-    )
 
     Dialog(onDismissRequest = onDismiss) {
-        Card(
+        Surface(
             modifier = Modifier
                 .fillMaxWidth()
                 .animateContentSize(animationSpec = todayMotionSpec(reducedMotion)),
             shape = RoundedCornerShape(24.dp),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-            border = CardDefaults.outlinedCardBorder(),
+            color = MaterialTheme.colorScheme.surface,
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.30f)),
         ) {
             Column(
-                modifier = Modifier.padding(20.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp),
+                modifier = Modifier.padding(horizontal = 20.dp, vertical = 18.dp),
+                verticalArrangement = Arrangement.spacedBy(18.dp),
             ) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -1223,86 +1465,108 @@ private fun TimeBudgetDialog(
                 ) {
                     Text(
                         text = stringResource(R.string.today_time_budget_title),
-                        style = MaterialTheme.typography.titleLarge,
+                        style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onSurface,
                     )
                     IconButton(onClick = onDismiss, modifier = Modifier.size(32.dp)) {
-                        Icon(Icons.Default.Close, contentDescription = stringResource(R.string.close_time_budget))
+                        Icon(
+                            imageVector = Icons.Default.Close,
+                            contentDescription = stringResource(R.string.close_time_budget),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
                     }
                 }
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Surface(
-                        modifier = Modifier.size(42.dp),
-                        shape = RoundedCornerShape(14.dp),
-                        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.32f),
-                        contentColor = MaterialTheme.colorScheme.primary,
+
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.16f))
+
+                Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(7.dp),
                     ) {
-                        Box(contentAlignment = Alignment.Center) {
-                            Icon(Icons.Default.Timer, contentDescription = null)
-                        }
-                    }
-                    Spacer(Modifier.width(12.dp))
-                    Column(modifier = Modifier.weight(1f)) {
+                        Icon(
+                            imageVector = Icons.Default.Timer,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.62f),
+                            modifier = Modifier.size(15.dp),
+                        )
                         Text(
                             text = stringResource(R.string.today_available_time),
-                            style = MaterialTheme.typography.titleMedium,
+                            style = MaterialTheme.typography.titleSmall,
                             fontWeight = FontWeight.Bold,
-                        )
-                        Text(
-                            text = stringResource(R.string.today_available_time_subtitle),
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            color = MaterialTheme.colorScheme.onSurface,
                         )
                     }
+                    Text(
+                        text = stringResource(R.string.today_available_time_subtitle),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.72f),
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
                 }
+
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
-                    IconButton(
-                        onClick = onDecrease,
+                    TodaySetupStepButton(
+                        icon = Icons.Default.Remove,
+                        contentDescription = stringResource(R.string.decrease_available_time),
                         enabled = availableMinutes > 0,
-                    ) {
-                        Icon(Icons.Default.Remove, contentDescription = stringResource(R.string.decrease_available_time))
-                    }
-                    Text(
-                        text = formatMinutes(animatedAvailableMinutes),
-                        modifier = Modifier.weight(1f),
-                        style = MaterialTheme.typography.headlineSmall,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurface,
+                        onClick = onDecrease,
                     )
-                    IconButton(
-                        onClick = onIncrease,
+                    TodayTimeValueEditor(
+                        availableMinutes = availableMinutes,
+                        maxAvailableMinutes = maxAvailableMinutes,
+                        onMinutesChange = onSetAvailableMinutes,
+                        modifier = Modifier.weight(1f),
+                    )
+                    TodaySetupStepButton(
+                        icon = Icons.Default.Add,
+                        contentDescription = stringResource(R.string.increase_available_time),
                         enabled = availableMinutes < maxAvailableMinutes,
-                    ) {
-                        Icon(Icons.Default.Add, contentDescription = stringResource(R.string.increase_available_time))
-                    }
+                        onClick = onIncrease,
+                    )
                 }
-                if (hasTimeOverride) {
-                    TextButton(
-                        onClick = onReset,
-                        modifier = Modifier.fillMaxWidth(),
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.RestartAlt,
-                            contentDescription = null,
-                            modifier = Modifier.size(18.dp),
-                        )
-                        Spacer(Modifier.width(8.dp))
-                        Text(stringResource(R.string.reset_to_plan_time))
-                    }
-                }
-                Button(
-                    onClick = onDismiss,
+
+                Row(
                     modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Text(stringResource(R.string.done_time_budget))
+                    if (hasTimeOverride) {
+                        TextButton(
+                            onClick = onReset,
+                            modifier = Modifier.weight(1f),
+                            colors = ButtonDefaults.textButtonColors(
+                                contentColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.76f),
+                            ),
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.RestartAlt,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp),
+                            )
+                            Spacer(Modifier.width(6.dp))
+                            Text(stringResource(R.string.reset_to_plan_time))
+                        }
+                    } else {
+                        Spacer(Modifier.weight(1f))
+                    }
+                    Button(
+                        onClick = onDismiss,
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(50),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.86f),
+                            contentColor = MaterialTheme.colorScheme.onPrimary,
+                        ),
+                    ) {
+                        Text(stringResource(R.string.done_time_budget))
+                    }
                 }
             }
         }
@@ -1310,70 +1574,228 @@ private fun TimeBudgetDialog(
 }
 
 @Composable
-private fun TodayActionRow(
-    wrapUpText: String,
-    wrapUpEnabled: Boolean,
-    onAdjustClick: () -> Unit,
-    onWrapUpClick: () -> Unit,
+private fun TodaySetupSection(
+    icon: ImageVector,
+    title: String,
+    subtitle: String,
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.Top,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Surface(
+            modifier = Modifier.size(34.dp),
+            shape = RoundedCornerShape(12.dp),
+            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.22f),
+            contentColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.82f),
+        ) {
+            Box(contentAlignment = Alignment.Center) {
+                Icon(icon, contentDescription = null, modifier = Modifier.size(17.dp))
+            }
+        }
+        Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Column(verticalArrangement = Arrangement.spacedBy(1.dp)) {
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+                Text(
+                    text = subtitle,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.76f),
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            content()
+        }
+    }
+}
+
+@Composable
+private fun TodayTimeValueEditor(
+    availableMinutes: Int,
+    maxAvailableMinutes: Int,
+    onMinutesChange: (Int) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val adjustContainer = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.22f)
-    val adjustContent = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.88f)
-    val wrapContainer = MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)
-    val wrapContent = MaterialTheme.colorScheme.primary
-    val disabledContainer = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.14f)
-    val disabledContent = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.42f)
+    var draftHours by rememberSaveable { mutableStateOf((availableMinutes / 60).toString()) }
+    var draftMinutes by rememberSaveable { mutableStateOf((availableMinutes % 60).toString()) }
+    val focusManager = LocalFocusManager.current
+    fun syncDraft(minutes: Int) {
+        draftHours = (minutes / 60).toString()
+        draftMinutes = (minutes % 60).toString()
+    }
+    fun applyDraft(hoursText: String = draftHours, minutesText: String = draftMinutes) {
+        val hours = hoursText.toIntOrNull()?.coerceAtLeast(0) ?: 0
+        val minutes = minutesText.toIntOrNull()?.coerceIn(0, 59) ?: 0
+        onMinutesChange((hours * 60 + minutes).coerceIn(0, maxAvailableMinutes))
+    }
+    fun finishEditing() {
+        applyDraft()
+        focusManager.clearFocus()
+    }
 
-    Row(
-        modifier = modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(10.dp),
-        verticalAlignment = Alignment.CenterVertically,
+    LaunchedEffect(availableMinutes) {
+        syncDraft(availableMinutes)
+    }
+
+    Surface(
+        modifier = modifier.height(88.dp),
+        shape = RoundedCornerShape(18.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.22f),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.34f)),
     ) {
-        OutlinedButton(
-            onClick = onAdjustClick,
-            modifier = Modifier.weight(1f),
-            shape = RoundedCornerShape(50),
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.46f)),
-            colors = ButtonDefaults.outlinedButtonColors(
-                containerColor = adjustContainer,
-                contentColor = adjustContent,
-            ),
+        Row(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            Icon(
-                imageVector = Icons.Default.Schedule,
-                contentDescription = null,
-                modifier = Modifier.size(18.dp),
+            TodayTimePartField(
+                value = draftHours,
+                onValueChange = { value ->
+                    draftHours = value.filter(Char::isDigit).take(2)
+                    applyDraft(hoursText = draftHours)
+                },
+                label = stringResource(R.string.today_time_budget_hours_suffix),
+                placeholder = stringResource(R.string.today_time_budget_hours_placeholder),
+                onDone = ::finishEditing,
+                modifier = Modifier.weight(1f),
             )
-            Spacer(Modifier.width(8.dp))
-            Text(
-                text = stringResource(R.string.adjust_time),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
+            Surface(
+                modifier = Modifier
+                    .width(1.dp)
+                    .height(44.dp),
+                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.26f),
+                content = {},
+            )
+            TodayTimePartField(
+                value = draftMinutes,
+                onValueChange = { value ->
+                    draftMinutes = value.filter(Char::isDigit).take(2)
+                    applyDraft(minutesText = draftMinutes)
+                },
+                label = stringResource(R.string.today_time_budget_minutes_suffix),
+                placeholder = stringResource(R.string.today_time_budget_minutes_placeholder),
+                onDone = ::finishEditing,
+                modifier = Modifier.weight(1f),
             )
         }
-        Button(
-            onClick = onWrapUpClick,
-            enabled = wrapUpEnabled,
-            modifier = Modifier.weight(1f),
-            shape = RoundedCornerShape(50),
-            colors = ButtonDefaults.buttonColors(
-                containerColor = wrapContainer,
-                contentColor = wrapContent,
-                disabledContainerColor = disabledContainer,
-                disabledContentColor = disabledContent,
+    }
+}
+
+@Composable
+private fun TodayTimePartField(
+    value: String,
+    onValueChange: (String) -> Unit,
+    label: String,
+    placeholder: String,
+    onDone: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Column(
+        modifier = modifier,
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(3.dp),
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelSmall,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.68f),
+            maxLines = 1,
+        )
+        BasicTextField(
+            value = value,
+            onValueChange = onValueChange,
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(48.dp),
+            textStyle = MaterialTheme.typography.titleLarge.copy(
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface,
+                textAlign = TextAlign.Center,
+            ),
+            singleLine = true,
+            keyboardOptions = KeyboardOptions(
+                keyboardType = KeyboardType.Number,
+                imeAction = ImeAction.Done,
+            ),
+            keyboardActions = KeyboardActions(onDone = { onDone() }),
+            cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+            decorationBox = { innerTextField ->
+                Surface(
+                    modifier = Modifier.fillMaxSize(),
+                    shape = RoundedCornerShape(14.dp),
+                    color = MaterialTheme.colorScheme.surface,
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.28f)),
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(horizontal = 8.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        if (value.isBlank()) {
+                            Text(
+                                text = placeholder,
+                                style = MaterialTheme.typography.labelLarge,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.52f),
+                                textAlign = TextAlign.Center,
+                            )
+                        }
+                        innerTextField()
+                    }
+                }
+            },
+        )
+    }
+}
+
+@Composable
+private fun TodaySetupStepButton(
+    icon: ImageVector,
+    contentDescription: String,
+    enabled: Boolean,
+    onClick: () -> Unit,
+) {
+    IconButton(
+        onClick = onClick,
+        enabled = enabled,
+        modifier = Modifier.size(36.dp),
+    ) {
+        Surface(
+            modifier = Modifier.size(34.dp),
+            shape = CircleShape,
+            color = if (enabled) {
+                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.18f)
+            } else {
+                Color.Transparent
+            },
+            border = BorderStroke(
+                1.dp,
+                MaterialTheme.colorScheme.outlineVariant.copy(alpha = if (enabled) 0.22f else 0.10f),
             ),
         ) {
-            Icon(
-                imageVector = Icons.Default.CheckCircle,
-                contentDescription = null,
-                modifier = Modifier.size(18.dp),
-            )
-            Spacer(Modifier.width(8.dp))
-            Text(
-                text = wrapUpText,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
+            Box(contentAlignment = Alignment.Center) {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = contentDescription,
+                    tint = if (enabled) {
+                        MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.80f)
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.30f)
+                    },
+                    modifier = Modifier.size(17.dp),
+                )
+            }
         }
     }
 }
@@ -1407,7 +1829,7 @@ private fun TodayRebalancedRow(
             ) {
                 Box(contentAlignment = Alignment.Center) {
                     Icon(
-                        imageVector = SparklesIcon,
+                        imageVector = Icons.Default.RestartAlt,
                         contentDescription = null,
                         modifier = Modifier.size(22.dp),
                     )
@@ -1450,6 +1872,7 @@ private fun TodaySectionHeader(
     reducedMotion: Boolean,
     modifier: Modifier = Modifier,
     countLabel: String? = null,
+    countIcon: ImageVector? = null,
     trailingAction: TodaySectionAction? = null,
     trailingActions: List<TodaySectionAction> = emptyList(),
 ) {
@@ -1483,14 +1906,27 @@ private fun TodaySectionHeader(
                 overflow = TextOverflow.Ellipsis,
             )
             if (countLabel != null) {
-                Text(
-                    text = countLabel,
+                Row(
                     modifier = Modifier.alignByBaseline(),
-                    style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    if (countIcon != null) {
+                        Icon(
+                            imageVector = countIcon,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.62f),
+                            modifier = Modifier.size(13.dp),
+                        )
+                    }
+                    Text(
+                        text = countLabel,
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.74f),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
             }
         }
         if (actions.isNotEmpty()) {
@@ -1504,6 +1940,9 @@ private fun TodaySectionHeader(
                     } else {
                         TextButton(
                             onClick = action.onClick,
+                            colors = ButtonDefaults.textButtonColors(
+                                contentColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.72f),
+                            ),
                             contentPadding = androidx.compose.foundation.layout.PaddingValues(
                                 start = 6.dp,
                                 end = 2.dp,
@@ -1573,7 +2012,7 @@ private fun TodaySectionIconAction(
             Icon(
                 imageVector = action.icon,
                 contentDescription = action.contentDescription,
-                tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.82f),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.68f),
                 modifier = Modifier.size(16.dp),
             )
         }
@@ -1598,21 +2037,39 @@ private fun TodayImpactPreview.message(): String = when (status) {
 }
 
 @Composable
-private fun TodayNoticeCard(
+private fun TodayTopNotification(
     message: String,
     modifier: Modifier = Modifier,
 ) {
-    Card(
-        modifier = modifier.fillMaxWidth(),
+    Surface(
+        modifier = modifier
+            .fillMaxWidth()
+            .widthIn(max = 360.dp),
         shape = RoundedCornerShape(18.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.92f),
+        contentColor = MaterialTheme.colorScheme.onSurface,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.34f)),
     ) {
-        Text(
-            text = message,
-            modifier = Modifier.padding(16.dp),
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
+        Row(
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 11.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(9.dp),
+        ) {
+            Icon(
+                imageVector = Icons.Default.CheckCircle,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.72f),
+                modifier = Modifier.size(17.dp),
+            )
+            Text(
+                text = message,
+                style = MaterialTheme.typography.bodySmall,
+                fontWeight = FontWeight.Medium,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.88f),
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
     }
 }
 
@@ -1658,7 +2115,7 @@ private fun EmptyTodayCard(
 }
 
 @Composable
-private fun TodayStartHereCard(
+private fun TodayDoNowCard(
     task: GeneratedStudyBlock,
     sourceDocuments: List<StudySourceDocument>,
     actions: List<TodayTaskActionSpec>,
@@ -1668,67 +2125,48 @@ private fun TodayStartHereCard(
     modifier: Modifier = Modifier,
 ) {
     var menuExpanded by remember(task.id) { mutableStateOf(false) }
-    var isStartEmphasisVisible by remember(task.id) { mutableStateOf(false) }
-    LaunchedEffect(task.id) {
-        isStartEmphasisVisible = true
-    }
     val sourceText = todayTaskSourceText(task, sourceDocuments)
-    val startLabelShape = RoundedCornerShape(8.dp)
-    val startLabelGlowDp by animateDpAsState(
-        targetValue = if (isStartEmphasisVisible) 10.dp else 0.dp,
-        animationSpec = todayEmphasisMotionSpec(reducedMotion),
-        label = "today-start-label-glow",
-    )
-    val startLabelGlowElevation = with(LocalDensity.current) { startLabelGlowDp.toPx() }
-    val startLabelGlowColor = MaterialTheme.colorScheme.primary
 
     Card(
         modifier = modifier
             .fillMaxWidth()
             .animateContentSize(animationSpec = todayMotionSpec(reducedMotion)),
         shape = RoundedCornerShape(24.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.18f)),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.58f)),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.10f)),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.26f)),
     ) {
         Column(
-            modifier = Modifier.padding(start = 18.dp, end = 18.dp, top = 12.dp, bottom = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp),
+            modifier = Modifier.padding(start = 18.dp, end = 18.dp, top = 18.dp, bottom = 18.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
+                verticalAlignment = Alignment.Top,
+                horizontalArrangement = Arrangement.spacedBy(16.dp),
             ) {
-                Surface(
-                    modifier = Modifier.graphicsLayer {
-                        shadowElevation = startLabelGlowElevation
-                        shape = startLabelShape
-                        clip = false
-                        ambientShadowColor = startLabelGlowColor
-                        spotShadowColor = startLabelGlowColor
-                    },
-                    shape = startLabelShape,
-                    color = Color.Black,
-                    contentColor = MaterialTheme.colorScheme.primary,
-                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.48f)),
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(4.dp),
-                    ) {
-                        Icon(
-                            imageVector = SparklesIcon,
-                            contentDescription = null,
-                            modifier = Modifier.size(12.dp),
-                        )
-                        Text(
-                            text = stringResource(R.string.today_start_here),
-                            style = MaterialTheme.typography.labelSmall,
-                            fontWeight = FontWeight.SemiBold,
+                    Text(
+                        text = task.title,
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 3,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    TodayStartMetaRow(
+                        icon = taskTypeIcon(task.taskType),
+                        text = taskTypeLabel(task.taskType),
+                    )
+                    if (sourceText != null) {
+                        TodayStartMetaRow(
+                            icon = Icons.AutoMirrored.Filled.Assignment,
+                            text = sourceText,
                         )
                     }
                 }
-                Spacer(Modifier.weight(1f))
                 Box(
                     modifier = Modifier.size(30.dp),
                     contentAlignment = Alignment.Center,
@@ -1740,7 +2178,7 @@ private fun TodayStartHereCard(
                         ) {
                             Icon(
                                 imageVector = Icons.Default.MoreVert,
-                                contentDescription = stringResource(R.string.today_start_task_actions),
+                                contentDescription = stringResource(R.string.today_task_actions),
                                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.size(18.dp),
                             )
@@ -1765,32 +2203,6 @@ private fun TodayStartHereCard(
                 }
             }
 
-            Column(
-                modifier = Modifier.fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(7.dp),
-            ) {
-                Text(
-                    text = task.title,
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    maxLines = 3,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    TodayStartMetaRow(
-                        icon = taskTypeIcon(task.taskType),
-                        text = taskTypeLabel(task.taskType),
-                    )
-                    if (sourceText != null) {
-                        TodayStartMetaRow(
-                            icon = Icons.AutoMirrored.Filled.Assignment,
-                            text = sourceText,
-                        )
-                    }
-                }
-            }
-
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -1801,7 +2213,7 @@ private fun TodayStartHereCard(
                     modifier = Modifier.weight(1f),
                     shape = RoundedCornerShape(18.dp),
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.primary,
+                        containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.74f),
                         contentColor = Color.Black,
                     ),
                 ) {
@@ -1837,6 +2249,87 @@ private fun TodayStartHereCard(
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun TodayDoNowSectionLabel(
+    modifier: Modifier = Modifier,
+) {
+    TodaySectionAnchor(
+        label = stringResource(R.string.today_do_now),
+        icon = Icons.Default.Eco,
+        modifier = modifier,
+    )
+}
+
+@Composable
+private fun TodayDoNowConnector(
+    modifier: Modifier = Modifier,
+) {
+    val connectorColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.26f)
+    Canvas(
+        modifier = modifier
+            .fillMaxWidth()
+            .height(34.dp),
+    ) {
+        val centerX = size.width / 2f
+        val topY = 1.dp.toPx()
+        val bottomY = size.height - 1.dp.toPx()
+        val bend = 10.dp.toPx()
+        val stroke = Stroke(width = 1.4.dp.toPx(), cap = StrokeCap.Round)
+        val path = Path().apply {
+            moveTo(centerX, topY)
+            cubicTo(
+                centerX,
+                size.height * 0.28f,
+                centerX - bend,
+                size.height * 0.36f,
+                centerX - bend,
+                size.height * 0.56f,
+            )
+            cubicTo(
+                centerX - bend,
+                size.height * 0.78f,
+                centerX,
+                size.height * 0.72f,
+                centerX,
+                bottomY,
+            )
+        }
+        drawPath(path = path, color = connectorColor, style = stroke)
+        drawCircle(
+            color = connectorColor.copy(alpha = 0.72f),
+            radius = 2.dp.toPx(),
+            center = androidx.compose.ui.geometry.Offset(centerX, bottomY),
+        )
+    }
+}
+
+@Composable
+private fun TodaySectionAnchor(
+    label: String,
+    icon: ImageVector,
+    modifier: Modifier = Modifier,
+) {
+    Column(
+        modifier = modifier.fillMaxWidth(),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.68f),
+            modifier = Modifier.size(18.dp),
+        )
+        Text(
+            text = label,
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.72f),
+            maxLines = 1,
+        )
     }
 }
 
@@ -1879,26 +2372,13 @@ private fun TodayTaskRow(
     supportingText: String? = null,
     primaryAction: TodayTaskActionSpec? = null,
     actions: List<TodayTaskActionSpec> = emptyList(),
-    isReorderMode: Boolean = false,
-    canMoveUp: Boolean = false,
-    canMoveDown: Boolean = false,
-    onMoveUp: () -> Boolean = { false },
-    onMoveDown: () -> Boolean = { false },
-    onDragStateChanged: (Boolean) -> Unit = {},
     reducedMotion: Boolean,
     modifier: Modifier = Modifier,
     compact: Boolean = false,
+    indicatorCompact: Boolean = false,
+    plainIndicator: Boolean = false,
 ) {
     var menuExpanded by remember(task.id) { mutableStateOf(false) }
-    var dragOffsetY by remember(task.id) { mutableStateOf(0f) }
-    var isDragging by remember(task.id) { mutableStateOf(false) }
-    val canMoveUpState = rememberUpdatedState(canMoveUp)
-    val canMoveDownState = rememberUpdatedState(canMoveDown)
-    val onMoveUpState = rememberUpdatedState(onMoveUp)
-    val onMoveDownState = rememberUpdatedState(onMoveDown)
-    val moveStepPx = with(LocalDensity.current) { if (compact) 56.dp.toPx() else 72.dp.toPx() }
-    val draggedShadowElevationPx = with(LocalDensity.current) { 16.dp.toPx() }
-    val moveStepPxState = rememberUpdatedState(moveStepPx)
     val sourceText = if (showSource) todayTaskSourceText(task, sourceDocuments) else null
     val supportingTextValue = supportingText.orEmpty()
     val metadataText = todayTaskMetadataText(
@@ -1907,7 +2387,6 @@ private fun TodayTaskRow(
         showTaskType = showTaskType,
     )
     val trailingMode = when {
-        isReorderMode -> TodayTaskTrailingMode.Reorder
         primaryAction != null -> TodayTaskTrailingMode.PrimaryAction
         actions.isNotEmpty() -> TodayTaskTrailingMode.Menu
         else -> TodayTaskTrailingMode.Empty
@@ -1921,41 +2400,15 @@ private fun TodayTaskRow(
     val titleStyle = if (compact) MaterialTheme.typography.titleSmall else MaterialTheme.typography.titleMedium
     val metaStyle = if (compact) MaterialTheme.typography.bodySmall else MaterialTheme.typography.bodyMedium
     val actionSpacerWidth = if (compact) 8.dp else 12.dp
-    val cardScale by animateFloatAsState(
-        targetValue = if (isDragging) 1.012f else 1f,
-        animationSpec = todayMotionSpec(reducedMotion),
-        label = "today-task-row-scale",
-    )
-    val cardElevation by animateDpAsState(
-        targetValue = if (isDragging) 8.dp else 0.dp,
-        animationSpec = todayMotionSpec(reducedMotion),
-        label = "today-task-row-elevation",
-    )
-    val borderColor by animateColorAsState(
-        targetValue = if (isDragging) {
-            MaterialTheme.colorScheme.primary.copy(alpha = 0.62f)
-        } else {
-            MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.52f)
-        },
-        animationSpec = todayMotionSpec(reducedMotion),
-        label = "today-task-row-border",
-    )
+    val trailingControlSize = if (compact) 34.dp else 40.dp
 
     Card(
         modifier = modifier
             .fillMaxWidth()
-            .animateContentSize(animationSpec = todayMotionSpec(reducedMotion))
-            .graphicsLayer {
-                scaleX = cardScale
-                scaleY = cardScale
-                shadowElevation = if (isDragging) draggedShadowElevationPx else 0f
-            }
-            .offset { IntOffset(0, dragOffsetY.roundToInt()) }
-            .zIndex(if (isDragging || dragOffsetY != 0f) 10f else 0f),
+            .animateContentSize(animationSpec = todayMotionSpec(reducedMotion)),
         shape = RoundedCornerShape(shape),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.24f)),
-        border = BorderStroke(width = 1.dp, color = borderColor),
-        elevation = CardDefaults.cardElevation(defaultElevation = cardElevation),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.16f)),
+        border = BorderStroke(width = 1.dp, color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.34f)),
     ) {
         Row(
             modifier = Modifier.padding(
@@ -1973,6 +2426,8 @@ private fun TodayTaskRow(
                 contentDescription = indicatorContentDescription,
                 color = indicatorColor,
                 compact = compact,
+                extraCompact = indicatorCompact,
+                plain = plainIndicator,
             )
             Column(
                 modifier = Modifier.weight(1f),
@@ -2017,124 +2472,80 @@ private fun TodayTaskRow(
                     )
                 }
             }
-            AnimatedContent(
-                targetState = trailingMode,
-                transitionSpec = { renFadeThroughTransform(reducedMotion = reducedMotion) },
-                label = "today-task-row-action",
-            ) { mode ->
-                when (mode) {
-                    TodayTaskTrailingMode.Reorder -> {
-                        ReorderTaskHandle(
-                            isDragging = isDragging,
-                            reducedMotion = reducedMotion,
-                            compact = compact,
-                            modifier = Modifier
-                                .padding(start = 2.dp)
-                                .pointerInput(task.id) {
-                                    detectDragGestures(
-                                        onDragStart = {
-                                            isDragging = true
-                                            onDragStateChanged(true)
-                                        },
-                                        onDragEnd = {
-                                            isDragging = false
-                                            dragOffsetY = 0f
-                                            onDragStateChanged(false)
-                                        },
-                                        onDragCancel = {
-                                            isDragging = false
-                                            dragOffsetY = 0f
-                                            onDragStateChanged(false)
-                                        },
-                                        onDrag = { change, dragAmount ->
-                                            change.consume()
-                                            val stepPx = moveStepPxState.value
-                                            dragOffsetY += dragAmount.y
-                                            when {
-                                                dragOffsetY <= -stepPx && canMoveUpState.value -> {
-                                                    if (onMoveUpState.value()) {
-                                                        dragOffsetY += stepPx
-                                                    } else {
-                                                        dragOffsetY = 0f
-                                                    }
-                                                }
-                                                dragOffsetY >= stepPx && canMoveDownState.value -> {
-                                                    if (onMoveDownState.value()) {
-                                                        dragOffsetY -= stepPx
-                                                    } else {
-                                                        dragOffsetY = 0f
-                                                    }
-                                                }
-                                                else -> {
-                                                    val minOffset = if (canMoveUpState.value) -stepPx else 0f
-                                                    val maxOffset = if (canMoveDownState.value) stepPx else 0f
-                                                    dragOffsetY = dragOffsetY.coerceIn(minOffset, maxOffset)
-                                                }
-                                            }
-                                        },
-                                    )
-                                },
-                        )
-                    }
-                    TodayTaskTrailingMode.PrimaryAction -> {
-                        primaryAction?.let { action ->
-                            TextButton(
-                                onClick = action.onClick,
-                                contentPadding = androidx.compose.foundation.layout.PaddingValues(
-                                    horizontal = if (compact) 8.dp else 12.dp,
-                                    vertical = if (compact) 4.dp else 8.dp,
-                                ),
-                            ) {
-                                Text(action.label)
-                            }
-                        } ?: Spacer(Modifier.width(actionSpacerWidth))
-                    }
-                    TodayTaskTrailingMode.Menu -> {
-                        Box {
-                            if (compact) {
-                                CompositionLocalProvider(LocalMinimumInteractiveComponentSize provides 0.dp) {
+            Box(
+                modifier = if (trailingMode == TodayTaskTrailingMode.PrimaryAction) {
+                    Modifier
+                } else {
+                    Modifier.size(trailingControlSize)
+                },
+                contentAlignment = Alignment.Center,
+            ) {
+                AnimatedContent(
+                    targetState = trailingMode,
+                    transitionSpec = { renFadeThroughTransform(reducedMotion = reducedMotion) },
+                    label = "today-task-row-action",
+                ) { mode ->
+                    when (mode) {
+                        TodayTaskTrailingMode.PrimaryAction -> {
+                            primaryAction?.let { action ->
+                                TextButton(
+                                    onClick = action.onClick,
+                                    contentPadding = androidx.compose.foundation.layout.PaddingValues(
+                                        horizontal = if (compact) 8.dp else 12.dp,
+                                        vertical = if (compact) 4.dp else 8.dp,
+                                    ),
+                                ) {
+                                    Text(action.label)
+                                }
+                            } ?: Spacer(Modifier.width(actionSpacerWidth))
+                        }
+                        TodayTaskTrailingMode.Menu -> {
+                            Box {
+                                if (compact) {
+                                    CompositionLocalProvider(LocalMinimumInteractiveComponentSize provides 0.dp) {
+                                        IconButton(
+                                            onClick = { menuExpanded = true },
+                                            modifier = Modifier.size(34.dp),
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.MoreVert,
+                                                contentDescription = stringResource(R.string.today_task_actions),
+                                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                modifier = Modifier.size(18.dp),
+                                            )
+                                        }
+                                    }
+                                } else {
                                     IconButton(
                                         onClick = { menuExpanded = true },
-                                        modifier = Modifier.size(34.dp),
                                     ) {
                                         Icon(
                                             imageVector = Icons.Default.MoreVert,
                                             contentDescription = stringResource(R.string.today_task_actions),
                                             tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                            modifier = Modifier.size(18.dp),
                                         )
                                     }
                                 }
-                            } else {
-                                IconButton(
-                                    onClick = { menuExpanded = true },
+                                DropdownMenu(
+                                    expanded = menuExpanded,
+                                    onDismissRequest = { menuExpanded = false },
+                                    containerColor = RenContextMenuSurface,
+                                    tonalElevation = 0.dp,
                                 ) {
-                                    Icon(
-                                        imageVector = Icons.Default.MoreVert,
-                                        contentDescription = stringResource(R.string.today_task_actions),
-                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    )
-                                }
-                            }
-                            DropdownMenu(
-                                expanded = menuExpanded,
-                                onDismissRequest = { menuExpanded = false },
-                                containerColor = RenContextMenuSurface,
-                                tonalElevation = 0.dp,
-                            ) {
-                                actions.forEach { action ->
-                                    DropdownMenuItem(
-                                        text = { Text(action.label) },
-                                        onClick = {
-                                            menuExpanded = false
-                                            action.onClick()
-                                        },
-                                    )
+                                    actions.forEach { action ->
+                                        DropdownMenuItem(
+                                            text = { Text(action.label) },
+                                            onClick = {
+                                                menuExpanded = false
+                                                action.onClick()
+                                            },
+                                        )
+                                    }
                                 }
                             }
                         }
+                        TodayTaskTrailingMode.Empty -> Spacer(Modifier.width(actionSpacerWidth))
                     }
-                    TodayTaskTrailingMode.Empty -> Spacer(Modifier.width(actionSpacerWidth))
                 }
             }
         }
@@ -2148,17 +2559,53 @@ private fun TodayTaskIndicator(
     contentDescription: String?,
     color: Color? = null,
     compact: Boolean = false,
+    extraCompact: Boolean = false,
+    plain: Boolean = false,
 ) {
-    val containerSize = if (compact) 34.dp else 40.dp
-    val iconSize = if (compact) 18.dp else 22.dp
-    val numberStyle = if (compact) MaterialTheme.typography.labelLarge else MaterialTheme.typography.titleSmall
-    val indicatorColor = color ?: MaterialTheme.colorScheme.primary
+    val containerSize = when {
+        extraCompact -> 28.dp
+        compact -> 34.dp
+        else -> 40.dp
+    }
+    val iconSize = when {
+        extraCompact -> 15.dp
+        compact -> 18.dp
+        else -> 22.dp
+    }
+    val numberStyle = when {
+        extraCompact -> MaterialTheme.typography.labelMedium
+        compact -> MaterialTheme.typography.labelLarge
+        else -> MaterialTheme.typography.titleSmall
+    }
+    val indicatorColor = color ?: MaterialTheme.colorScheme.primary.copy(alpha = 0.64f)
     val containerColor = if (color == null) {
-        MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.26f)
+        MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.14f)
     } else {
         indicatorColor.copy(alpha = 0.12f)
     }
-    val borderColor = indicatorColor.copy(alpha = if (color == null) 0.34f else 0.32f)
+    val borderColor = indicatorColor.copy(alpha = if (color == null) 0.24f else 0.32f)
+    if (plain) {
+        Box(
+            modifier = Modifier.size(containerSize),
+            contentAlignment = Alignment.Center,
+        ) {
+            when {
+                position != null -> Text(
+                    text = position.toString(),
+                    style = numberStyle,
+                    fontWeight = FontWeight.Bold,
+                    color = indicatorColor,
+                )
+                icon != null -> Icon(
+                    imageVector = icon,
+                    contentDescription = contentDescription,
+                    tint = indicatorColor,
+                    modifier = Modifier.size(iconSize),
+                )
+            }
+        }
+        return
+    }
     Surface(
         modifier = Modifier.size(containerSize),
         shape = CircleShape,
@@ -2179,37 +2626,6 @@ private fun TodayTaskIndicator(
                     modifier = Modifier.size(iconSize),
                 )
             }
-        }
-    }
-}
-
-@Composable
-private fun ReorderTaskHandle(
-    isDragging: Boolean,
-    reducedMotion: Boolean,
-    modifier: Modifier = Modifier,
-    compact: Boolean = false,
-) {
-    val handleAlpha by animateFloatAsState(
-        targetValue = if (isDragging) 1f else 0.72f,
-        animationSpec = todayMotionSpec(reducedMotion),
-        label = "today-reorder-handle-alpha",
-    )
-    Surface(
-        modifier = modifier
-            .size(if (compact) 34.dp else 40.dp)
-            .alpha(handleAlpha),
-        shape = CircleShape,
-        color = MaterialTheme.colorScheme.surface,
-        contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.62f)),
-    ) {
-        Box(contentAlignment = Alignment.Center) {
-            Icon(
-                imageVector = Icons.Default.DragIndicator,
-                contentDescription = stringResource(R.string.drag_to_reorder_task),
-                modifier = Modifier.size(if (compact) 18.dp else 22.dp),
-            )
         }
     }
 }
@@ -2249,83 +2665,114 @@ private fun todayTaskSourceText(
 @Composable
 private fun WrapUpTodayDialog(
     todayPlan: TodaySessionPlan,
-    impactPreview: TodayImpactPreview?,
     onDismiss: () -> Unit,
     onConfirm: () -> Unit,
 ) {
-    val summaryItems = listOf(
-        WrapUpSummaryItem(
-            label = stringResource(R.string.completed),
-            count = todayPlan.doneTodayTasks.size,
-            minutes = todayPlan.completedMinutes,
-        ),
-        WrapUpSummaryItem(
-            label = stringResource(R.string.moving_forward_metric_label),
-            count = todayPlan.unfinishedWorkForwardTasks.size,
-            minutes = todayPlan.unfinishedWorkForwardMinutes,
-        ),
-        WrapUpSummaryItem(
-            label = stringResource(R.string.removed_metric_label),
-            count = todayPlan.removedFromPlanTasks.size,
-            minutes = todayPlan.removedMinutes,
-        ),
-    ).filter { it.count > 0 || it.minutes > 0 }
     val closingRemainingMinutes = (todayPlan.availableMinutes - todayPlan.untrackedCompletedMinutes)
         .coerceAtLeast(0)
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.wrap_up_today_title)) },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text(
-                    text = stringResource(R.string.wrap_up_today_message),
-                    style = MaterialTheme.typography.bodyMedium,
-                )
-                WrapUpNoteRow(
-                    label = stringResource(R.string.wrap_up_source_material_label),
-                    text = stringResource(R.string.wrap_up_source_material_message),
-                )
-                impactPreview?.let { preview ->
-                    WrapUpNoteRow(
-                        label = stringResource(R.string.wrap_up_plan_preview_label),
-                        text = preview.dialogMessage(),
+
+    Dialog(onDismissRequest = onDismiss) {
+        Surface(
+            modifier = Modifier
+                .fillMaxWidth()
+                .widthIn(max = 420.dp),
+            shape = RoundedCornerShape(28.dp),
+            color = MaterialTheme.colorScheme.surface,
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.28f)),
+        ) {
+            Column(
+                modifier = Modifier.padding(22.dp),
+                verticalArrangement = Arrangement.spacedBy(18.dp),
+            ) {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Icon(
+                        imageVector = Icons.Default.Flag,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.74f),
+                        modifier = Modifier.size(22.dp),
+                    )
+                    Text(
+                        text = stringResource(R.string.wrap_up_today_title),
+                        style = MaterialTheme.typography.headlineSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface,
+                    )
+                    Text(
+                        text = stringResource(R.string.wrap_up_today_message),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.86f),
                     )
                 }
-                if (summaryItems.isEmpty()) {
-                    Text(
-                        text = stringResource(R.string.wrap_up_today_no_task_changes),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    WrapUpDecisionRow(
+                        icon = Icons.Default.CheckCircle,
+                        label = stringResource(R.string.completed),
+                        value = wrapUpSummaryValue(
+                            count = todayPlan.doneTodayTasks.size,
+                            minutes = todayPlan.completedMinutes,
+                        ),
                     )
-                } else {
-                    summaryItems.forEach { item ->
-                        WrapUpSummaryRow(
-                            label = item.label,
-                            count = item.count,
-                            minutes = item.minutes,
+                    WrapUpDecisionRow(
+                        icon = Icons.Default.Eco,
+                        label = stringResource(R.string.wrap_up_carry_forward_label),
+                        value = wrapUpSummaryValue(
+                            count = todayPlan.unfinishedWorkForwardTasks.size,
+                            minutes = todayPlan.unfinishedWorkForwardMinutes,
+                        ),
+                    )
+                    if (todayPlan.removedFromPlanTasks.isNotEmpty() || todayPlan.removedMinutes > 0) {
+                        WrapUpDecisionRow(
+                            icon = Icons.Default.Close,
+                            label = stringResource(R.string.removed_metric_label),
+                            value = wrapUpSummaryValue(
+                                count = todayPlan.removedFromPlanTasks.size,
+                                minutes = todayPlan.removedMinutes,
+                            ),
                         )
                     }
+                    WrapUpDecisionRow(
+                        icon = Icons.Default.Timer,
+                        label = stringResource(R.string.wrap_up_unused_time_label),
+                        value = formatMinutes(closingRemainingMinutes),
+                    )
                 }
-                WrapUpNoteRow(
-                    label = stringResource(R.string.wrap_up_time_after_closing_label),
-                    text = stringResource(
-                        R.string.wrap_up_today_closes_day,
-                        formatMinutes(closingRemainingMinutes),
-                    ),
+
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.22f))
+
+                Text(
+                    text = stringResource(R.string.wrap_up_today_closes_day),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.72f),
                 )
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp, Alignment.End),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    TextButton(
+                        onClick = onDismiss,
+                        colors = ButtonDefaults.textButtonColors(
+                            contentColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.82f),
+                        ),
+                    ) {
+                        Text(stringResource(R.string.wrap_up_keep_open))
+                    }
+                    Button(
+                        onClick = onConfirm,
+                        shape = RoundedCornerShape(18.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.78f),
+                            contentColor = MaterialTheme.colorScheme.onPrimary,
+                        ),
+                    ) {
+                        Text(stringResource(R.string.wrap_up_end_day))
+                    }
+                }
             }
-        },
-        confirmButton = {
-            Button(onClick = onConfirm) {
-                Text(stringResource(R.string.wrap_up_today_confirm))
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text(stringResource(R.string.cancel))
-            }
-        },
-    )
+        }
+    }
 }
 
 @Composable
@@ -2516,6 +2963,63 @@ private data class WrapUpSummaryItem(
 )
 
 @Composable
+private fun WrapUpDecisionRow(
+    icon: ImageVector,
+    label: String,
+    value: String,
+) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.22f),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.16f)),
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.62f),
+                modifier = Modifier.size(17.dp),
+            )
+            Text(
+                text = label,
+                modifier = Modifier.weight(1f),
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.Medium,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.9f),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                text = value,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.82f),
+                textAlign = TextAlign.End,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+    }
+}
+
+@Composable
+private fun wrapUpSummaryValue(
+    count: Int,
+    minutes: Int,
+): String {
+    val leaves = leafCountLabel(count)
+    return if (minutes > 0) {
+        "$leaves, ${formatMinutes(minutes)}"
+    } else {
+        leaves
+    }
+}
+
+@Composable
 private fun WrapUpNoteRow(
     label: String,
     text: String,
@@ -2632,7 +3136,6 @@ private data class TodayTaskActionSpec(
 )
 
 private enum class TodayTaskTrailingMode {
-    Reorder,
     PrimaryAction,
     Menu,
     Empty,
@@ -2643,9 +3146,4 @@ private fun <T> todayMotionSpec(reducedMotion: Boolean) = tween<T>(
     easing = RenMotionEasing,
 )
 
-private fun <T> todayEmphasisMotionSpec(reducedMotion: Boolean) = tween<T>(
-    durationMillis = if (reducedMotion) 0 else 650,
-    easing = RenMotionEasing,
-)
-
-private const val TimeAdjustmentStepMinutes = 15
+private const val TimeAdjustmentStepMinutes = 30
