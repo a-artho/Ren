@@ -61,6 +61,8 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
@@ -70,6 +72,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.vector.path
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -262,6 +265,15 @@ private fun PlanTitleStep(
     planTitle: String,
     onPlanTitleChanged: (String) -> Unit,
 ) {
+    val focusRequester = remember { FocusRequester() }
+    val keyboardController = LocalSoftwareKeyboardController.current
+
+    LaunchedEffect(Unit) {
+        withFrameNanos { }
+        focusRequester.requestFocus()
+        keyboardController?.show()
+    }
+
     StepIntro(
         title = "What are we tackling?",
         subtitle = "Short names work best.",
@@ -272,6 +284,7 @@ private fun PlanTitleStep(
         onValueChange = onPlanTitleChanged,
         modifier = Modifier
             .fillMaxWidth()
+            .focusRequester(focusRequester)
             .testTag("plan-title"),
         label = { Text("Course, exam, or topic") },
         placeholder = { Text("HCI final") },

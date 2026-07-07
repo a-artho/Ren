@@ -3,6 +3,7 @@ package com.hci.ren.feature.pdfupload.presentation
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsEnabled
+import androidx.compose.ui.test.assertIsFocused
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertIsOn
 import androidx.compose.ui.test.assertIsSelected
@@ -24,6 +25,31 @@ import org.junit.Test
 class PlanSetupScreenTest {
     @get:Rule
     val composeRule = createComposeRule()
+
+    @Test
+    fun planTitleStepFocusesTitleInput() {
+        composeRule.setContent {
+            RenTheme {
+                PlanSetupScreen(
+                    state = PlanSetupUiState(currentStep = PlanSetupStep.PlanTitle),
+                    onBack = {},
+                    onPlanTitleChanged = {},
+                    onDeadlineSelected = {},
+                    onDateSelected = {},
+                    onDailyTimeSelected = {},
+                    onCustomHoursChanged = {},
+                    onCustomMinutesChanged = {},
+                    onDayToggled = {},
+                    onShortcutSelected = {},
+                    onStudyDayResetOffsetSelected = {},
+                    onNext = {},
+                    onGeneratePlan = {},
+                )
+            }
+        }
+
+        composeRule.onNodeWithTag("plan-title").assertIsFocused()
+    }
 
     @Test
     fun planTitleStepRequiresTextBeforeNext() {
