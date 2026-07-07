@@ -2275,7 +2275,11 @@ private fun TodayDoNowCard(
                         )
                         TodayStartMetaRow(
                             icon = taskTypeIcon(task.taskType),
-                            text = taskTypeLabel(task.taskType),
+                            text = stringResource(
+                                R.string.today_task_type_with_duration,
+                                taskTypeLabel(task.taskType),
+                                formatMinutes(task.likelyStudyMinutes),
+                            ),
                         )
                         if (sourceText != null) {
                             TodayStartMetaRow(
