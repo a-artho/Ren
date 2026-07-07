@@ -1,5 +1,13 @@
 <resources>
     <string name="app_name">Ren</string>
+
+    <!-- Backend Configuration -->
+    <!-- When hosting your own backend:
+         1. Use 'http://10.0.2.2:8000' for local emulator testing.
+         2. Use your PC's IP or a tunnel URL (e.g. ngrok) for APK distribution.
+    -->
+    <string name="backend_base_url">https://unpermanent-obcordate-maurice.ngrok-free.app</string>
+
     <string name="back">Back</string>
     <string name="uploading_document">Uploading documents</string>
     <string name="reading_material">Reading materials</string>

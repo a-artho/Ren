@@ -19,16 +19,7 @@ import java.util.UUID
 
 class PlanApiRepository(
     private val contentResolver: ContentResolver,
-    private val baseUrl: String = if (
-        android.os.Build.FINGERPRINT.startsWith("generic") ||
-        android.os.Build.MODEL.contains("google_sdk") ||
-        android.os.Build.HARDWARE.contains("goldfish") ||
-        android.os.Build.HARDWARE.contains("ranchu")
-    ) {
-        "http://10.0.2.2:8000"
-    } else {
-        "http://127.0.0.1:8000"
-    },
+    private val baseUrl: String,
 ) {
     fun uploadDocument(uri: Uri, requestId: String): String {
         val boundary = "Ren-${UUID.randomUUID()}"
