@@ -30,13 +30,24 @@ class TodayImpactPreviewService(
             taskStateById = project.taskStateById,
             today = today,
         )
+        val minutesUntilReset = minutesUntilStudyDayReset(
+            nowMillis = System.currentTimeMillis(),
+            resetOffsetHours = project.preferences.studyDayResetOffsetHours,
+        )
+        val baseAvailableMinutes = effectiveTodayAvailableMinutes(
+            requestedMinutes = todayBaseAvailableMinutes(project, currentData, date),
+            minutesUntilReset = minutesUntilReset,
+        )
+        val availableMinutes = effectiveTodayAvailableMinutes(
+            requestedMinutes = activeSession.availableMinutes ?: baseAvailableMinutes,
+            minutesUntilReset = minutesUntilReset,
+        )
         val todayPlan = TodaySessionPlanner().plan(
             data = currentData,
             date = date,
-            availableMinutes = activeSession.availableMinutes
-                ?: todayBaseAvailableMinutes(project, currentData, date),
+            availableMinutes = availableMinutes,
             session = activeSession,
-            hasAvailabilityOverride = activeSession.availableMinutes != null,
+            hasAvailabilityOverride = activeSession.availableMinutes != null && availableMinutes != baseAvailableMinutes,
         )
         val projected = wrapUpService.wrapUp(project, date, activeSession)?.project ?: return null
         val projectedData = buildStudyMapData(

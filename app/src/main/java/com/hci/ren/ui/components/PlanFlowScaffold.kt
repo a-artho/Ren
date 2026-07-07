@@ -109,11 +109,11 @@ private fun PlanShellScaffold(
                 .imePadding()
                 .padding(horizontal = PlanFlowHorizontalPadding),
         ) {
-            Spacer(Modifier.height(PlanFlowEdgePadding))
-
             if (topContent != null) {
                 topContent()
                 Spacer(Modifier.height(PlanFlowContentGap))
+            } else {
+                Spacer(Modifier.height(PlanFlowEdgePadding))
             }
 
             Box(
@@ -242,13 +242,14 @@ fun planFlowActionColor() =
     }
 
 @Composable
-private fun PlanFlowTopRow(
+fun PlanFlowTopRow(
     onBack: () -> Unit,
     progress: Float?,
     stepLabel: String?,
+    modifier: Modifier = Modifier,
 ) {
     Row(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .height(PlanFlowTopRowHeight),
         verticalAlignment = Alignment.CenterVertically,

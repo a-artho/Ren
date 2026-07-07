@@ -1,5 +1,13 @@
 <resources>
     <string name="app_name">Ren</string>
+
+    <!-- Backend Configuration -->
+    <!-- When hosting your own backend:
+         1. Use 'http://10.0.2.2:8000' for local emulator testing.
+         2. Use your PC's IP or a tunnel URL (e.g. ngrok) for APK distribution.
+    -->
+    <string name="backend_base_url">https://unpermanent-obcordate-maurice.ngrok-free.app</string>
+
     <string name="back">Back</string>
     <string name="uploading_document">Uploading documents</string>
     <string name="reading_material">Reading materials</string>
@@ -66,13 +74,97 @@
     <string name="progress">Progress</string>
     <string name="today_placeholder_message">Daily planning and focus sessions will live here.</string>
     <string name="progress_placeholder_message">Completion trends and focus feedback will live here.</string>
+    <string name="progress_focus_patterns">Your focus patterns and momentum</string>
+    <string name="weekly_focus">Weekly focus</string>
+    <string name="focus_minutes">Focus minutes</string>
+    <string name="progress_this_week">this week</string>
+    <string name="progress_study_days">study days</string>
+    <string name="progress_goal">Goal</string>
+    <string name="progress_minutes">%1$dm</string>
+    <string name="progress_hours">%1$dh</string>
+    <string name="progress_hours_minutes">%1$dh %2$dm</string>
+    <string name="progress_percent">%1$d%%</string>
+    <string name="progress_goal_line">%1$s goal</string>
+    <string name="progress_weekly_empty">Start a focus round from Today to fill this chart.</string>
+    <string name="progress_weekly_chart_description">%1$s focused this week across %2$s. Daily goal is %3$s.</string>
+    <string name="progress_consistency_title">Study consistency</string>
+    <string name="progress_day_streak">day streak</string>
+    <string name="progress_most_consistent_period">Most consistent %1$s</string>
+    <string name="progress_consistency_empty">Start a focus round to build consistency.</string>
+    <string name="progress_consistency_no_data">no focus data yet</string>
+    <string name="progress_consistency_this_week">This week</string>
+    <string name="progress_consistency_this_week_sentence">this week</string>
+    <string name="progress_consistency_last_week">Last week</string>
+    <string name="progress_consistency_last_week_sentence">last week</string>
+    <string name="progress_consistency_weeks_ago">%1$d weeks ago</string>
+    <string name="progress_consistency_chart_description">%1$d day streak. Most consistent %2$s. %3$d study days across the last %4$d weeks.</string>
+    <string name="progress_best_rhythm_title">Best rhythm</string>
+    <string name="progress_best_rhythm_subtitle">Clean round success rate</string>
+    <string name="progress_best_rhythm_your_best">your best</string>
+    <string name="progress_best_rhythm_based_on">Based on clean rounds completed</string>
+    <string name="progress_best_rhythm_empty">Complete focus rounds from Today to find your best rhythm.</string>
+    <string name="progress_best_rhythm_chart_description">%1$s is your best rhythm at %2$d%% clean success.</string>
+    <plurals name="progress_study_day_count">
+        <item quantity="one">%1$d study day</item>
+        <item quantity="other">%1$d study days</item>
+    </plurals>
+    <string-array name="progress_weekday_short_labels">
+        <item>Mo</item>
+        <item>Tu</item>
+        <item>We</item>
+        <item>Th</item>
+        <item>Fr</item>
+        <item>Sa</item>
+        <item>Su</item>
+    </string-array>
     <string name="today_available_time">Available today</string>
     <string name="today_available_time_subtitle">This only changes today, not the whole plan.</string>
+    <string name="today_time_budget_hours_placeholder">Hours</string>
+    <string name="today_time_budget_hours_suffix">h</string>
+    <string name="today_time_budget_minutes_placeholder">Min</string>
+    <string name="today_time_budget_minutes_suffix">m</string>
     <string name="today_tasks">Fits today</string>
-    <string name="up_next">Up next</string>
-    <string name="today_start_here">START HERE</string>
-    <string name="start_focus">Start focus</string>
-    <string name="today_start_task_actions">Start task actions</string>
+    <string name="today_do_now">Do now</string>
+    <string name="up_next">Queue</string>
+    <string name="start_focus">Focus</string>
+    <string name="focus_mode_title">Focus mode</string>
+    <string name="focus_ready_subtitle">Start small. Keep the day moving.</string>
+    <string name="focus_running_subtitle">One leaf. No heroic nonsense.</string>
+    <string name="focus_paused_subtitle">Paused. Reset gently.</string>
+    <string name="focus_break_choice_subtitle">Pick the reset your brain can actually use.</string>
+    <string name="focus_break_subtitle">Break time. No tracking. Civilized.</string>
+    <string name="focus_summary_subtitle">Round done. That counts.</string>
+    <string name="focus_leaf_done_subtitle">Leaf done. Choose the next move.</string>
+    <string name="focus_current_leaf">Current leaf</string>
+    <string name="focus_next_round">Next round</string>
+    <string name="focus_leaves_done">Leaves done</string>
+    <string name="focus_round_focus">Round focus</string>
+    <string name="focus_quiet_time">Quiet time</string>
+    <string name="focus_screen_settling">Settling</string>
+    <string name="focus_quiet_screen_method">Quiet time starts after 7 seconds without touching the screen.</string>
+    <string name="focus_face_down_assist">Face-down assist</string>
+    <string name="focus_face_down_body">Optional. Extra signal, not homework for your phone.</string>
+    <string name="focus_face_down_enabled">Uses stillness plus ambient light during focus.</string>
+    <string name="focus_face_down_active">Phone is down. Dramatic, but useful.</string>
+    <string name="focus_phone_down_method">Face-down assist is on. Stillness and low light can boost the next timer.</string>
+    <string name="focus_phone_down_unavailable">Face-down sensing is unavailable here. Timer still adapts normally.</string>
+    <string name="focus_session_time">Session</string>
+    <string name="focus_interruptions">Interruptions</string>
+    <string name="focus_round_done">Focus round done</string>
+    <string name="focus_round_ended">Focus round ended</string>
+    <string name="focus_notifications_title">Focus nudges</string>
+    <string name="focus_notifications_body">Ren can ping when focus or break time ends.</string>
+    <string name="focus_notifications_allow">Allow</string>
+    <string name="focus_start_round">Start round</string>
+    <string name="focus_pause">Pause</string>
+    <string name="focus_resume">Resume</string>
+    <string name="focus_end_focus">End focus</string>
+    <string name="focus_skip_break">Skip break</string>
+    <string name="focus_take_break_minutes">Take %1$s break</string>
+    <string name="focus_add_focus_time">Add %1$s</string>
+    <string name="focus_done_next">Finish leaf</string>
+    <string name="focus_mark_done">Finish leaf</string>
+    <string name="focus_no_task">No focus leaf selected.</string>
     <string name="today_rebalanced">Today rebalanced</string>
     <string name="today_rebalanced_subtitle">Work moves forward after wrap-up.</string>
     <string name="today_pending_changes_message">Today has temporary changes. Wrap up today to update the study plan.</string>
@@ -85,8 +177,13 @@
     <string name="today_impact_crammed">Preview: plan becomes crammed after wrap-up.</string>
     <string name="today_impact_overloaded">Preview: plan becomes overloaded after wrap-up.</string>
     <string name="wont_fit_today">Won\'t fit today</string>
-    <string name="move_later_at_wrap_up">Will move later if you wrap up with this plan.</string>
+    <string name="wont_fit_today_info">Won\'t fit today info</string>
+    <string name="wont_fit_today_info_title">Won\'t fit today</string>
+    <string name="wont_fit_today_info_message">These tasks do not fit in today\'s available time. They stay in the plan and move forward at wrap-up unless you move or remove them.</string>
     <string name="moved_later">Moved later</string>
+    <string name="moved_later_info">Moved later info</string>
+    <string name="moved_later_info_title">Moved later</string>
+    <string name="moved_later_info_message">These tasks stay in your plan and move forward when you wrap up today. Restore one if you want it back in today\'s work.</string>
     <string name="moved_later_message">Will be rescheduled after wrap-up.</string>
     <string name="moved_later_can_restore_message">Extra time available; restore to put this back today.</string>
     <string name="pulled_in_today">Pulled in</string>
@@ -98,10 +195,12 @@
     <string name="done_today_message">Will be marked complete after wrap-up.</string>
     <string name="already_done_today_message">Already marked complete.</string>
     <string name="removed_from_plan">Removed from plan</string>
-    <string name="removed_from_plan_message">Will be excluded after wrap-up.</string>
-    <string name="pull_ahead_suggestions">Use extra time</string>
-    <string name="use_extra_time_info">Use extra time info</string>
-    <string name="use_extra_time_info_title">Use extra time</string>
+    <string name="removed_from_plan_info">Removed from plan info</string>
+    <string name="removed_from_plan_info_title">Removed from plan</string>
+    <string name="removed_from_plan_info_message">These tasks will be excluded from the active plan when you wrap up today. Restore one if you want it back before then.</string>
+    <string name="pull_ahead_suggestions">Tomorrow</string>
+    <string name="use_extra_time_info">Tomorrow info</string>
+    <string name="use_extra_time_info_title">Tomorrow</string>
     <string name="use_extra_time_info_message">These tasks are shown by schedule order, not importance. Pull one in only if you want to keep studying today.</string>
     <string name="collapse_section">Collapse</string>
     <string name="expand_section">Expand</string>
@@ -110,12 +209,10 @@
     <string name="remove_today_task_confirm">Remove</string>
     <string name="today_task_source_label">%1$s · %2$s</string>
     <string name="today_task_actions">Task actions</string>
-    <string name="drag_to_reorder_task">Drag to reorder task</string>
-    <string name="reorder">Reorder</string>
-    <string name="done_reordering">Done</string>
     <string name="mark_done">Done</string>
     <string name="move_later">Move later</string>
     <string name="pull_in">Pull in</string>
+    <string name="pull_in_next_task">Do more</string>
     <string name="remove_from_plan">Remove</string>
     <string name="restore">Restore</string>
     <string name="undo">Undo</string>
@@ -140,17 +237,18 @@
     <string name="today_time_exact_message">The current plan uses all available time for today.</string>
     <string name="remaining_metric_label">Remaining</string>
     <string name="overflow_metric_label">Overflow</string>
-    <string name="moving_later_metric_label">Moving later</string>
+    <string name="moved_later_metric_label">Moved later</string>
     <string name="moving_forward_metric_label">Moving forward</string>
     <string name="removed_metric_label">Removed</string>
     <string name="adjusted_for_your_pace">Adjusted for your pace</string>
+    <string name="adjust_time">Adjust</string>
     <string name="time_budget">Time budget</string>
     <string name="over_budget_metric_label">Over budget</string>
-    <string name="wrap_up_today">Wrap up today</string>
+    <string name="wrap_up_today">End today</string>
     <string name="nothing_to_wrap_up">Nothing to wrap up</string>
     <string name="today_wrapped_up_button">Today wrapped up</string>
-    <string name="wrap_up_today_title">Wrap up today?</string>
-    <string name="wrap_up_today_message">This closes today and commits this screen to the active plan.</string>
+    <string name="wrap_up_today_title">End today?</string>
+    <string name="wrap_up_today_message">Completed leaves count. Unfinished leaves stay in your plan.</string>
     <string name="wrap_up_source_material_label">Source material</string>
     <string name="wrap_up_source_material_message">Original topics and tasks stay unchanged.</string>
     <string name="wrap_up_plan_preview_label">Plan preview</string>
@@ -160,16 +258,19 @@
     <string name="wrap_up_impact_crammed">Plan becomes crammed after wrap-up.</string>
     <string name="wrap_up_impact_overloaded">Plan becomes overloaded after wrap-up.</string>
     <string name="wrap_up_today_no_task_changes">No completed or removed task changes yet.</string>
+    <string name="wrap_up_carry_forward_label">Moves forward</string>
+    <string name="wrap_up_unused_time_label">Unused time</string>
     <string name="wrap_up_time_after_closing_label">Time after closing</string>
-    <string name="wrap_up_today_closes_day">Today closes with %1$s unused. Only completed work is counted as spent; unfinished tasks move forward.</string>
+    <string name="wrap_up_today_closes_day">This only closes today. Source material stays unchanged.</string>
+    <string name="wrap_up_keep_open">Keep open</string>
+    <string name="wrap_up_end_day">End day</string>
     <string name="wrap_up_today_confirm">Wrap up</string>
     <string name="ok">OK</string>
     <string name="wrap_up_summary_value">%1$d - %2$s</string>
-    <string name="today_wrap_up_result_title">Plan updated</string>
-    <string name="today_wrapped_up_message">Today wrapped up.</string>
-    <string name="today_wrapped_up_moved_message">Today wrapped up. Unfinished work moved forward.</string>
-    <string name="today_wrapped_up_saved_message">Today wrapped up. Changes saved.</string>
-    <string name="today_wrapped_up_saved_and_moved_message">Today wrapped up. Changes saved; unfinished work moved forward.</string>
+    <string name="today_wrapped_up_message">The active plan is updated.</string>
+    <string name="today_wrapped_up_moved_message">Unfinished work moved forward.</string>
+    <string name="today_wrapped_up_saved_message">Changes saved.</string>
+    <string name="today_wrapped_up_saved_and_moved_message">Changes saved; unfinished work moved forward.</string>
     <string name="no_tasks_today">No tasks today</string>
     <string name="no_tasks_today_message">Your plan has nothing scheduled for this study day.</string>
     <string name="today_closed_empty_title">Today is wrapped up</string>
@@ -213,15 +314,15 @@
         <item quantity="one">in %1$d day</item>
         <item quantity="other">in %1$d days</item>
     </plurals>
-    <plurals name="deadline_in_hours">
-        <item quantity="one">in %1$d hour</item>
-        <item quantity="other">in %1$d hours</item>
-    </plurals>
     <string name="deadline_past">past deadline</string>
     <string name="planned_metric_label">Likely workload</string>
     <string name="available_metric_label">Available time</string>
     <string name="next_task_preview">Next: %1$s</string>
     <string name="open_today">Tap to view</string>
+    <plurals name="today_collapsed_section_task_count">
+        <item quantity="one">· %1$d task</item>
+        <item quantity="other">· %1$d tasks</item>
+    </plurals>
     <plurals name="study_day_task_count">
         <item quantity="one">%1$d leaf</item>
         <item quantity="other">%1$d leaves</item>

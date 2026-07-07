@@ -47,6 +47,10 @@ import androidx.compose.ui.unit.dp
 import com.hci.ren.ui.motion.RenMotionDurationMillis
 import com.hci.ren.ui.motion.renEnterSpec
 import com.hci.ren.ui.motion.renExitSpec
+import com.hci.ren.ui.theme.renCardBorderColor
+import com.hci.ren.ui.theme.renCardContainerColor
+import com.hci.ren.ui.theme.renMutedIconColor
+import com.hci.ren.ui.theme.renSelectedBorderColor
 
 @Composable
 fun PlanFlowOptionRow(
@@ -58,14 +62,14 @@ fun PlanFlowOptionRow(
     icon: ImageVector? = null,
 ) {
     val targetBorderColor = if (isSelected) {
-        MaterialTheme.colorScheme.primary
+        renSelectedBorderColor()
     } else {
-        MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.72f)
+        renCardBorderColor()
     }
     val targetBackground = if (isSelected) {
         MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.24f)
     } else {
-        MaterialTheme.colorScheme.surface
+        renCardContainerColor()
     }
     val borderColor by animateColorAsState(
         targetValue = targetBorderColor,
@@ -76,6 +80,15 @@ fun PlanFlowOptionRow(
         targetValue = targetBackground,
         animationSpec = tween(RenMotionDurationMillis),
         label = "plan-option-background",
+    )
+    val iconTint by animateColorAsState(
+        targetValue = if (isSelected) {
+            MaterialTheme.colorScheme.primary
+        } else {
+            renMutedIconColor()
+        },
+        animationSpec = tween(RenMotionDurationMillis),
+        label = "plan-option-icon",
     )
 
     Surface(
@@ -102,7 +115,7 @@ fun PlanFlowOptionRow(
                 Icon(
                     imageVector = icon,
                     contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
+                    tint = iconTint,
                     modifier = Modifier.size(24.dp),
                 )
             }
@@ -183,9 +196,9 @@ fun PlanFlowCircleChoice(
     modifier: Modifier = Modifier,
 ) {
     val targetBorderColor = if (isSelected) {
-        MaterialTheme.colorScheme.primary.copy(alpha = 0.86f)
+        renSelectedBorderColor()
     } else {
-        MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.72f)
+        renCardBorderColor()
     }
     val targetTextColor = if (isSelected) {
         MaterialTheme.colorScheme.primary
@@ -195,7 +208,7 @@ fun PlanFlowCircleChoice(
     val targetBackgroundColor = if (isSelected) {
         MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.28f)
     } else {
-        MaterialTheme.colorScheme.surface
+        renCardContainerColor()
     }
     val borderColor by animateColorAsState(targetBorderColor, tween(RenMotionDurationMillis), label = "plan-circle-choice-border")
     val textColor by animateColorAsState(targetTextColor, tween(RenMotionDurationMillis), label = "plan-circle-choice-text")
@@ -233,14 +246,14 @@ fun PlanFlowPillChoice(
     modifier: Modifier = Modifier,
 ) {
     val targetBorderColor = if (isSelected) {
-        MaterialTheme.colorScheme.primary.copy(alpha = 0.86f)
+        renSelectedBorderColor()
     } else {
-        MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.72f)
+        renCardBorderColor()
     }
     val targetBackgroundColor = if (isSelected) {
         MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.28f)
     } else {
-        MaterialTheme.colorScheme.surface
+        renCardContainerColor()
     }
     val targetTextColor = if (isSelected) {
         MaterialTheme.colorScheme.primary

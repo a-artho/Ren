@@ -1,6 +1,5 @@
 package com.hci.ren.feature.plangeneration
 
-import kotlin.math.ceil
 import kotlin.math.roundToInt
 
 data class StudyWorkload(
@@ -14,24 +13,22 @@ data class StudyWorkload(
 object WorkloadEngine {
     fun estimate(block: GeneratedStudyBlock): StudyWorkload {
         val minMinutes = block.effortMinMinutes.coerceAtLeast(1)
-        val likely = block.effortLikelyMinutes.coerceAtLeast(minMinutes)
-        val maxMinutes = block.effortMaxMinutes.coerceAtLeast(likely)
-        val riskWeight = when (block.estimateConfidence) {
-            EstimateConfidence.High -> 0.0
-            EstimateConfidence.Medium -> 0.25
-            EstimateConfidence.Low -> 0.50
+        val sourceLikely = block.effortLikelyMinutes.coerceAtLeast(minMinutes)
+        val maxMinutes = block.effortMaxMinutes.coerceAtLeast(sourceLikely)
+        val confidenceMultiplier = when (block.estimateConfidence) {
+            EstimateConfidence.High -> 0.65
+            EstimateConfidence.Medium -> 0.85
+            EstimateConfidence.Low -> 1.0
         }
-        val reserved = ceil(likely + riskWeight * (maxMinutes - likely))
-            .toInt()
-            .coerceIn(likely, maxMinutes)
+        val workload = (sourceLikely * confidenceMultiplier).roundToInt().coerceIn(minMinutes, maxMinutes)
 
         val difficulty = normalizedScore(block.difficultyScore ?: 3)
         val density = normalizedScore(block.densityScore ?: block.taskType.defaultDensityScore)
         val production = normalizedScore(block.productionDemandScore ?: block.taskType.defaultProductionDemandScore)
         val intensity = (block.taskType.baseIntensity + 0.20 * difficulty + 0.15 * density + 0.20 * production)
             .coerceIn(0.65, 1.55)
-        val cognitive = (reserved * intensity).roundToInt().coerceAtLeast(1)
-        return StudyWorkload(minMinutes, likely, maxMinutes, reserved, cognitive)
+        val cognitive = (workload * intensity).roundToInt().coerceAtLeast(1)
+        return StudyWorkload(minMinutes, workload, maxMinutes, workload, cognitive)
     }
 }
 

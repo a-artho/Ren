@@ -46,9 +46,12 @@ import com.hci.ren.feature.pdfupload.presentation.PdfUploadViewModel
 import com.hci.ren.feature.plangeneration.PlanGenerationScreen
 import com.hci.ren.feature.plangeneration.PlanGenerationViewModel
 import com.hci.ren.feature.plangeneration.StudyTaskStatus
+import com.hci.ren.feature.progress.presentation.ProgressScreen
+import com.hci.ren.feature.studymap.AdaptiveFocusMode
 import com.hci.ren.feature.studymap.StudyMapDetailRoute
 import com.hci.ren.feature.studymap.StudyMapDetailViewModel
 import com.hci.ren.feature.studymap.TodayScreen
+import com.hci.ren.feature.studymap.TodaySessionTaskAction
 import com.hci.ren.ui.theme.RenTheme
 import com.hci.ren.ui.motion.isReducedMotionEnabled
 import com.hci.ren.ui.motion.renScreenTransform
@@ -66,6 +69,7 @@ class MainActivity : ComponentActivity() {
                 var openPickerOnStart by rememberSaveable { mutableStateOf(false) }
                 var setupStartedForUploadSession by rememberSaveable { mutableStateOf(false) }
                 var studyPlanNavigationResetKey by rememberSaveable { mutableIntStateOf(0) }
+                var activeFocusTaskId by rememberSaveable { mutableStateOf<String?>(null) }
                 val pdfUploadViewModel: PdfUploadViewModel = viewModel()
                 val planSetupViewModel: PlanSetupViewModel = viewModel()
                 val planGenerationViewModel: PlanGenerationViewModel = viewModel()
@@ -74,7 +78,7 @@ class MainActivity : ComponentActivity() {
                 val studyMapState by studyMapDetailViewModel.uiState.collectAsState()
                 var forward by rememberSaveable { mutableStateOf(true) }
                 val hasActiveStudyPlan = studyMapState.project != null
-                val showBottomBar = hasActiveStudyPlan && screen in tabScreens
+                val showBottomBar = hasActiveStudyPlan && screen in tabScreens && activeFocusTaskId == null
 
                 LaunchedEffect(generationState.planId, generationState.plan) {
                     if (generationState.plan != null) {
@@ -232,28 +236,58 @@ class MainActivity : ComponentActivity() {
                         )
 
                         ScreenToday -> studyMapState.project?.let { project ->
-                            TodayScreen(
-                                project = project,
-                                session = studyMapState.todaySession,
-                                wrapUpResultMessage = studyMapState.todayWrapUpMessage,
-                                onAvailableTimeChanged = studyMapDetailViewModel::updateTodayAvailableTime,
-                                onTaskAction = studyMapDetailViewModel::updateTodayTaskAction,
-                                onWrapUpToday = studyMapDetailViewModel::wrapUpToday,
-                                onStartFocusTask = { taskId ->
-                                    studyMapDetailViewModel.updateTaskStatus(taskId, StudyTaskStatus.InProgress)
-                                },
-                                onConsumeWrapUpResult = studyMapDetailViewModel::consumeTodayWrapUpMessage,
-                                changeMessage = studyMapState.userMessage,
-                                onConsumeMessage = studyMapDetailViewModel::consumeMessage,
-                                modifier = Modifier.padding(scaffoldPadding),
-                            )
+                            val focusTaskId = activeFocusTaskId
+                            if (focusTaskId != null) {
+                                AdaptiveFocusMode(
+                                    project = project,
+                                    taskId = focusTaskId,
+                                    session = studyMapState.todaySession,
+                                    onDismiss = { activeFocusTaskId = null },
+                                    onMarkDone = { date, taskId ->
+                                        studyMapDetailViewModel.updateTodayTaskAction(
+                                            date,
+                                            taskId,
+                                            TodaySessionTaskAction.MarkDone,
+                                        )
+                                    },
+                                    onOpenTask = { taskId ->
+                                        studyMapDetailViewModel.updateTaskStatus(taskId, StudyTaskStatus.InProgress)
+                                        activeFocusTaskId = taskId
+                                    },
+                                    focusDayState = studyMapState.focusDayState,
+                                    onFocusDayStateChange = studyMapDetailViewModel::updateFocusDayState,
+                                    onFocusSessionRecorded = studyMapDetailViewModel::recordFocusSession,
+                                )
+                            } else {
+                                TodayScreen(
+                                    project = project,
+                                    session = studyMapState.todaySession,
+                                    wrapUpResultMessage = studyMapState.todayWrapUpMessage,
+                                    onAvailableTimeChanged = studyMapDetailViewModel::updateTodayAvailableTime,
+                                    onTaskAction = studyMapDetailViewModel::updateTodayTaskAction,
+                                    onWrapUpToday = studyMapDetailViewModel::wrapUpToday,
+                                    onStartFocusTask = { taskId ->
+                                        studyMapDetailViewModel.updateTaskStatus(taskId, StudyTaskStatus.InProgress)
+                                        activeFocusTaskId = taskId
+                                    },
+                                    onConsumeWrapUpResult = studyMapDetailViewModel::consumeTodayWrapUpMessage,
+                                    changeMessage = studyMapState.userMessage,
+                                    onConsumeMessage = studyMapDetailViewModel::consumeMessage,
+                                    modifier = Modifier.padding(scaffoldPadding),
+                                )
+                            }
                         } ?: PlaceholderTabScreen(
                             title = stringResource(R.string.today),
                             message = stringResource(R.string.today_placeholder_message),
                             modifier = Modifier.padding(scaffoldPadding),
                         )
 
-                        ScreenProgress -> PlaceholderTabScreen(
+                        ScreenProgress -> studyMapState.project?.let { project ->
+                            ProgressScreen(
+                                project = project,
+                                modifier = Modifier.padding(scaffoldPadding),
+                            )
+                        } ?: PlaceholderTabScreen(
                             title = stringResource(R.string.progress),
                             message = stringResource(R.string.progress_placeholder_message),
                             modifier = Modifier.padding(scaffoldPadding),

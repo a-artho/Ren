@@ -2,6 +2,8 @@ package com.hci.ren.feature.studymap
 
 import com.hci.ren.feature.plangeneration.GeneratedStudyBlock
 import com.hci.ren.feature.plangeneration.StudyTaskStatus
+import java.util.Calendar
+import java.util.TimeZone
 
 data class TodaySessionState(
     val date: String,
@@ -10,6 +12,7 @@ data class TodaySessionState(
     val pulledInTaskIds: Set<String> = emptySet(),
     val doneTodayTaskIds: Set<String> = emptySet(),
     val removedFromPlanTaskIds: Set<String> = emptySet(),
+    val focusSessions: List<FocusSessionRecord> = emptyList(),
 ) {
     val hasAvailabilityOverride: Boolean get() = availableMinutes != null
     val hasTaskChanges: Boolean
@@ -17,8 +20,36 @@ data class TodaySessionState(
             pulledInTaskIds.isNotEmpty() ||
             doneTodayTaskIds.isNotEmpty() ||
             removedFromPlanTaskIds.isNotEmpty()
+    val focusSeconds: Int get() = focusSessions.sumOf { it.focusSeconds }
+    val breakSeconds: Int get() = focusSessions.sumOf { it.breakSeconds }
+    val spentFocusMinutes: Int get() = focusSeconds.toBudgetMinutes()
+    val spentBreakMinutes: Int get() = breakSeconds.toBudgetMinutes()
 
-    val isEmpty: Boolean get() = !hasAvailabilityOverride && !hasTaskChanges
+    val isEmpty: Boolean get() = !hasAvailabilityOverride && !hasTaskChanges && focusSessions.isEmpty()
+}
+
+data class FocusSessionRecord(
+    val taskId: String,
+    val plannedFocusMinutes: Int,
+    val plannedFocusSeconds: Int = plannedFocusMinutes * FocusSessionSecondsPerMinute,
+    val plannedBreakMinutes: Int,
+    val focusSeconds: Int,
+    val flowOvertimeSeconds: Int = 0,
+    val breakSeconds: Int,
+    val awaySeconds: Int,
+    val interruptionCount: Int,
+    val outcome: FocusSessionOutcome,
+    val endedAtMillis: Long,
+) {
+    val consumedMinutes: Int get() = (focusSeconds + breakSeconds).toBudgetMinutes()
+    val hasTrackedTime: Boolean
+        get() = focusSeconds > 0 || breakSeconds > 0 || awaySeconds > 0 || interruptionCount > 0
+}
+
+enum class FocusSessionOutcome {
+    FocusRoundEnded,
+    FocusStopped,
+    BreakEnded,
 }
 
 enum class TodaySessionTaskAction {
@@ -36,6 +67,7 @@ data class TodaySessionPlan(
     val date: String,
     val baseAvailableMinutes: Int,
     val availableMinutes: Int,
+    val untrackedCompletedMinutes: Int = 0,
     val fitMode: ScheduleFitMode = ScheduleFitMode.Reserved,
     val doTodayTasks: List<GeneratedStudyBlock>,
     val pulledInTasks: List<GeneratedStudyBlock>,
@@ -47,10 +79,14 @@ data class TodaySessionPlan(
     val hasAvailabilityOverride: Boolean = false,
     val hasTaskChanges: Boolean = false,
 ) {
+    val activeWorkMinutes: Int
+        get() = doTodayTasks.fitMinutesTotal(fitMode) +
+            pulledInTasks.fitMinutesTotal(fitMode)
+
     val plannedMinutes: Int
         get() = doTodayTasks.fitMinutesTotal(fitMode) +
             pulledInTasks.fitMinutesTotal(fitMode) +
-            doneTodayTasks.fitMinutesTotal(fitMode)
+            untrackedCompletedMinutes
 
     val committedPlannedMinutes: Int
         get() = doTodayTasks.fitMinutesTotal(fitMode) +
@@ -95,6 +131,74 @@ data class TodaySessionPlan(
 
 internal fun TodaySessionPlan.canWrapUpToday(isTodayClosed: Boolean): Boolean =
     hasWrapUpWork && (!isTodayClosed || hasPendingChanges)
+
+enum class TodayClockPressureStatus {
+    Clear,
+    Plenty,
+    StartSoon,
+    ActNow,
+    DoesNotFit,
+}
+
+data class TodayClockPressure(
+    val status: TodayClockPressureStatus,
+    val activeWorkMinutes: Int,
+    val minutesUntilReset: Int,
+    val bufferMinutes: Int,
+)
+
+internal fun todayClockPressure(
+    activeWorkMinutes: Int,
+    minutesUntilReset: Int,
+): TodayClockPressure {
+    val normalizedWork = activeWorkMinutes.coerceAtLeast(0)
+    val normalizedResetWindow = minutesUntilReset.coerceAtLeast(0)
+    val bufferMinutes = normalizedResetWindow - normalizedWork
+    val status = when {
+        normalizedWork == 0 -> TodayClockPressureStatus.Clear
+        bufferMinutes < 0 -> TodayClockPressureStatus.DoesNotFit
+        bufferMinutes <= 15 -> TodayClockPressureStatus.ActNow
+        bufferMinutes <= 45 -> TodayClockPressureStatus.StartSoon
+        else -> TodayClockPressureStatus.Plenty
+    }
+    return TodayClockPressure(
+        status = status,
+        activeWorkMinutes = normalizedWork,
+        minutesUntilReset = normalizedResetWindow,
+        bufferMinutes = bufferMinutes,
+    )
+}
+
+internal fun minutesUntilStudyDayReset(
+    nowMillis: Long,
+    resetOffsetHours: Int,
+    timeZone: TimeZone = TimeZone.getDefault(),
+): Int {
+    val now = Calendar.getInstance(timeZone).apply {
+        timeInMillis = nowMillis
+    }
+    val nextReset = Calendar.getInstance(timeZone).apply {
+        timeInMillis = nowMillis
+        set(Calendar.HOUR_OF_DAY, resetOffsetHours.coerceIn(0, 23))
+        set(Calendar.MINUTE, 0)
+        set(Calendar.SECOND, 0)
+        set(Calendar.MILLISECOND, 0)
+        if (!after(now)) {
+            add(Calendar.DAY_OF_MONTH, 1)
+        }
+    }
+    return ((nextReset.timeInMillis - nowMillis + 59_999L) / 60_000L)
+        .toInt()
+        .coerceAtLeast(0)
+}
+
+internal fun effectiveTodayAvailableMinutes(
+    requestedMinutes: Int,
+    minutesUntilReset: Int,
+): Int =
+    requestedMinutes
+        .coerceIn(0, MaxTodaySessionMinutes)
+        .coerceAtMost(minutesUntilReset.coerceIn(0, MaxTodaySessionMinutes))
 
 class TodaySessionPlanner {
     fun plan(
@@ -142,7 +246,7 @@ class TodaySessionPlanner {
             .filter { it.id in pulledIds && it.id !in doneTodayIds && it.id !in removedIds }
             .filter { task -> task.canPullForward(completedIds, doneTodayIds, activeTasksById) }
         val fitMode = localTodayFitMode(
-            tasks = committedCandidates + pulledInTasks + doneTodayTasks,
+            tasks = committedCandidates + pulledInTasks,
             capacityMinutes = normalizedAvailableMinutes,
             scheduledFitMode = todaySchedule?.fitMode ?: data.schedule.fitMode,
         )
@@ -151,9 +255,19 @@ class TodaySessionPlanner {
         val wontFitTodayTasks = committedCandidates.filterNot { it.id in doTodayIds }
         val removedFromPlanTasks = orderedByPlan(data.activeTasks, removedIds)
         val removedFromPlanTaskIds = removedFromPlanTasks.mapTo(mutableSetOf()) { it.id }
-        val plannedTasks = doTodayTasks + pulledInTasks + doneTodayTasks
-        val plannedIds = plannedTasks.mapTo(mutableSetOf()) { it.id }
-        val remainingMinutes = (normalizedAvailableMinutes - plannedTasks.fitMinutesTotal(fitMode))
+        val trackedFocusTaskIds = activeSession
+            ?.focusSessions
+            .orEmpty()
+            .filter { it.focusSeconds > 0 || it.breakSeconds > 0 }
+            .mapTo(mutableSetOf()) { it.taskId }
+        val untrackedCompletedTasks = doneTodayTasks.filterNot { it.id in trackedFocusTaskIds }
+        val activePlannedTasks = doTodayTasks + pulledInTasks
+        val plannedIds = (activePlannedTasks + doneTodayTasks).mapTo(mutableSetOf()) { it.id }
+        val remainingMinutes = (
+                normalizedAvailableMinutes -
+                activePlannedTasks.fitMinutesTotal(fitMode) -
+                untrackedCompletedTasks.fitMinutesTotal(fitMode)
+            )
             .coerceAtLeast(0)
         val pullInCandidates = if (remainingMinutes > 0) {
             forwardTasks.asSequence()
@@ -168,6 +282,7 @@ class TodaySessionPlanner {
             date = date,
             baseAvailableMinutes = baseAvailableMinutes,
             availableMinutes = normalizedAvailableMinutes,
+            untrackedCompletedMinutes = untrackedCompletedTasks.fitMinutesTotal(fitMode),
             fitMode = fitMode,
             doTodayTasks = doTodayTasks,
             pulledInTasks = pulledInTasks,
@@ -223,6 +338,11 @@ fun TodaySessionState.applyTaskAction(
     TodaySessionTaskAction.RestoreRemoved -> copy(
         removedFromPlanTaskIds = removedFromPlanTaskIds - taskId,
     )
+}
+
+fun TodaySessionState.appendFocusSession(record: FocusSessionRecord): TodaySessionState {
+    if (record.taskId.isBlank() || !record.hasTrackedTime) return this
+    return copy(focusSessions = focusSessions + record)
 }
 
 private fun localTodayFitMode(
@@ -309,6 +429,9 @@ private fun orderedByPlan(
 private fun Iterable<GeneratedStudyBlock>.fitMinutesTotal(fitMode: ScheduleFitMode): Int =
     sumOf { fitMode.fitMinutes(it).coerceAtLeast(0) }
 
+private fun Int.toBudgetMinutes(): Int =
+    if (this <= 0) 0 else (this + FocusSessionSecondsPerMinute - 1) / FocusSessionSecondsPerMinute
+
 internal fun todayBaseAvailableMinutes(
     project: StudyProject,
     data: StudyMapData,
@@ -318,6 +441,7 @@ internal fun todayBaseAvailableMinutes(
     ?: data.dailyMinutes
 
 const val MaxTodaySessionMinutes = 1_440
+private const val FocusSessionSecondsPerMinute = 60
 private const val MaxPullInCandidateCount = 3
 private val TodayAnchorStatuses = setOf(
     StudyTaskStatus.Completed,

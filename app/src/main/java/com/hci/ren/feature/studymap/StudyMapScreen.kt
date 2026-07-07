@@ -68,6 +68,7 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DatePicker
+import androidx.compose.material3.DatePickerDefaults
 import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.SelectableDates
 import androidx.compose.material3.rememberDatePickerState
@@ -86,8 +87,6 @@ import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
-import androidx.compose.material3.SheetState
-import androidx.compose.material3.SheetValue
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -106,7 +105,6 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.blur
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
@@ -150,11 +148,17 @@ import com.hci.ren.feature.plangeneration.reservedStudyMinutes
 import com.hci.ren.ui.components.PlanFlowCircleAction
 import com.hci.ren.ui.components.PlanFlowControlHeight
 import com.hci.ren.ui.components.PlanLandingScaffold
-import com.hci.ren.ui.components.planFlowPrimaryButtonColors
 import com.hci.ren.ui.motion.RenMotionDurationMillis
 import com.hci.ren.ui.motion.RenMotionEasing
 import com.hci.ren.ui.motion.isReducedMotionEnabled
 import com.hci.ren.ui.motion.renFadeThroughTransform
+import com.hci.ren.ui.theme.RenContextMenuSurface
+import com.hci.ren.ui.theme.RenGreenDark
+import com.hci.ren.ui.theme.renCardBorderColor
+import com.hci.ren.ui.theme.renCardBorderStroke
+import com.hci.ren.ui.theme.renCardContainerColor
+import com.hci.ren.ui.theme.renMutedIconColor
+import com.hci.ren.ui.theme.renSelectedBorderColor
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
@@ -167,15 +171,13 @@ private enum class PlanEditDailyTimeChoice { FitTwoLeaves, FitFourLeaves, Custom
 
 private const val UnscheduledAutoCollapseLeafThreshold = 3
 
-private val PlanEditSheetMenuHeight = 468.dp
+private val PlanEditSheetMenuHeight = 444.dp
+private val PlanEditSheetDefaultHeight = 468.dp
 private val PlanEditSheetTopicHeight = 640.dp
 private val PlanEditMenuHeaderHeight = 76.dp
-private val PlanEditActionRowHeight = 62.dp
-private val PlanEditSheetSurface = Color(0xFF070A08)
-private val PlanEditRowSurface = Color(0xFF0E130F)
-private val PlanEditRowSurfaceMuted = Color(0xFF141A15)
-private val PlanEditSelectedSurface = Color(0xFF0E261A)
-private val PlanEditOutline = Color(0xFF253429)
+private val PlanEditActionRowHeight = 68.dp
+private val PlanEditActionTextStartPadding = 56.dp
+private val PlanEditSheetSurface = RenContextMenuSurface
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -204,29 +206,17 @@ fun StudyMapScreen(
     var selectedViewName by rememberSaveable { mutableStateOf(StudyMapView.Schedule.name) }
     val selectedView = StudyMapView.valueOf(selectedViewName)
     var adjustment by remember { mutableStateOf<AdjustmentSheet?>(null) }
-    var modalBackgroundActive by remember { mutableStateOf(false) }
     var deleteDialogOpen by remember { mutableStateOf(false) }
     var autoCloseExpandedDays by rememberSaveable { mutableStateOf(true) }
     var collapseScheduleKey by rememberSaveable { mutableIntStateOf(0) }
 
     fun showAdjustment(sheet: AdjustmentSheet) {
-        modalBackgroundActive = true
         adjustment = sheet
     }
 
     fun dismissAdjustment() {
-        modalBackgroundActive = false
         adjustment = null
     }
-
-    val backgroundBlur by animateDpAsState(
-        targetValue = if (modalBackgroundActive) 8.dp else 0.dp,
-        animationSpec = tween(
-            durationMillis = RenMotionDurationMillis,
-            easing = RenMotionEasing,
-        ),
-        label = "study-map-modal-background-blur",
-    )
 
     BackHandler(onBack = onBack)
 
@@ -260,9 +250,7 @@ fun StudyMapScreen(
     }
 
     Scaffold(
-        modifier = modifier
-            .fillMaxSize()
-            .blur(backgroundBlur),
+        modifier = modifier.fillMaxSize(),
         containerColor = MaterialTheme.colorScheme.background,
         snackbarHost = { SnackbarHost(snackbar) },
         topBar = {
@@ -354,9 +342,8 @@ fun StudyMapScreen(
             resetOffsetHours = preferences.studyDayResetOffsetHours,
             currentDailyMinutes = data.dailyMinutes,
             leafMinutes = suggestedLeafMinutes(plan.blocks),
-            plan = plan,
+            plan = data.plan,
             onDismiss = { dismissAdjustment() },
-            onSheetMotionActiveChange = { modalBackgroundActive = it },
             onRename = { name ->
                 onRenamePlan(name)
                 dismissAdjustment()
@@ -516,7 +503,7 @@ private fun StudyPlanTitleMenu(
             offset = DpOffset(x = 0.dp, y = 8.dp),
             modifier = Modifier.width(238.dp),
             shape = RoundedCornerShape(18.dp),
-            containerColor = MaterialTheme.colorScheme.surface,
+            containerColor = RenContextMenuSurface,
             tonalElevation = 0.dp,
             shadowElevation = 10.dp,
             border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.64f)),
@@ -574,7 +561,7 @@ private fun StudyPlanMenuActionRow(
                 imageVector = icon,
                 contentDescription = null,
                 modifier = Modifier.size(18.dp),
-                tint = MaterialTheme.colorScheme.primary,
+                tint = renMutedIconColor(),
             )
             Spacer(Modifier.width(12.dp))
             Text(
@@ -782,11 +769,25 @@ private fun RealismWarningPanel(realism: PlanRealism, onAction: (AdjustmentSheet
     Card(
         colors = CardDefaults.cardColors(containerColor = container),
         shape = RoundedCornerShape(18.dp),
+        border = realismWarningBorder(realism.status),
     ) {
-        Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Default.WarningAmber, contentDescription = null, tint = accent)
-                Spacer(Modifier.width(8.dp))
+                Surface(
+                    modifier = Modifier.size(34.dp),
+                    shape = RoundedCornerShape(12.dp),
+                    color = accent.copy(alpha = 0.14f),
+                    contentColor = accent,
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            imageVector = Icons.Default.WarningAmber,
+                            contentDescription = null,
+                            modifier = Modifier.size(19.dp),
+                        )
+                    }
+                }
+                Spacer(Modifier.width(10.dp))
                 Text(
                     realismWarningTitle(realism.status),
                     style = MaterialTheme.typography.titleMedium,
@@ -799,45 +800,20 @@ private fun RealismWarningPanel(realism: PlanRealism, onAction: (AdjustmentSheet
                 style = MaterialTheme.typography.bodyMedium,
                 color = content,
             )
-            AdjustmentAction(R.string.edit_plan, R.string.edit_plan_sheet_subtitle) { onAction(AdjustmentSheet.PlanEdit) }
-            AdjustmentAction(R.string.continue_anyway, R.string.continue_anyway_short_subtitle) { onAction(AdjustmentSheet.Continue) }
+            AdjustmentAction(
+                title = R.string.edit_plan,
+                subtitle = R.string.edit_plan_sheet_subtitle,
+                icon = Icons.Default.Edit,
+                accent = accent,
+            ) { onAction(AdjustmentSheet.PlanEdit) }
+            AdjustmentAction(
+                title = R.string.continue_anyway,
+                subtitle = R.string.continue_anyway_short_subtitle,
+                icon = Icons.Default.CheckCircle,
+                accent = accent,
+            ) { onAction(AdjustmentSheet.Continue) }
         }
     }
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun rememberBlurSyncedSheetState(
-    onSheetMotionActiveChange: (Boolean) -> Unit,
-    skipPartiallyExpanded: Boolean = false,
-): SheetState {
-    var hasStartedShowing by remember { mutableStateOf(false) }
-    val sheetState = rememberModalBottomSheetState(
-        skipPartiallyExpanded = skipPartiallyExpanded,
-        confirmValueChange = { target ->
-            onSheetMotionActiveChange(target != SheetValue.Hidden)
-            true
-        },
-    )
-
-    LaunchedEffect(Unit) {
-        onSheetMotionActiveChange(true)
-    }
-    LaunchedEffect(sheetState.currentValue, sheetState.targetValue) {
-        val isEnteringOrVisible = sheetState.currentValue != SheetValue.Hidden ||
-            sheetState.targetValue != SheetValue.Hidden
-        if (isEnteringOrVisible) {
-            hasStartedShowing = true
-        }
-        when {
-            hasStartedShowing && sheetState.targetValue == SheetValue.Hidden ->
-                onSheetMotionActiveChange(false)
-            sheetState.targetValue != SheetValue.Hidden ->
-                onSheetMotionActiveChange(true)
-        }
-    }
-
-    return sheetState
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -849,7 +825,6 @@ private fun PlanEditSheet(
     leafMinutes: Int,
     plan: GeneratedStudyPlan,
     onDismiss: () -> Unit,
-    onSheetMotionActiveChange: (Boolean) -> Unit,
     onRename: (String) -> Unit,
     onApplyDeadline: (epochMillis: Long) -> Unit,
     onApplyDailyTime: (Int) -> Unit,
@@ -859,17 +834,13 @@ private fun PlanEditSheet(
     var pageName by rememberSaveable { mutableStateOf(PlanEditPage.Menu.name) }
     var showCustomDatePicker by rememberSaveable { mutableStateOf(false) }
     val page = PlanEditPage.valueOf(pageName)
-    val sheetHeight by animateDpAsState(
-        targetValue = when (page) {
-            PlanEditPage.Scope -> PlanEditSheetTopicHeight
-            else -> PlanEditSheetMenuHeight
-        },
-        animationSpec = tween(durationMillis = RenMotionDurationMillis, easing = RenMotionEasing),
-        label = "plan-edit-sheet-height",
-    )
+    val sheetHeight = when (page) {
+        PlanEditPage.Menu -> PlanEditSheetMenuHeight
+        PlanEditPage.Scope -> PlanEditSheetTopicHeight
+        else -> PlanEditSheetDefaultHeight
+    }
     val reducedMotion = isReducedMotionEnabled()
-    val sheetState = rememberBlurSyncedSheetState(
-        onSheetMotionActiveChange = onSheetMotionActiveChange,
+    val sheetState = rememberModalBottomSheetState(
         skipPartiallyExpanded = true,
     )
 
@@ -877,7 +848,7 @@ private fun PlanEditSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
         containerColor = PlanEditSheetSurface,
-        scrimColor = Color.Transparent,
+        scrimColor = MaterialTheme.colorScheme.scrim.copy(alpha = 0.28f),
         tonalElevation = 0.dp,
         dragHandle = { RenSheetHandle() },
     ) {
@@ -1069,40 +1040,41 @@ private fun PlanEditMenuContent(
 ) {
     Column(
         modifier = modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
-        PlanEditActionRow(
-            title = R.string.change_plan_name,
-            subtitle = R.string.change_plan_name_subtitle,
-            icon = Icons.Default.Edit,
-        ) {
-            onNavigate(PlanEditPage.Rename)
+        Column(modifier = Modifier.fillMaxWidth()) {
+            PlanEditActionRow(
+                title = R.string.change_plan_name,
+                subtitle = R.string.change_plan_name_subtitle,
+                icon = Icons.Default.Edit,
+                showDivider = true,
+            ) {
+                onNavigate(PlanEditPage.Rename)
+            }
+            PlanEditActionRow(
+                title = R.string.change_deadline,
+                subtitle = R.string.change_deadline_subtitle,
+                icon = Icons.Default.Event,
+                showDivider = true,
+            ) {
+                onChangeDeadline()
+            }
+            PlanEditActionRow(
+                title = R.string.available_time,
+                subtitle = R.string.available_time_subtitle,
+                icon = Icons.Default.Timer,
+                showDivider = true,
+            ) {
+                onNavigate(PlanEditPage.DailyTime)
+            }
+            PlanEditActionRow(
+                title = R.string.choose_material,
+                subtitle = R.string.choose_material_subtitle,
+                icon = Icons.AutoMirrored.Filled.LibraryBooks,
+            ) {
+                onNavigate(PlanEditPage.Scope)
+            }
         }
-        PlanEditActionRow(
-            title = R.string.change_deadline,
-            subtitle = R.string.change_deadline_subtitle,
-            icon = Icons.Default.Event,
-        ) {
-            onChangeDeadline()
-        }
-        PlanEditActionRow(
-            title = R.string.available_time,
-            subtitle = R.string.available_time_subtitle,
-            icon = Icons.Default.Timer,
-        ) {
-            onNavigate(PlanEditPage.DailyTime)
-        }
-        PlanEditActionRow(
-            title = R.string.choose_material,
-            subtitle = R.string.choose_material_subtitle,
-            icon = Icons.AutoMirrored.Filled.LibraryBooks,
-        ) {
-            onNavigate(PlanEditPage.Scope)
-        }
-        HorizontalDivider(
-            modifier = Modifier.padding(horizontal = 8.dp),
-            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.28f),
-        )
+        Spacer(Modifier.height(18.dp))
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.Center,
@@ -1161,6 +1133,9 @@ private fun PlanEditDatePickerDialog(
     val datePickerState = rememberDatePickerState(selectableDates = selectableDates)
     DatePickerDialog(
         onDismissRequest = onDismiss,
+        colors = DatePickerDefaults.colors(
+            containerColor = RenContextMenuSurface,
+        ),
         confirmButton = {
             TextButton(
                 enabled = datePickerState.selectedDateMillis != null,
@@ -1175,7 +1150,12 @@ private fun PlanEditDatePickerDialog(
             }
         },
     ) {
-        DatePicker(state = datePickerState)
+        DatePicker(
+            state = datePickerState,
+            colors = DatePickerDefaults.colors(
+                containerColor = RenContextMenuSurface,
+            ),
+        )
     }
 }
 
@@ -1288,16 +1268,13 @@ private fun PlanEditDailyTimeChoiceRow(
     modifier: Modifier = Modifier,
     onClick: () -> Unit,
 ) {
+    val rowSurface = renCardContainerColor()
     val targetBorderColor = if (selected) {
-        MaterialTheme.colorScheme.primary.copy(alpha = 0.74f)
+        renSelectedBorderColor()
     } else {
-        PlanEditOutline.copy(alpha = 0.82f)
+        renCardBorderColor()
     }
-    val targetBackground = if (selected) {
-        PlanEditSelectedSurface
-    } else {
-        PlanEditRowSurface
-    }
+    val targetBackground = rowSurface
     val borderColor by animateColorAsState(
         targetValue = targetBorderColor,
         animationSpec = tween(RenMotionDurationMillis, easing = RenMotionEasing),
@@ -1409,13 +1386,21 @@ private fun PlanEditScopeContent(
     modifier: Modifier = Modifier,
     onApply: (ScopeReduction, Set<String>) -> Unit,
 ) {
-    val topics = remember(plan.topics) {
+    val knownTopicIds = remember(plan.topics) { plan.topics.mapTo(mutableSetOf()) { it.id } }
+    val activeTopicIds = remember(plan.blocks, knownTopicIds) {
+        plan.blocks
+            .filterNot { it.status == StudyTaskStatus.ExcludedByUser }
+            .flatMap { it.topicIds }
+            .filter { it in knownTopicIds }
+            .toSet()
+    }
+    val topics = remember(plan.topics, activeTopicIds) {
         mutableStateListOf<String>().also { selected ->
-            selected.addAll(plan.topics.map { it.id })
+            selected.addAll(activeTopicIds)
         }
     }
     val topicScrollState = rememberScrollState()
-    val canApply = topics.isNotEmpty() && topics.size < plan.topics.size
+    val canApply = topics.isNotEmpty() && topics.toSet() != activeTopicIds
 
     fun setTopic(topicId: String, checked: Boolean) {
         if (checked) {
@@ -1452,8 +1437,8 @@ private fun PlanEditScopeContent(
                 .fillMaxWidth()
                 .weight(1f),
             shape = RoundedCornerShape(16.dp),
-            color = PlanEditRowSurface,
-            border = BorderStroke(1.dp, PlanEditOutline.copy(alpha = 0.80f)),
+            color = Color.Transparent,
+            border = renCardBorderStroke(),
         ) {
             BoxWithConstraints(Modifier.fillMaxSize()) {
                 Column(
@@ -1472,7 +1457,7 @@ private fun PlanEditScopeContent(
                             color = if (checked) {
                                 Color.Transparent
                             } else {
-                                PlanEditRowSurfaceMuted.copy(alpha = 0.72f)
+                                renCardContainerColor()
                             },
                         ) {
                             Row(
@@ -1543,7 +1528,12 @@ private fun PlanEditPrimaryAction(
         modifier = Modifier
             .fillMaxWidth()
             .height(PlanFlowControlHeight),
-        colors = planFlowPrimaryButtonColors(),
+        colors = ButtonDefaults.buttonColors(
+            containerColor = RenGreenDark,
+            contentColor = Color.White,
+            disabledContainerColor = MaterialTheme.colorScheme.surfaceVariant,
+            disabledContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+        ),
     ) {
         Text(
             stringResource(R.string.apply_changes),
@@ -1556,11 +1546,11 @@ private fun PlanEditPrimaryAction(
 @Composable
 private fun planEditTextFieldColors() = OutlinedTextFieldDefaults.colors(
     focusedBorderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.9f),
-    unfocusedBorderColor = PlanEditOutline.copy(alpha = 0.90f),
+    unfocusedBorderColor = renCardBorderColor(),
     errorBorderColor = MaterialTheme.colorScheme.error,
-    focusedContainerColor = PlanEditRowSurface,
-    unfocusedContainerColor = PlanEditRowSurface,
-    errorContainerColor = PlanEditRowSurface,
+    focusedContainerColor = renCardContainerColor(),
+    unfocusedContainerColor = renCardContainerColor(),
+    errorContainerColor = renCardContainerColor(),
     cursorColor = MaterialTheme.colorScheme.primary,
     focusedLabelColor = MaterialTheme.colorScheme.primary,
     unfocusedLabelColor = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -1584,27 +1574,22 @@ private fun PlanEditActionRow(
     subtitle: Int,
     icon: ImageVector,
     modifier: Modifier = Modifier,
+    showDivider: Boolean = false,
     onClick: () -> Unit,
 ) {
     val contentColor = MaterialTheme.colorScheme.onSurface
     val supportingColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.82f)
-    val borderColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.46f)
-    val iconContainerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.24f)
-    val iconColor = MaterialTheme.colorScheme.primary
+    val iconContainerColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.08f)
+    val iconColor = renMutedIconColor()
+    val separatorColor = treeLineColor(0.09f)
 
-    Surface(
-        onClick = onClick,
-        modifier = modifier
-            .fillMaxWidth()
-            .height(PlanEditActionRowHeight),
-        shape = RoundedCornerShape(14.dp),
-        color = PlanEditRowSurface,
-        border = BorderStroke(1.dp, borderColor),
-    ) {
+    Column(modifier = modifier.fillMaxWidth()) {
         Row(
             modifier = Modifier
-                .fillMaxSize()
-                .padding(horizontal = 16.dp),
+                .fillMaxWidth()
+                .height(PlanEditActionRowHeight)
+                .clickable(onClick = onClick)
+                .padding(horizontal = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Surface(
@@ -1650,6 +1635,12 @@ private fun PlanEditActionRow(
                 tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.62f),
             )
         }
+        if (showDivider) {
+            HorizontalDivider(
+                modifier = Modifier.padding(start = PlanEditActionTextStartPadding, end = 8.dp),
+                color = separatorColor,
+            )
+        }
     }
 }
 
@@ -1686,16 +1677,49 @@ private fun PlanEditDeleteAction(
 }
 
 @Composable
-private fun AdjustmentAction(title: Int, subtitle: Int, onClick: () -> Unit) {
+private fun AdjustmentAction(
+    title: Int,
+    subtitle: Int,
+    icon: ImageVector,
+    accent: Color,
+    onClick: () -> Unit,
+) {
     Surface(
         onClick = onClick,
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(12.dp),
         color = MaterialTheme.colorScheme.surface.copy(alpha = 0.7f),
     ) {
-        Column(Modifier.padding(12.dp)) {
-            Text(stringResource(title), style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
-            Text(stringResource(subtitle), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Row(
+            modifier = Modifier.padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                modifier = Modifier.size(17.dp),
+                tint = accent,
+            )
+            Spacer(Modifier.width(10.dp))
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(2.dp),
+            ) {
+                Text(
+                    text = stringResource(title),
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    text = stringResource(subtitle),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
         }
     }
 }
@@ -1747,6 +1771,13 @@ private fun studyMapViewIcon(view: StudyMapView): ImageVector = when (view) {
 
 @Composable
 private fun treeLineColor(alpha: Float): Color = MaterialTheme.colorScheme.onSurface.copy(alpha = alpha)
+
+private fun mainTimelineContinuationStroke(strokeWidth: Float): Stroke =
+    Stroke(
+        width = strokeWidth,
+        cap = StrokeCap.Round,
+        pathEffect = PathEffect.dashPathEffect(floatArrayOf(strokeWidth * 3f, strokeWidth * 9f)),
+    )
 
 private fun androidx.compose.foundation.lazy.LazyListScope.scheduleItems(
     data: StudyMapData,
@@ -2149,7 +2180,7 @@ private fun TimelineStudyItemBranchRow(
                     pageLabel = taskPageLabel(task),
                     isFirstLeaf = index == 0,
                     isLastLeaf = index == item.tasks.lastIndex,
-                    continuesMainRail = !isLastBranch || !isLastDay,
+                    continuesMainRail = !isLastDay,
                     continuesChildRailAfterGroup = !isLastBranch,
                     onCollapseParent = onToggleExpanded,
                 )
@@ -2280,12 +2311,18 @@ private fun TimelineSourceDivider(
             val branchX = 9.dp.toPx()
             val nodeCenterX = 39.dp.toPx()
             if (showMainRail) {
+                val strokeWidth = 1.dp.toPx()
                 drawLine(
                     color = if (continuesChildRail) fadedTrunkRail else trunkRail,
                     start = Offset(branchX, 0f),
                     end = Offset(branchX, size.height),
-                    strokeWidth = 1.dp.toPx(),
-                    cap = StrokeCap.Butt,
+                    strokeWidth = strokeWidth,
+                    cap = if (continuesChildRail) StrokeCap.Round else StrokeCap.Butt,
+                    pathEffect = if (continuesChildRail) {
+                        mainTimelineContinuationStroke(strokeWidth).pathEffect
+                    } else {
+                        null
+                    },
                 )
             }
             if (continuesChildRail) {
@@ -2398,6 +2435,7 @@ private fun TaskBranchConnector(
         val nodeGap = 6.dp.toPx()
         val strokeWidth = 1.dp.toPx()
         val exitY = size.height
+        val continuationStroke = mainTimelineContinuationStroke(strokeWidth)
         if (isFirstBranch) {
             drawPath(
                 path = Path().apply {
@@ -2416,7 +2454,8 @@ private fun TaskBranchConnector(
                     start = Offset(branchX, nodeCenterY + strokeWidth / 2f),
                     end = Offset(branchX, exitY),
                     strokeWidth = strokeWidth,
-                    cap = StrokeCap.Butt,
+                    cap = StrokeCap.Round,
+                    pathEffect = continuationStroke.pathEffect,
                 )
             } else {
                 drawLine(
@@ -2424,7 +2463,8 @@ private fun TaskBranchConnector(
                     start = Offset(branchX, 0f),
                     end = Offset(branchX, exitY),
                     strokeWidth = strokeWidth,
-                    cap = StrokeCap.Butt,
+                    cap = StrokeCap.Round,
+                    pathEffect = continuationStroke.pathEffect,
                 )
             }
         }
@@ -2471,12 +2511,14 @@ private fun NestedTaskBranchConnector(
         val strokeWidth = 1.dp.toPx()
 
         if (continuesMainRail) {
+            val continuationStroke = mainTimelineContinuationStroke(strokeWidth)
             drawLine(
                 color = mainRailColor,
                 start = Offset(mainBranchX, 0f),
                 end = Offset(mainBranchX, size.height),
                 strokeWidth = strokeWidth,
-                cap = StrokeCap.Butt,
+                cap = StrokeCap.Round,
+                pathEffect = continuationStroke.pathEffect,
             )
         }
 
@@ -2510,12 +2552,15 @@ private fun TimelineDayGap(height: Dp = 28.dp) {
             .height(height),
     ) {
         val branchX = 9.dp.toPx()
+        val strokeWidth = 1.dp.toPx()
+        val continuationStroke = mainTimelineContinuationStroke(strokeWidth)
         drawLine(
             color = mutedColor,
             start = Offset(branchX, 0f),
             end = Offset(branchX, size.height),
-            strokeWidth = 1.dp.toPx(),
-            cap = StrokeCap.Butt,
+            strokeWidth = strokeWidth,
+            cap = StrokeCap.Round,
+            pathEffect = continuationStroke.pathEffect,
         )
     }
 }
@@ -2646,60 +2691,55 @@ private fun UnscheduledWorkCard(
                 .animateContentSize(),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Surface(
-                onClick = {
-                    val nextExpanded = !detailsExpanded
-                    detailsExpanded = nextExpanded
-                    if (!nextExpanded) expandedItemKey = null
-                },
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(12.dp),
-                color = Color.Transparent,
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable(role = Role.Button) {
+                        val nextExpanded = !detailsExpanded
+                        detailsExpanded = nextExpanded
+                        if (!nextExpanded) expandedItemKey = null
+                    },
+                verticalArrangement = Arrangement.spacedBy(6.dp),
             ) {
-                Column(
+                Row(
                     modifier = Modifier.fillMaxWidth(),
-                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Text(
-                            text = stringResource(R.string.unscheduled_tasks),
-                            style = MaterialTheme.typography.titleSmall,
-                            fontWeight = FontWeight.Bold,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier
-                                .weight(1f)
-                                .semantics { heading() },
-                        )
-                        Spacer(Modifier.width(12.dp))
-                        Text(
-                            text = meta,
-                            modifier = Modifier.widthIn(max = 148.dp),
-                            style = MaterialTheme.typography.labelMedium,
-                            fontWeight = FontWeight.Medium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.86f),
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                        Spacer(Modifier.width(8.dp))
-                        Icon(
-                            imageVector = if (detailsExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
-                            contentDescription = null,
-                            modifier = Modifier.size(18.dp),
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.72f),
-                        )
-                    }
                     Text(
-                        text = stringResource(R.string.unscheduled_explanation),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.82f),
-                        maxLines = 2,
+                        text = stringResource(R.string.unscheduled_tasks),
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier
+                            .weight(1f)
+                            .semantics { heading() },
+                    )
+                    Spacer(Modifier.width(12.dp))
+                    Text(
+                        text = meta,
+                        modifier = Modifier.widthIn(max = 148.dp),
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.Medium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.86f),
+                        maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
+                    Spacer(Modifier.width(8.dp))
+                    Icon(
+                        imageVector = if (detailsExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.72f),
+                    )
                 }
+                Text(
+                    text = stringResource(R.string.unscheduled_explanation),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.82f),
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
             }
 
             if (detailsExpanded) {
@@ -3154,8 +3194,8 @@ private fun MaterialSection(
     Card(
         modifier = modifier,
         shape = RoundedCornerShape(16.dp),
-        border = CardDefaults.outlinedCardBorder(),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        border = renCardBorderStroke(),
+        colors = CardDefaults.cardColors(containerColor = renCardContainerColor()),
     ) {
         Column(Modifier.animateContentSize()) {
             Surface(onClick = onToggleExpanded, color = Color.Transparent) {
@@ -3766,7 +3806,7 @@ private fun realismColor(status: PlanRealismStatus) = when (status) {
     PlanRealismStatus.OnTrack -> MaterialTheme.colorScheme.primary
     PlanRealismStatus.Tight -> MaterialTheme.colorScheme.tertiary
     PlanRealismStatus.Crammed -> MaterialTheme.colorScheme.tertiary
-    PlanRealismStatus.Overloaded -> MaterialTheme.colorScheme.tertiary
+    PlanRealismStatus.Overloaded -> MaterialTheme.colorScheme.error
 }
 
 @Composable
@@ -3782,7 +3822,7 @@ private fun realismContainer(status: PlanRealismStatus) = when (status) {
     PlanRealismStatus.OnTrack -> MaterialTheme.colorScheme.primaryContainer
     PlanRealismStatus.Tight -> MaterialTheme.colorScheme.tertiaryContainer
     PlanRealismStatus.Crammed -> MaterialTheme.colorScheme.tertiaryContainer
-    PlanRealismStatus.Overloaded -> MaterialTheme.colorScheme.tertiaryContainer
+    PlanRealismStatus.Overloaded -> MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.24f)
 }
 
 @Composable
@@ -3790,7 +3830,13 @@ private fun realismContent(status: PlanRealismStatus) = when (status) {
     PlanRealismStatus.OnTrack -> MaterialTheme.colorScheme.onPrimaryContainer
     PlanRealismStatus.Tight -> MaterialTheme.colorScheme.onTertiaryContainer
     PlanRealismStatus.Crammed -> MaterialTheme.colorScheme.onTertiaryContainer
-    PlanRealismStatus.Overloaded -> MaterialTheme.colorScheme.onTertiaryContainer
+    PlanRealismStatus.Overloaded -> MaterialTheme.colorScheme.onErrorContainer
+}
+
+@Composable
+private fun realismWarningBorder(status: PlanRealismStatus): BorderStroke? = when (status) {
+    PlanRealismStatus.Overloaded -> BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.38f))
+    else -> null
 }
 
 @Composable
@@ -3890,10 +3936,6 @@ private fun relativeDeadlineLabel(preferences: PlanSetupSubmission, today: Calen
     if (remainingMillis <= 0L) {
         return stringResource(R.string.deadline_past)
     }
-    if (remainingMillis < DeadlineHourLabelThreshold * MillisPerHour) {
-        val hours = (remainingMillis / MillisPerHour).toInt().coerceAtLeast(1)
-        return pluralStringResource(R.plurals.deadline_in_hours, hours, hours)
-    }
     val todayOnly = dayOnly(today)
     val deadlineOnly = dayOnly(deadline)
     val days = ((deadlineOnly.timeInMillis - todayOnly.timeInMillis) / MillisPerDay).toInt()
@@ -3911,5 +3953,3 @@ private fun suggestedLeafMinutes(tasks: List<GeneratedStudyBlock>): Int {
 }
 
 private const val MillisPerDay = 24 * 60 * 60 * 1000L
-private const val MillisPerHour = 60 * 60 * 1000L
-private const val DeadlineHourLabelThreshold = 73

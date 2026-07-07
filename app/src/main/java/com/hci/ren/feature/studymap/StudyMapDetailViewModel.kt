@@ -22,6 +22,7 @@ data class StudyMapDetailUiState(
     val hasLoaded: Boolean = false,
     val project: StudyProject? = null,
     val todaySession: TodaySessionState? = null,
+    val focusDayState: FocusDayState? = null,
     val todayWrapUpMessage: String? = null,
     val errorMessage: String? = null,
     val userMessage: String? = null,
@@ -68,6 +69,10 @@ class StudyMapDetailViewModel(application: Application) : AndroidViewModel(appli
         _uiState.value = _uiState.value.copy(todayWrapUpMessage = null)
     }
 
+    fun updateFocusDayState(state: FocusDayState) {
+        _uiState.value = _uiState.value.copy(focusDayState = state)
+    }
+
     fun applyDeadline(date: String) {
         val millis = date.toStudyCalendar()?.timeInMillis ?: return
         mutate("Deadline updated.") { project ->
@@ -109,6 +114,53 @@ class StudyMapDetailViewModel(application: Application) : AndroidViewModel(appli
         _uiState.value = current.copy(
             todaySession = updatedSession.takeUnless { it.isEmpty },
         )
+    }
+
+    fun recordFocusSession(date: String, record: FocusSessionRecord) {
+        if (date.toStudyCalendar() == null || !record.hasTrackedTime) return
+        val current = _uiState.value
+        val project = current.project ?: return
+        val before = project
+        val session = current.todaySession
+            ?.takeIf { it.date == date }
+            ?: TodaySessionState(date = date)
+        val data = buildStudyMapData(
+            plan = project.plan,
+            preferences = project.preferences,
+            dailyMinutesOverride = project.dailyMinutesOverride,
+            dailyAvailableMinutesByDate = project.dailyAvailableMinutesByDate,
+            taskStateById = project.taskStateById,
+        )
+        val currentAvailableMinutes = session.availableMinutes
+            ?: todayBaseAvailableMinutes(project, data, date)
+        val updatedSession = session
+            .appendFocusSession(record)
+            .copy(
+                availableMinutes = (currentAvailableMinutes - record.consumedMinutes)
+                    .coerceIn(0, MaxTodaySessionMinutes),
+            )
+        val updatedProject = project
+            .appendFocusSession(date, record)
+            .copy(updatedAtMillis = System.currentTimeMillis())
+        _uiState.value = current.copy(
+            project = updatedProject,
+            todaySession = updatedSession.takeUnless { it.isEmpty },
+        )
+        viewModelScope.launch {
+            writeMutex.withLock {
+                try {
+                    repository.upsert(updatedProject)
+                } catch (error: CancellationException) {
+                    throw error
+                } catch (_: Exception) {
+                    publish(
+                        project = before,
+                        message = getApplication<Application>().getString(R.string.study_map_save_error),
+                        todaySession = updatedSession.takeUnless { it.isEmpty },
+                    )
+                }
+            }
+        }
     }
 
     fun wrapUpToday(date: String) {
@@ -166,14 +218,18 @@ class StudyMapDetailViewModel(application: Application) : AndroidViewModel(appli
     }
 
     fun reduceScope(strategy: ScopeReduction, selectedTopicIds: Set<String>) = mutate("Study map updated.") { project ->
-        val excludedIds = when (strategy) {
-            ScopeReduction.ChooseTopics -> project.plan.blocks
-                .filter { task -> selectedTopicIds.isNotEmpty() && task.topicIds.none(selectedTopicIds::contains) }
-                .mapTo(mutableSetOf()) { it.id }
-        }
+        if (selectedTopicIds.isEmpty()) return@mutate project
         val state = project.taskStateById.toMutableMap()
-        excludedIds.forEach { taskId ->
-            state[taskId] = StudyTaskState(status = StudyTaskStatus.ExcludedByUser)
+        when (strategy) {
+            ScopeReduction.ChooseTopics -> project.plan.blocks.forEach { task ->
+                if (task.topicIds.any(selectedTopicIds::contains)) {
+                    if (state[task.id]?.status == StudyTaskStatus.ExcludedByUser) {
+                        state.remove(task.id)
+                    }
+                } else {
+                    state[task.id] = StudyTaskState(status = StudyTaskStatus.ExcludedByUser)
+                }
+            }
         }
         project.copy(taskStateById = state)
     }
@@ -227,6 +283,7 @@ class StudyMapDetailViewModel(application: Application) : AndroidViewModel(appli
             hasLoaded = true,
             project = project,
             todaySession = todaySession,
+            focusDayState = _uiState.value.focusDayState,
             todayWrapUpMessage = todayWrapUpMessage,
             userMessage = message,
         )
@@ -254,4 +311,15 @@ private fun StudyProject.withTaskState(taskId: String, state: StudyTaskState): S
         updated[taskId] = state
     }
     return copy(taskStateById = updated)
+}
+
+private fun StudyProject.appendFocusSession(
+    date: String,
+    record: FocusSessionRecord,
+): StudyProject {
+    if (date.toStudyCalendar() == null || record.taskId.isBlank() || !record.hasTrackedTime) return this
+    val current = focusSessionHistoryByDate[date].orEmpty()
+    return copy(
+        focusSessionHistoryByDate = focusSessionHistoryByDate + (date to (current + record)),
+    )
 }

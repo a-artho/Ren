@@ -32,7 +32,10 @@ import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.seconds
 
 class PlanGenerationViewModel(application: Application) : AndroidViewModel(application) {
-    private val repository = PlanApiRepository(application.contentResolver)
+    private val repository = PlanApiRepository(
+        application.contentResolver,
+        application.getString(R.string.backend_base_url).removeSuffix("/"),
+    )
     private val studyProjectRepository = StudyProjectRepository.create(application)
     private val preferences = application.getSharedPreferences(PREFERENCES, 0)
     private val _uiState = MutableStateFlow(PlanGenerationUiState())
