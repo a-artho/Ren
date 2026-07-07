@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -24,6 +25,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.filled.Timer
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -48,11 +50,14 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.hci.ren.feature.progress.BestRhythmBucket
+import com.hci.ren.feature.progress.BestRhythmSummary
 import com.hci.ren.feature.progress.StudyConsistencyDay
 import com.hci.ren.feature.progress.StudyConsistencySummary
 import com.hci.ren.R
 import com.hci.ren.feature.progress.WeeklyFocusDay
 import com.hci.ren.feature.progress.WeeklyFocusSummary
+import com.hci.ren.feature.progress.buildBestRhythmSummary
 import com.hci.ren.feature.progress.buildStudyConsistencySummary
 import com.hci.ren.feature.progress.buildWeeklyFocusSummary
 import com.hci.ren.feature.studymap.StudyProject
@@ -68,6 +73,9 @@ fun ProgressScreen(
     }
     val consistencySummary = remember(project, today) {
         if (today == null) buildStudyConsistencySummary(project) else buildStudyConsistencySummary(project, today)
+    }
+    val bestRhythmSummary = remember(project) {
+        buildBestRhythmSummary(project)
     }
 
     LazyColumn(
@@ -96,6 +104,9 @@ fun ProgressScreen(
         item(key = "study-consistency") {
             StudyConsistencyCard(summary = consistencySummary)
         }
+        item(key = "best-rhythm") {
+            BestRhythmCard(summary = bestRhythmSummary)
+        }
     }
 }
 
@@ -104,23 +115,9 @@ private fun WeeklyFocusCard(
     summary: WeeklyFocusSummary,
     modifier: Modifier = Modifier,
 ) {
-    Surface(
-        modifier = modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(24.dp),
-        color = MaterialTheme.colorScheme.surfaceContainerLowest,
-        tonalElevation = 0.dp,
-        border = androidx.compose.foundation.BorderStroke(
-            1.dp,
-            MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.84f),
-        ),
-    ) {
-        Column(
-            modifier = Modifier.padding(22.dp),
-            verticalArrangement = Arrangement.spacedBy(20.dp),
-        ) {
-            WeeklyFocusHeader(summary = summary)
-            WeeklyFocusChart(summary = summary)
-        }
+    ProgressCard(modifier = modifier) {
+        WeeklyFocusHeader(summary = summary)
+        WeeklyFocusChart(summary = summary)
     }
 }
 
@@ -336,15 +333,12 @@ private fun WeeklyBars(
             val labelSlot = ChartValueLabelSlot
             val barAreaHeight = maxHeight - labelSlot
             val goalRatio = if (maxMinutes == 0) 0f else goalMinutes.toFloat() / maxMinutes.toFloat()
-            val goalOffset = labelSlot + barAreaHeight * (1f - goalRatio.coerceIn(0f, 1f))
             val axisColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.78f)
-            val goalColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.62f)
+            val goalColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.54f)
             val dash = with(density) { PathEffect.dashPathEffect(floatArrayOf(8.dp.toPx(), 8.dp.toPx())) }
 
             Canvas(modifier = Modifier.matchParentSize()) {
                 val labelSlotPx = labelSlot.toPx()
-                val chartHeight = size.height - labelSlotPx
-                val goalY = labelSlotPx + chartHeight * (1f - goalRatio.coerceIn(0f, 1f))
                 drawLine(
                     color = axisColor,
                     start = Offset(0f, labelSlotPx),
@@ -357,25 +351,7 @@ private fun WeeklyBars(
                     end = Offset(size.width, size.height),
                     strokeWidth = 1.dp.toPx(),
                 )
-                drawLine(
-                    color = goalColor,
-                    start = Offset(0f, goalY),
-                    end = Offset(size.width, goalY),
-                    strokeWidth = 1.dp.toPx(),
-                    pathEffect = dash,
-                )
             }
-            Text(
-                text = stringResource(R.string.progress_goal_line, focusDurationLabel(goalMinutes)),
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .graphicsLayer {
-                        translationY = with(density) { (goalOffset - 18.dp).toPx() }
-                    },
-                maxLines = 1,
-            )
             Row(
                 modifier = Modifier
                     .matchParentSize()
@@ -391,6 +367,18 @@ private fun WeeklyBars(
                         modifier = Modifier.weight(1f),
                     )
                 }
+            }
+            Canvas(modifier = Modifier.matchParentSize()) {
+                val labelSlotPx = labelSlot.toPx()
+                val chartHeight = size.height - labelSlotPx
+                val goalY = labelSlotPx + chartHeight * (1f - goalRatio.coerceIn(0f, 1f))
+                drawLine(
+                    color = goalColor,
+                    start = Offset(0f, goalY),
+                    end = Offset(size.width, goalY),
+                    strokeWidth = 1.dp.toPx(),
+                    pathEffect = dash,
+                )
             }
         }
         Row(
@@ -471,11 +459,335 @@ private fun StudyConsistencyCard(
         summary.activeDays,
         summary.weekCount,
     )
+    ProgressCard(
+        modifier = modifier,
+        testTag = "study-consistency-card",
+        contentDescription = chartDescription,
+    ) {
+        StudyConsistencyHeader()
+        BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+            if (maxWidth >= 520.dp) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(22.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    StudyConsistencyStats(
+                        summary = summary,
+                        mostConsistentLabel = mostConsistentLabel,
+                        modifier = Modifier.width(164.dp),
+                    )
+                    StudyConsistencyHeatmap(
+                        summary = summary,
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+            } else {
+                Column(verticalArrangement = Arrangement.spacedBy(18.dp)) {
+                    StudyConsistencyStats(
+                        summary = summary,
+                        mostConsistentLabel = mostConsistentLabel,
+                    )
+                    StudyConsistencyHeatmap(summary = summary)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun BestRhythmCard(
+    summary: BestRhythmSummary,
+    modifier: Modifier = Modifier,
+) {
+    val bestBucket = summary.bestBucket
+    val chartDescription = if (bestBucket == null) {
+        stringResource(R.string.progress_best_rhythm_empty)
+    } else {
+        stringResource(
+            R.string.progress_best_rhythm_chart_description,
+            focusDurationLabel(bestBucket.plannedFocusMinutes),
+            bestBucket.cleanRatePercent,
+        )
+    }
+    ProgressCard(
+        modifier = modifier,
+        testTag = "best-rhythm-card",
+        contentDescription = chartDescription,
+    ) {
+        BestRhythmHeader(bestBucket = bestBucket)
+        if (summary.hasData) {
+            BestRhythmChart(summary = summary)
+        } else {
+            Text(
+                text = stringResource(R.string.progress_best_rhythm_empty),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
+@Composable
+private fun BestRhythmHeader(bestBucket: BestRhythmBucket?) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            modifier = Modifier
+                .size(36.dp)
+                .clip(RoundedCornerShape(12.dp))
+                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.11f)),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                imageVector = Icons.Default.Timer,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(23.dp),
+            )
+        }
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = stringResource(R.string.progress_best_rhythm_title),
+                style = MaterialTheme.typography.titleLarge,
+                color = MaterialTheme.colorScheme.onSurface,
+                fontWeight = FontWeight.SemiBold,
+            )
+            Text(
+                text = stringResource(R.string.progress_best_rhythm_subtitle),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        if (bestBucket != null) {
+            BestRhythmBadge(bestBucket = bestBucket)
+        }
+    }
+}
+
+@Composable
+private fun BestRhythmBadge(bestBucket: BestRhythmBucket) {
+    Column(
+        modifier = Modifier
+            .border(
+                width = 1.dp,
+                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.44f),
+                shape = RoundedCornerShape(16.dp),
+            )
+            .padding(horizontal = 12.dp, vertical = 8.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = focusDurationLabel(bestBucket.plannedFocusMinutes),
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.primary,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+            )
+            Icon(
+                imageVector = Icons.Default.Star,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.tertiary,
+                modifier = Modifier.size(14.dp),
+            )
+        }
+        Text(
+            text = stringResource(R.string.progress_best_rhythm_your_best),
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+        )
+    }
+}
+
+@Composable
+private fun BestRhythmChart(summary: BestRhythmSummary) {
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(168.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            RhythmAxisLabels()
+            RhythmBars(
+                buckets = summary.buckets,
+                bestBucket = summary.bestBucket,
+                modifier = Modifier.weight(1f),
+            )
+        }
+        Text(
+            text = stringResource(R.string.progress_best_rhythm_based_on),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.fillMaxWidth(),
+        )
+    }
+}
+
+@Composable
+private fun RhythmAxisLabels() {
+    val axisValues = listOf(100, 75, 50, 25, 0)
+    BoxWithConstraints(
+        modifier = Modifier
+            .width(48.dp)
+            .fillMaxHeight(),
+    ) {
+        val chartHeight = maxHeight - RhythmPercentLabelSlot - RhythmDurationLabelSlot
+        axisValues.forEach { percent ->
+            Text(
+                text = stringResource(R.string.progress_percent, percent),
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.82f),
+                textAlign = TextAlign.End,
+                maxLines = 1,
+                overflow = TextOverflow.Clip,
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .graphicsLayer {
+                        val y = RhythmPercentLabelSlot + chartHeight * (1f - percent.toFloat() / 100f)
+                        translationY = (y - AxisLabelHalfHeight)
+                            .coerceIn(0.dp, RhythmPercentLabelSlot + chartHeight - AxisLabelHeight)
+                            .toPx()
+                    },
+            )
+        }
+    }
+}
+
+@Composable
+private fun RhythmBars(
+    buckets: List<BestRhythmBucket>,
+    bestBucket: BestRhythmBucket?,
+    modifier: Modifier = Modifier,
+) {
+    BoxWithConstraints(modifier = modifier.fillMaxHeight()) {
+        val chartHeight = maxHeight - RhythmPercentLabelSlot - RhythmDurationLabelSlot
+        val axisColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.78f)
+        Canvas(modifier = Modifier.matchParentSize()) {
+            val chartHeightPx = chartHeight.toPx()
+            val chartTopPx = RhythmPercentLabelSlot.toPx()
+            val chartBottomPx = chartTopPx + chartHeightPx
+            drawLine(
+                color = axisColor,
+                start = Offset(0f, chartTopPx),
+                end = Offset(0f, chartBottomPx),
+                strokeWidth = 1.dp.toPx(),
+            )
+            drawLine(
+                color = axisColor,
+                start = Offset(0f, chartBottomPx),
+                end = Offset(size.width, chartBottomPx),
+                strokeWidth = 1.dp.toPx(),
+            )
+        }
+        Row(
+            modifier = Modifier
+                .matchParentSize()
+                .padding(start = 10.dp, end = 10.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.Bottom,
+        ) {
+            buckets.forEach { bucket ->
+                RhythmBucketMarker(
+                    bucket = bucket,
+                    isBest = bucket == bestBucket,
+                    maxMarkerHeight = chartHeight,
+                    modifier = Modifier.weight(1f),
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun RhythmBucketMarker(
+    bucket: BestRhythmBucket,
+    isBest: Boolean,
+    maxMarkerHeight: androidx.compose.ui.unit.Dp,
+    modifier: Modifier = Modifier,
+) {
+    val markerHeight = maxMarkerHeight * bucket.cleanRate.coerceIn(0f, 1f)
+    val activeColor = if (isBest) {
+        MaterialTheme.colorScheme.primary
+    } else {
+        MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.58f)
+    }
+    Column(
+        modifier = modifier.fillMaxHeight(),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(RhythmPercentLabelSlot),
+            contentAlignment = Alignment.BottomCenter,
+        ) {
+            Text(
+                text = stringResource(R.string.progress_percent, bucket.cleanRatePercent),
+                style = MaterialTheme.typography.labelLarge,
+                color = activeColor,
+                fontWeight = if (isBest) FontWeight.SemiBold else FontWeight.Normal,
+                maxLines = 1,
+            )
+        }
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(maxMarkerHeight),
+        ) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .width(12.dp)
+                    .height(markerHeight.coerceAtLeast(8.dp))
+                    .clip(RoundedCornerShape(999.dp))
+                    .background(activeColor.copy(alpha = if (isBest) 0.74f else 0.34f)),
+            )
+        }
+        Text(
+            text = focusDurationLabel(bucket.plannedFocusMinutes),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.Center,
+            maxLines = 1,
+            modifier = Modifier.height(RhythmDurationLabelSlot),
+        )
+    }
+}
+
+@Composable
+private fun ProgressCard(
+    modifier: Modifier = Modifier,
+    testTag: String? = null,
+    contentDescription: String? = null,
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    val taggedModifier = if (testTag == null) {
+        modifier
+    } else {
+        modifier.testTag(testTag)
+    }
+    val semanticModifier = if (contentDescription == null) {
+        taggedModifier
+    } else {
+        taggedModifier.semantics { this.contentDescription = contentDescription }
+    }
     Surface(
-        modifier = modifier
-            .fillMaxWidth()
-            .testTag("study-consistency-card")
-            .semantics { contentDescription = chartDescription },
+        modifier = semanticModifier.fillMaxWidth(),
         shape = RoundedCornerShape(24.dp),
         color = MaterialTheme.colorScheme.surfaceContainerLowest,
         tonalElevation = 0.dp,
@@ -487,36 +799,8 @@ private fun StudyConsistencyCard(
         Column(
             modifier = Modifier.padding(22.dp),
             verticalArrangement = Arrangement.spacedBy(20.dp),
-        ) {
-            StudyConsistencyHeader()
-            BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
-                if (maxWidth >= 520.dp) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(22.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        StudyConsistencyStats(
-                            summary = summary,
-                            mostConsistentLabel = mostConsistentLabel,
-                            modifier = Modifier.width(164.dp),
-                        )
-                        StudyConsistencyHeatmap(
-                            summary = summary,
-                            modifier = Modifier.weight(1f),
-                        )
-                    }
-                } else {
-                    Column(verticalArrangement = Arrangement.spacedBy(18.dp)) {
-                        StudyConsistencyStats(
-                            summary = summary,
-                            mostConsistentLabel = mostConsistentLabel,
-                        )
-                        StudyConsistencyHeatmap(summary = summary)
-                    }
-                }
-            }
-        }
+            content = content,
+        )
     }
 }
 
@@ -726,6 +1010,8 @@ private fun focusDurationLabel(minutes: Int): String {
 
 private val ChartValueLabelSlot = 28.dp
 private val ChartWeekdayLabelSlot = 28.dp
+private val RhythmDurationLabelSlot = 28.dp
+private val RhythmPercentLabelSlot = 26.dp
 private val AxisLabelHeight = 16.dp
 private val AxisLabelHalfHeight = 8.dp
 private const val ChartAxisMinuteStep = 120

@@ -1,6 +1,7 @@
 package com.hci.ren.feature.progress
 
 import com.hci.ren.feature.studymap.FocusSessionRecord
+import com.hci.ren.feature.studymap.FocusSessionOutcome
 import com.hci.ren.feature.studymap.StudyProject
 import com.hci.ren.feature.studymap.currentStudyCalendar
 import com.hci.ren.feature.studymap.toStudyCalendar
@@ -51,6 +52,24 @@ data class StudyConsistencySummary(
 ) {
     val activeDays: Int get() = weeks.sumOf { it.activeDays }
     val weekCount: Int get() = weeks.size
+}
+
+data class BestRhythmBucket(
+    val plannedFocusMinutes: Int,
+    val attemptedRounds: Int,
+    val cleanRounds: Int,
+) {
+    val cleanRate: Float
+        get() = if (attemptedRounds == 0) 0f else cleanRounds.toFloat() / attemptedRounds.toFloat()
+    val cleanRatePercent: Int get() = (cleanRate * 100f).roundToNearestInt()
+    val hasRounds: Boolean get() = attemptedRounds > 0
+}
+
+data class BestRhythmSummary(
+    val buckets: List<BestRhythmBucket>,
+    val bestBucket: BestRhythmBucket?,
+) {
+    val hasData: Boolean get() = buckets.any { it.hasRounds }
 }
 
 fun buildWeeklyFocusSummary(
@@ -112,6 +131,29 @@ fun buildStudyConsistencySummary(
     )
 }
 
+fun buildBestRhythmSummary(project: StudyProject): BestRhythmSummary {
+    val buckets = project.focusSessionHistoryByDate.values
+        .flatten()
+        .filter { it.focusSeconds > 0 && it.plannedFocusSeconds > 0 }
+        .groupBy { it.plannedFocusSeconds.toCeilMinutes() }
+        .map { (plannedFocusMinutes, records) ->
+            BestRhythmBucket(
+                plannedFocusMinutes = plannedFocusMinutes,
+                attemptedRounds = records.size,
+                cleanRounds = records.count { it.isCleanCompletedRound },
+            )
+        }
+        .sortedBy { it.plannedFocusMinutes }
+    return BestRhythmSummary(
+        buckets = buckets,
+        bestBucket = buckets.maxWithOrNull(
+            compareBy<BestRhythmBucket> { it.cleanRate }
+                .thenBy { it.cleanRounds }
+                .thenByDescending { it.plannedFocusMinutes },
+        ),
+    )
+}
+
 private fun Calendar.startOfStudyWeek(): Calendar = copyDay().apply {
     val daysSinceMonday = (get(Calendar.DAY_OF_WEEK) + DaysPerWeek - Calendar.MONDAY) % DaysPerWeek
     add(Calendar.DAY_OF_MONTH, -daysSinceMonday)
@@ -121,6 +163,9 @@ private fun Calendar.copyDay(): Calendar = clone() as Calendar
 
 private fun List<FocusSessionRecord>.focusMinutes(): Int =
     sumOf { it.focusSeconds }.toCeilMinutes()
+
+private val FocusSessionRecord.isCleanCompletedRound: Boolean
+    get() = outcome == FocusSessionOutcome.FocusRoundEnded && interruptionCount == 0
 
 private fun focusCompletionRatio(focusMinutes: Int, goalMinutes: Int): Float {
     if (focusMinutes <= 0) return 0f
@@ -143,6 +188,8 @@ private fun currentFocusStreakDays(
 
 private fun Int.toCeilMinutes(): Int =
     if (this <= 0) 0 else (this + SecondsPerMinute - 1) / SecondsPerMinute
+
+private fun Float.roundToNearestInt(): Int = (this + 0.5f).toInt()
 
 private fun roundChartMaximum(minutes: Int): Int {
     val normalized = minutes.coerceAtLeast(ChartMinuteStep)

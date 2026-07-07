@@ -75,6 +75,7 @@
     <string name="progress_minutes">%1$dm</string>
     <string name="progress_hours">%1$dh</string>
     <string name="progress_hours_minutes">%1$dh %2$dm</string>
+    <string name="progress_percent">%1$d%%</string>
     <string name="progress_goal_line">%1$s goal</string>
     <string name="progress_weekly_empty">Start a focus round from Today to fill this chart.</string>
     <string name="progress_weekly_chart_description">%1$s focused this week across %2$s. Daily goal is %3$s.</string>
@@ -89,6 +90,12 @@
     <string name="progress_consistency_last_week_sentence">last week</string>
     <string name="progress_consistency_weeks_ago">%1$d weeks ago</string>
     <string name="progress_consistency_chart_description">%1$d day streak. Most consistent %2$s. %3$d study days across the last %4$d weeks.</string>
+    <string name="progress_best_rhythm_title">Best rhythm</string>
+    <string name="progress_best_rhythm_subtitle">Clean round success rate</string>
+    <string name="progress_best_rhythm_your_best">your best</string>
+    <string name="progress_best_rhythm_based_on">Based on clean rounds completed</string>
+    <string name="progress_best_rhythm_empty">Complete focus rounds from Today to find your best rhythm.</string>
+    <string name="progress_best_rhythm_chart_description">%1$s is your best rhythm at %2$d%% clean success.</string>
     <plurals name="progress_study_day_count">
         <item quantity="one">%1$d study day</item>
         <item quantity="other">%1$d study days</item>

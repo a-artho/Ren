@@ -135,15 +135,83 @@ class ProgressModelsTest {
         assertEquals(null, summary.mostConsistentWeeksAgo)
     }
 
-    private fun focusRecord(focusSeconds: Int) = FocusSessionRecord(
+    @Test fun bestRhythmSummaryGroupsFocusHistoryByPlannedRoundLength() {
+        val summary = buildBestRhythmSummary(
+            project(
+                dailyMinutes = 120,
+                focusHistory = mapOf(
+                    "2026-07-07" to listOf(
+                        focusRecord(plannedFocusMinutes = 10, focusSeconds = 600),
+                        focusRecord(
+                            plannedFocusMinutes = 10,
+                            focusSeconds = 420,
+                            outcome = FocusSessionOutcome.FocusStopped,
+                        ),
+                    ),
+                    "2026-07-08" to listOf(
+                        focusRecord(plannedFocusMinutes = 15, focusSeconds = 900),
+                        focusRecord(plannedFocusMinutes = 15, focusSeconds = 960, flowOvertimeSeconds = 60),
+                        focusRecord(plannedFocusMinutes = 15, focusSeconds = 900, interruptionCount = 1),
+                    ),
+                    "2026-07-09" to listOf(
+                        focusRecord(
+                            plannedFocusMinutes = 20,
+                            focusSeconds = 0,
+                            outcome = FocusSessionOutcome.BreakEnded,
+                        ),
+                    ),
+                ),
+            ),
+        )
+
+        assertEquals(listOf(10, 15), summary.buckets.map { it.plannedFocusMinutes })
+        assertEquals(2, summary.buckets[0].attemptedRounds)
+        assertEquals(1, summary.buckets[0].cleanRounds)
+        assertEquals(50, summary.buckets[0].cleanRatePercent)
+        assertEquals(3, summary.buckets[1].attemptedRounds)
+        assertEquals(2, summary.buckets[1].cleanRounds)
+        assertEquals(67, summary.buckets[1].cleanRatePercent)
+        assertEquals(15, summary.bestBucket?.plannedFocusMinutes)
+    }
+
+    @Test fun bestRhythmSummaryHasNoBestBucketWithoutFocusAttempts() {
+        val summary = buildBestRhythmSummary(
+            project(
+                dailyMinutes = 120,
+                focusHistory = mapOf(
+                    "2026-07-09" to listOf(
+                        focusRecord(
+                            plannedFocusMinutes = 0,
+                            focusSeconds = 0,
+                            outcome = FocusSessionOutcome.BreakEnded,
+                        ),
+                    ),
+                ),
+            ),
+        )
+
+        assertEquals(emptyList<BestRhythmBucket>(), summary.buckets)
+        assertEquals(null, summary.bestBucket)
+        assertEquals(false, summary.hasData)
+    }
+
+    private fun focusRecord(
+        focusSeconds: Int,
+        plannedFocusMinutes: Int = 60,
+        flowOvertimeSeconds: Int = 0,
+        interruptionCount: Int = 0,
+        outcome: FocusSessionOutcome = FocusSessionOutcome.FocusRoundEnded,
+    ) = FocusSessionRecord(
         taskId = "task",
-        plannedFocusMinutes = 60,
+        plannedFocusMinutes = plannedFocusMinutes,
+        plannedFocusSeconds = plannedFocusMinutes * 60,
         plannedBreakMinutes = 10,
         focusSeconds = focusSeconds,
+        flowOvertimeSeconds = flowOvertimeSeconds,
         breakSeconds = 0,
         awaySeconds = 0,
-        interruptionCount = 0,
-        outcome = FocusSessionOutcome.FocusRoundEnded,
+        interruptionCount = interruptionCount,
+        outcome = outcome,
         endedAtMillis = 1L,
     )
 
