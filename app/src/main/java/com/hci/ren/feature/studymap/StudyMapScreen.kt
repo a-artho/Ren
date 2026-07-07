@@ -112,6 +112,7 @@ import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.layout.onGloballyPositioned
@@ -179,6 +180,14 @@ private val PlanEditMenuHeaderHeight = 76.dp
 private val PlanEditActionRowHeight = 68.dp
 private val PlanEditActionTextStartPadding = 56.dp
 private val PlanEditSheetSurface = RenContextMenuSurface
+
+// Compose Material3 does not expose a ColorScheme.warning role.
+private val PlanWarningLight = Color(0xFF7A5900)
+private val PlanWarningContainerLight = Color(0xFFFFDEA1)
+private val PlanWarningOnContainerLight = Color(0xFF251A00)
+private val PlanWarningDark = Color(0xFFFFB95C)
+private val PlanWarningContainerDark = Color(0xFF5D4200)
+private val PlanWarningOnContainerDark = Color(0xFFFFDEA1)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -3810,40 +3819,59 @@ private fun realismWarningMessage(realism: PlanRealism) = when (realism.status) 
 @Composable
 private fun realismColor(status: PlanRealismStatus) = when (status) {
     PlanRealismStatus.OnTrack -> MaterialTheme.colorScheme.primary
-    PlanRealismStatus.Tight -> MaterialTheme.colorScheme.tertiary
-    PlanRealismStatus.Crammed -> MaterialTheme.colorScheme.tertiary
+    PlanRealismStatus.Tight -> planWarningColor()
+    PlanRealismStatus.Crammed -> planWarningColor()
     PlanRealismStatus.Overloaded -> MaterialTheme.colorScheme.error
 }
 
 @Composable
 private fun realismPillColor(status: PlanRealismStatus) = when (status) {
     PlanRealismStatus.OnTrack -> MaterialTheme.colorScheme.primary
-    PlanRealismStatus.Tight -> MaterialTheme.colorScheme.tertiary
-    PlanRealismStatus.Crammed -> MaterialTheme.colorScheme.tertiary
+    PlanRealismStatus.Tight -> planWarningColor()
+    PlanRealismStatus.Crammed -> planWarningColor()
     PlanRealismStatus.Overloaded -> MaterialTheme.colorScheme.error
 }
 
 @Composable
 private fun realismContainer(status: PlanRealismStatus) = when (status) {
     PlanRealismStatus.OnTrack -> MaterialTheme.colorScheme.primaryContainer
-    PlanRealismStatus.Tight -> MaterialTheme.colorScheme.tertiaryContainer
-    PlanRealismStatus.Crammed -> MaterialTheme.colorScheme.tertiaryContainer
+    PlanRealismStatus.Tight -> planWarningContainerColor().copy(alpha = 0.24f)
+    PlanRealismStatus.Crammed -> planWarningContainerColor().copy(alpha = 0.24f)
     PlanRealismStatus.Overloaded -> MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.24f)
 }
 
 @Composable
 private fun realismContent(status: PlanRealismStatus) = when (status) {
     PlanRealismStatus.OnTrack -> MaterialTheme.colorScheme.onPrimaryContainer
-    PlanRealismStatus.Tight -> MaterialTheme.colorScheme.onTertiaryContainer
-    PlanRealismStatus.Crammed -> MaterialTheme.colorScheme.onTertiaryContainer
+    PlanRealismStatus.Tight -> planWarningOnContainerColor()
+    PlanRealismStatus.Crammed -> planWarningOnContainerColor()
     PlanRealismStatus.Overloaded -> MaterialTheme.colorScheme.onErrorContainer
 }
 
 @Composable
 private fun realismWarningBorder(status: PlanRealismStatus): BorderStroke? = when (status) {
+    PlanRealismStatus.Tight,
+    PlanRealismStatus.Crammed,
+        -> BorderStroke(1.dp, planWarningColor().copy(alpha = 0.38f))
     PlanRealismStatus.Overloaded -> BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.38f))
     else -> null
 }
+
+@Composable
+private fun planWarningColor(): Color =
+    if (isDarkColorScheme()) PlanWarningDark else PlanWarningLight
+
+@Composable
+private fun planWarningContainerColor(): Color =
+    if (isDarkColorScheme()) PlanWarningContainerDark else PlanWarningContainerLight
+
+@Composable
+private fun planWarningOnContainerColor(): Color =
+    if (isDarkColorScheme()) PlanWarningOnContainerDark else PlanWarningOnContainerLight
+
+@Composable
+private fun isDarkColorScheme(): Boolean =
+    MaterialTheme.colorScheme.surface.luminance() < 0.5f
 
 @Composable
 private fun statusLabel(status: StudyTaskStatus) = when (status) {
