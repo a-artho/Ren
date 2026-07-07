@@ -1115,12 +1115,12 @@ private fun TodayWrapUpAction(
     onWrapUpClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val pullContainer = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.16f)
-    val pullContent = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.78f)
-    val pullBorder = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.34f)
-    val wrapContainer = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.30f)
-    val wrapContent = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.88f)
-    val wrapBorder = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.50f)
+    val pullContainer = MaterialTheme.colorScheme.primary.copy(alpha = 0.10f)
+    val pullContent = MaterialTheme.colorScheme.primary
+    val pullBorder = MaterialTheme.colorScheme.primary.copy(alpha = 0.18f)
+    val wrapContainer = Color(0xFFC78200)
+    val wrapContent = Color.Black.copy(alpha = 0.88f)
+    val wrapBorder = Color(0xFFFFA800).copy(alpha = 0.24f)
     val disabledContainer = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.14f)
     val disabledContent = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.42f)
 
