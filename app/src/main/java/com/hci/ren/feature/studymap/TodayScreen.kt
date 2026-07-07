@@ -354,11 +354,10 @@ fun TodayScreen(
                             placementSpec = todayMotionSpec(reducedMotion),
                             fadeOutSpec = todayMotionSpec(reducedMotion),
                         )
-                        .padding(top = 8.dp, bottom = 0.dp),
+                        .padding(top = 2.dp, bottom = 0.dp),
                     verticalArrangement = Arrangement.spacedBy(0.dp),
                 ) {
                     TodayDoNowSectionLabel()
-                    TodayDoNowConnector(modifier = Modifier.padding(top = 2.dp))
                 }
             }
             item(key = "today-do-now") {
@@ -2262,49 +2261,6 @@ private fun TodayDoNowSectionLabel(
         icon = Icons.Default.Eco,
         modifier = modifier,
     )
-}
-
-@Composable
-private fun TodayDoNowConnector(
-    modifier: Modifier = Modifier,
-) {
-    val connectorColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.26f)
-    Canvas(
-        modifier = modifier
-            .fillMaxWidth()
-            .height(34.dp),
-    ) {
-        val centerX = size.width / 2f
-        val topY = 1.dp.toPx()
-        val bottomY = size.height - 1.dp.toPx()
-        val bend = 10.dp.toPx()
-        val stroke = Stroke(width = 1.4.dp.toPx(), cap = StrokeCap.Round)
-        val path = Path().apply {
-            moveTo(centerX, topY)
-            cubicTo(
-                centerX,
-                size.height * 0.28f,
-                centerX - bend,
-                size.height * 0.36f,
-                centerX - bend,
-                size.height * 0.56f,
-            )
-            cubicTo(
-                centerX - bend,
-                size.height * 0.78f,
-                centerX,
-                size.height * 0.72f,
-                centerX,
-                bottomY,
-            )
-        }
-        drawPath(path = path, color = connectorColor, style = stroke)
-        drawCircle(
-            color = connectorColor.copy(alpha = 0.72f),
-            radius = 2.dp.toPx(),
-            center = androidx.compose.ui.geometry.Offset(centerX, bottomY),
-        )
-    }
 }
 
 @Composable
