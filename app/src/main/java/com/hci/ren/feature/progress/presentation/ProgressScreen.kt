@@ -633,29 +633,24 @@ private fun BestRhythmBadge(bestBucket: BestRhythmBucket) {
 
 @Composable
 private fun BestRhythmChart(summary: BestRhythmSummary) {
-    val chartAxis = summary.percentAxis
+    val buckets = remember(summary.buckets) {
+        summary.buckets.sortedWith(
+            compareByDescending<BestRhythmBucket> { it.cleanRate }
+                .thenByDescending { it.cleanRounds }
+                .thenByDescending { it.plannedFocusMinutes },
+        )
+    }
     Column(
         modifier = Modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(168.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            ChartAxisLabels(
-                axis = chartAxis,
-                topInset = RhythmPercentLabelSlot,
-                bottomInset = RhythmDurationLabelSlot,
-                label = { percent -> stringResource(R.string.progress_percent, percent) },
-            )
-            RhythmBars(
-                buckets = summary.buckets,
-                bestBucket = summary.bestBucket,
-                axis = chartAxis,
-                modifier = Modifier.weight(1f),
-            )
+        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            buckets.forEach { bucket ->
+                RhythmBulletRow(
+                    bucket = bucket,
+                    isBest = bucket == summary.bestBucket,
+                )
+            }
         }
         Text(
             text = stringResource(R.string.progress_best_rhythm_based_on),
@@ -668,75 +663,67 @@ private fun BestRhythmChart(summary: BestRhythmSummary) {
 }
 
 @Composable
-private fun RhythmBars(
-    buckets: List<BestRhythmBucket>,
-    bestBucket: BestRhythmBucket?,
-    axis: ProgressChartAxis,
-    modifier: Modifier = Modifier,
-) {
-    BoxWithConstraints(modifier = modifier.fillMaxHeight()) {
-        val chartHeight = maxHeight - RhythmPercentLabelSlot - RhythmDurationLabelSlot
-        val axisColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.78f)
-        Canvas(modifier = Modifier.matchParentSize()) {
-            val chartHeightPx = chartHeight.toPx()
-            val chartTopPx = RhythmPercentLabelSlot.toPx()
-            val chartBottomPx = chartTopPx + chartHeightPx
-            drawLine(
-                color = axisColor,
-                start = Offset(0f, chartTopPx),
-                end = Offset(0f, chartBottomPx),
-                strokeWidth = 1.dp.toPx(),
-            )
-            drawLine(
-                color = axisColor,
-                start = Offset(0f, chartBottomPx),
-                end = Offset(size.width, chartBottomPx),
-                strokeWidth = 1.dp.toPx(),
-            )
-        }
-        Row(
-            modifier = Modifier
-                .matchParentSize()
-                .padding(start = 10.dp, end = 10.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.Bottom,
-        ) {
-            buckets.forEach { bucket ->
-                RhythmBucketMarker(
-                    bucket = bucket,
-                    isBest = bucket == bestBucket,
-                    axis = axis,
-                    maxMarkerHeight = chartHeight,
-                    modifier = Modifier.weight(1f),
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun RhythmBucketMarker(
+private fun RhythmBulletRow(
     bucket: BestRhythmBucket,
     isBest: Boolean,
-    axis: ProgressChartAxis,
-    maxMarkerHeight: androidx.compose.ui.unit.Dp,
     modifier: Modifier = Modifier,
 ) {
-    val markerHeight = maxMarkerHeight * axis.ratio(bucket.cleanRatePercent)
     val activeColor = if (isBest) {
         MaterialTheme.colorScheme.primary
     } else {
         MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.58f)
     }
-    Column(
-        modifier = modifier.fillMaxHeight(),
-        horizontalAlignment = Alignment.CenterHorizontally,
+    val trackColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.46f)
+    Row(
+        modifier = modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        Box(
+        Row(
+            modifier = Modifier.width(70.dp),
+            horizontalArrangement = Arrangement.spacedBy(5.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = focusDurationLabel(bucket.plannedFocusMinutes),
+                style = MaterialTheme.typography.titleMedium,
+                color = if (isBest) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                fontWeight = if (isBest) FontWeight.SemiBold else FontWeight.Normal,
+                maxLines = 1,
+            )
+            if (isBest) {
+                Icon(
+                    imageVector = Icons.Default.Star,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.tertiary,
+                    modifier = Modifier.size(13.dp),
+                )
+            }
+        }
+        BoxWithConstraints(
             modifier = Modifier
-                .fillMaxWidth()
-                .height(RhythmPercentLabelSlot),
-            contentAlignment = Alignment.BottomCenter,
+                .weight(1f)
+                .height(BestRhythmTrackHeight)
+                .clip(RoundedCornerShape(999.dp))
+                .background(trackColor),
+        ) {
+            val targetFillWidth = maxWidth * bucket.cleanRate.coerceIn(0f, 1f)
+            val visibleFillWidth = if (bucket.cleanRatePercent > 0) {
+                targetFillWidth.coerceAtLeast(BestRhythmMinimumFillWidth)
+            } else {
+                0.dp
+            }.coerceAtMost(maxWidth)
+            Box(
+                modifier = Modifier
+                    .fillMaxHeight()
+                    .width(visibleFillWidth)
+                    .clip(RoundedCornerShape(999.dp))
+                    .background(activeColor.copy(alpha = if (isBest) 0.82f else 0.46f)),
+            )
+        }
+        Column(
+            modifier = Modifier.width(66.dp),
+            horizontalAlignment = Alignment.End,
         ) {
             Text(
                 text = stringResource(R.string.progress_percent, bucket.cleanRatePercent),
@@ -745,29 +732,17 @@ private fun RhythmBucketMarker(
                 fontWeight = if (isBest) FontWeight.SemiBold else FontWeight.Normal,
                 maxLines = 1,
             )
-        }
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(maxMarkerHeight),
-        ) {
-            Box(
-                modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .width(12.dp)
-                    .height(markerHeight.coerceAtLeast(8.dp))
-                    .clip(RoundedCornerShape(999.dp))
-                    .background(activeColor.copy(alpha = if (isBest) 0.74f else 0.34f)),
+            Text(
+                text = pluralStringResource(
+                    R.plurals.progress_focus_round_count,
+                    bucket.attemptedRounds,
+                    bucket.attemptedRounds,
+                ),
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
             )
         }
-        Text(
-            text = focusDurationLabel(bucket.plannedFocusMinutes),
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            textAlign = TextAlign.Center,
-            maxLines = 1,
-            modifier = Modifier.height(RhythmDurationLabelSlot),
-        )
     }
 }
 
@@ -1012,5 +987,5 @@ private fun focusDurationLabel(minutes: Int): String {
 
 private val ChartValueLabelSlot = 28.dp
 private val ChartWeekdayLabelSlot = 28.dp
-private val RhythmDurationLabelSlot = 28.dp
-private val RhythmPercentLabelSlot = 26.dp
+private val BestRhythmTrackHeight = 10.dp
+private val BestRhythmMinimumFillWidth = 2.dp

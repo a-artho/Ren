@@ -71,8 +71,6 @@ data class BestRhythmSummary(
     val bestBucket: BestRhythmBucket?,
 ) {
     val hasData: Boolean get() = buckets.any { it.hasRounds }
-    val percentAxis: ProgressChartAxis
-        get() = percentChartAxis(buckets.maxOfOrNull { it.cleanRatePercent } ?: 0)
 }
 
 data class ProgressChartAxis(
@@ -228,12 +226,6 @@ private fun minuteChartStepFor(minutes: Int): Int {
     }
 }
 
-private fun percentChartAxis(maxPercent: Int): ProgressChartAxis {
-    val max = PercentChartMaxValues.firstOrNull { it >= maxPercent.coerceAtLeast(0) }
-        ?: PercentChartMaxValues.last()
-    return ProgressChartAxis(max = max, step = PercentChartStep)
-}
-
 private fun Int.roundUpToStep(step: Int): Int =
     ((this + step - 1) / step) * step
 
@@ -243,6 +235,4 @@ private const val SecondsPerMinute = 60
 private const val MinChartMinutes = 30
 private const val TargetChartIntervals = 4
 private val MinuteChartSteps = listOf(5, 10, 15, 30, 60, 120, 180, 240, 360, 480, 720)
-private const val PercentChartStep = 25
-private val PercentChartMaxValues = listOf(25, 50, 75, 100)
 private const val MaxProgressGoalMinutes = 1_440

@@ -104,7 +104,7 @@ class ProgressScreenTest {
         composeRule.onNodeWithText("Best rhythm").assertIsDisplayed()
         composeRule.onNodeWithText("Clean round success rate").assertIsDisplayed()
         composeRule.onNodeWithText("67%").assertIsDisplayed()
-        composeRule.onNodeWithText("75%").assertIsDisplayed()
+        composeRule.onNodeWithText("3 rounds").assertIsDisplayed()
         composeRule.onNodeWithContentDescription(
             "15m is your best rhythm at 67% clean success.",
         ).assertIsDisplayed()

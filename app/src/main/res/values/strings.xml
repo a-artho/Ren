@@ -114,6 +114,10 @@
     <string name="progress_best_rhythm_based_on">Based on clean rounds completed</string>
     <string name="progress_best_rhythm_empty">Complete focus rounds from Today to find your best rhythm.</string>
     <string name="progress_best_rhythm_chart_description">%1$s is your best rhythm at %2$d%% clean success.</string>
+    <plurals name="progress_focus_round_count">
+        <item quantity="one">%1$d round</item>
+        <item quantity="other">%1$d rounds</item>
+    </plurals>
     <plurals name="progress_study_day_count">
         <item quantity="one">%1$d study day</item>
         <item quantity="other">%1$d study days</item>
