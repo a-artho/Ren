@@ -45,8 +45,8 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.hci.ren.R
+import com.hci.ren.ui.motion.RenEmphasizedEasing
 import com.hci.ren.ui.motion.RenMotionDurationMillis
-import com.hci.ren.ui.motion.RenMotionEasing
 import com.hci.ren.ui.theme.RenGreenDark
 
 @Composable
@@ -269,7 +269,7 @@ fun PlanFlowTopRow(
             Spacer(Modifier.width(8.dp))
             val animatedProgress by animateFloatAsState(
                 targetValue = progress.coerceIn(0f, 1f),
-                animationSpec = tween(RenMotionDurationMillis, easing = RenMotionEasing),
+                animationSpec = tween(RenMotionDurationMillis, easing = RenEmphasizedEasing),
                 label = "plan-flow-progress",
             )
             LinearProgressIndicator(

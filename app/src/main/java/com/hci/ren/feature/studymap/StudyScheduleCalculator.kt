@@ -483,8 +483,14 @@ internal fun dayOnly(value: Calendar): Calendar = (value.clone() as Calendar).ap
 internal fun currentStudyCalendar(preferences: PlanSetupSubmission): Calendar =
     Calendar.getInstance().asStudyCalendar(preferences)
 
+internal fun currentStudyCalendar(preferences: PlanSetupSubmission, nowMillis: Long): Calendar =
+    Calendar.getInstance().apply { timeInMillis = nowMillis }.asStudyCalendar(preferences)
+
 internal fun currentStudyCalendar(resetOffsetHours: Int): Calendar =
     Calendar.getInstance().asStudyCalendar(resetOffsetHours)
+
+internal fun currentStudyCalendar(resetOffsetHours: Int, nowMillis: Long): Calendar =
+    Calendar.getInstance().apply { timeInMillis = nowMillis }.asStudyCalendar(resetOffsetHours)
 
 internal fun Calendar.asStudyCalendar(preferences: PlanSetupSubmission): Calendar =
     asStudyCalendar(preferences.studyDayResetOffsetHours)

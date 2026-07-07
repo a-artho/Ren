@@ -120,8 +120,8 @@ import com.hci.ren.feature.plangeneration.StudySourceDocument
 import com.hci.ren.feature.plangeneration.StudyTaskStatus
 import com.hci.ren.feature.plangeneration.StudyTaskType
 import com.hci.ren.feature.plangeneration.likelyStudyMinutes
+import com.hci.ren.ui.motion.RenEmphasizedEasing
 import com.hci.ren.ui.motion.RenMotionDurationMillis
-import com.hci.ren.ui.motion.RenMotionEasing
 import com.hci.ren.ui.motion.isReducedMotionEnabled
 import com.hci.ren.ui.motion.renFadeThroughTransform
 import com.hci.ren.ui.theme.RenContextMenuSurface
@@ -138,8 +138,8 @@ fun TodayScreen(
     onAvailableTimeChanged: (date: String, minutes: Int?) -> Unit,
     onTaskAction: (date: String, taskId: String, action: TodaySessionTaskAction) -> Unit,
     onWrapUpToday: (date: String) -> Unit,
-    onStartFocusTask: (taskId: String) -> Unit = {},
     modifier: Modifier = Modifier,
+    onStartFocusTask: (taskId: String) -> Unit = {},
     wrapUpResultMessage: String? = null,
     onConsumeWrapUpResult: () -> Unit = {},
     changeMessage: String? = null,
@@ -152,7 +152,6 @@ fun TodayScreen(
         dailyAvailableMinutesByDate = project.dailyAvailableMinutesByDate,
         taskStateById = project.taskStateById,
     )
-    val today = currentStudyCalendar(project.preferences).toStudyDate()
     val reducedMotion = isReducedMotionEnabled()
     val view = LocalView.current
     var clockNowMillis by remember { mutableLongStateOf(System.currentTimeMillis()) }
@@ -162,20 +161,25 @@ fun TodayScreen(
             delay(60_000L)
         }
     }
+    val today = currentStudyCalendar(project.preferences, clockNowMillis).toStudyDate()
     val minutesUntilReset = minutesUntilStudyDayReset(
         nowMillis = clockNowMillis,
         resetOffsetHours = project.preferences.studyDayResetOffsetHours,
     )
-    val baseAvailableMinutes = effectiveTodayAvailableMinutes(
+    val baseAvailableMinutes = effectiveAvailableMinutesForStudyDate(
+        date = today,
         requestedMinutes = todayBaseAvailableMinutes(project, data, today),
-        minutesUntilReset = minutesUntilReset,
+        resetOffsetHours = project.preferences.studyDayResetOffsetHours,
+        nowMillis = clockNowMillis,
     )
     val isTodayClosed = project.dailyAvailableMinutesByDate[today] == 0
     val todaySession = session?.takeIf { it.date == today }
-    val availableMinutes = effectiveTodayAvailableMinutes(
+    val availableMinutes = effectiveAvailableMinutesForStudyDate(
+        date = today,
         requestedMinutes = todaySession?.availableMinutes
             ?: baseAvailableMinutes,
-        minutesUntilReset = minutesUntilReset,
+        resetOffsetHours = project.preferences.studyDayResetOffsetHours,
+        nowMillis = clockNowMillis,
     )
     val hasAvailabilityOverride = todaySession?.availableMinutes != null && availableMinutes != baseAvailableMinutes
     val todayPlan = TodaySessionPlanner().plan(
@@ -255,11 +259,12 @@ fun TodayScreen(
             visibleNotice = null
         }
     }
-    val wrapUpImpactPreview = remember(project, today, todaySession) {
+    val wrapUpImpactPreview = remember(project, today, todaySession, clockNowMillis) {
         TodayImpactPreviewService().preview(
             project = project,
             date = today,
             session = todaySession,
+            nowMillis = clockNowMillis,
         )
     }
 
@@ -2178,7 +2183,7 @@ private fun TodayDoNowCard(
         targetValue = if (isCompleting) 1f else 0f,
         animationSpec = tween(
             durationMillis = if (reducedMotion) 0 else TodayDoneConfirmationFadeMillis,
-            easing = RenMotionEasing,
+            easing = RenEmphasizedEasing,
         ),
         label = "today-do-now-completion-progress",
     )
@@ -2454,6 +2459,8 @@ private fun TodayStartMetaRow(
 private fun TodayTaskRow(
     task: GeneratedStudyBlock,
     sourceDocuments: List<StudySourceDocument>,
+    reducedMotion: Boolean,
+    modifier: Modifier = Modifier,
     position: Int? = null,
     indicatorIcon: ImageVector? = null,
     indicatorContentDescription: String? = null,
@@ -2464,8 +2471,6 @@ private fun TodayTaskRow(
     supportingText: String? = null,
     primaryAction: TodayTaskActionSpec? = null,
     actions: List<TodayTaskActionSpec> = emptyList(),
-    reducedMotion: Boolean,
-    modifier: Modifier = Modifier,
     compact: Boolean = false,
     indicatorCompact: Boolean = false,
     plainIndicator: Boolean = false,
@@ -3511,7 +3516,7 @@ private enum class TodayTaskTrailingMode {
 
 private fun <T> todayMotionSpec(reducedMotion: Boolean) = tween<T>(
     durationMillis = if (reducedMotion) 0 else RenMotionDurationMillis,
-    easing = RenMotionEasing,
+    easing = RenEmphasizedEasing,
 )
 
 private fun performPhysicalClickHaptic(view: View) {

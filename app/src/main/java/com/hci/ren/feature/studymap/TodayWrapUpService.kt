@@ -19,6 +19,7 @@ class TodayWrapUpService {
         project: StudyProject,
         date: String,
         session: TodaySessionState?,
+        nowMillis: Long = System.currentTimeMillis(),
     ): TodayWrapUpResult? {
         if (date.toStudyCalendar() == null) return null
         val activeSession = session?.takeIf { it.date == date } ?: TodaySessionState(date = date)
@@ -30,17 +31,17 @@ class TodayWrapUpService {
             taskStateById = project.taskStateById,
             today = date.toStudyCalendar() ?: return null,
         )
-        val minutesUntilReset = minutesUntilStudyDayReset(
-            nowMillis = System.currentTimeMillis(),
-            resetOffsetHours = project.preferences.studyDayResetOffsetHours,
-        )
-        val baseAvailableMinutes = effectiveTodayAvailableMinutes(
+        val baseAvailableMinutes = effectiveAvailableMinutesForStudyDate(
+            date = date,
             requestedMinutes = todayBaseAvailableMinutes(project, data, date),
-            minutesUntilReset = minutesUntilReset,
+            resetOffsetHours = project.preferences.studyDayResetOffsetHours,
+            nowMillis = nowMillis,
         )
-        val availableMinutes = effectiveTodayAvailableMinutes(
+        val availableMinutes = effectiveAvailableMinutesForStudyDate(
+            date = date,
             requestedMinutes = activeSession.availableMinutes ?: baseAvailableMinutes,
-            minutesUntilReset = minutesUntilReset,
+            resetOffsetHours = project.preferences.studyDayResetOffsetHours,
+            nowMillis = nowMillis,
         )
         val todayPlan = TodaySessionPlanner().plan(
             data = data,

@@ -33,6 +33,7 @@ class TodayImpactPreviewService(
         project: StudyProject,
         date: String,
         session: TodaySessionState?,
+        nowMillis: Long = System.currentTimeMillis(),
     ): TodayImpactPreview? {
         val today = date.toStudyCalendar() ?: return null
         val activeSession = session?.takeIf { it.date == date } ?: TodaySessionState(date = date)
@@ -44,17 +45,17 @@ class TodayImpactPreviewService(
             taskStateById = project.taskStateById,
             today = today,
         )
-        val minutesUntilReset = minutesUntilStudyDayReset(
-            nowMillis = System.currentTimeMillis(),
-            resetOffsetHours = project.preferences.studyDayResetOffsetHours,
-        )
-        val baseAvailableMinutes = effectiveTodayAvailableMinutes(
+        val baseAvailableMinutes = effectiveAvailableMinutesForStudyDate(
+            date = date,
             requestedMinutes = todayBaseAvailableMinutes(project, currentData, date),
-            minutesUntilReset = minutesUntilReset,
+            resetOffsetHours = project.preferences.studyDayResetOffsetHours,
+            nowMillis = nowMillis,
         )
-        val availableMinutes = effectiveTodayAvailableMinutes(
+        val availableMinutes = effectiveAvailableMinutesForStudyDate(
+            date = date,
             requestedMinutes = activeSession.availableMinutes ?: baseAvailableMinutes,
-            minutesUntilReset = minutesUntilReset,
+            resetOffsetHours = project.preferences.studyDayResetOffsetHours,
+            nowMillis = nowMillis,
         )
         val todayPlan = TodaySessionPlanner().plan(
             data = currentData,
@@ -63,7 +64,7 @@ class TodayImpactPreviewService(
             session = activeSession,
             hasAvailabilityOverride = activeSession.availableMinutes != null && availableMinutes != baseAvailableMinutes,
         )
-        val projected = wrapUpService.wrapUp(project, date, activeSession)?.project ?: return null
+        val projected = wrapUpService.wrapUp(project, date, activeSession, nowMillis)?.project ?: return null
         val projectedData = buildStudyMapData(
             plan = projected.plan,
             preferences = projected.preferences,

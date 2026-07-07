@@ -24,9 +24,6 @@ val RenEmphasizedDecelerateEasing = CubicBezierEasing(0.05f, 0.7f, 0.1f, 1f)
 /** MD3 Emphasized Accelerate — for elements exiting the screen. */
 val RenEmphasizedAccelerateEasing = CubicBezierEasing(0.3f, 0f, 0.8f, 0.15f)
 
-/** Backward-compatible alias for the original custom easing. */
-val RenMotionEasing = RenEmphasizedEasing
-
 // endregion
 
 // region — MD3 Duration Tokens

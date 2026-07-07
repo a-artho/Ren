@@ -86,8 +86,8 @@ import com.hci.ren.ui.theme.renCardBorderColor
 import com.hci.ren.ui.theme.renCardContainerColor
 import com.hci.ren.ui.theme.renMutedIconColor
 import com.hci.ren.ui.theme.renSelectedBorderColor
+import com.hci.ren.ui.motion.RenEmphasizedEasing
 import com.hci.ren.ui.motion.RenMotionDurationMillis
-import com.hci.ren.ui.motion.RenMotionEasing
 import com.hci.ren.ui.motion.isReducedMotionEnabled
 import com.hci.ren.ui.motion.renContentSpec
 import kotlin.math.roundToInt
@@ -241,17 +241,17 @@ internal fun PdfFileCard(
     val moveStepPxState = rememberUpdatedState(moveStepPx)
     val containerColor by animateColorAsState(
         targetValue = if (isSelected) RenSelectedCardSurface else renCardContainerColor(),
-        animationSpec = tween(RenMotionDurationMillis, easing = RenMotionEasing),
+        animationSpec = tween(RenMotionDurationMillis, easing = RenEmphasizedEasing),
         label = "file-card-bg",
     )
     val cardElevation by animateDpAsState(
         targetValue = if (isDragging) 8.dp else 1.dp,
-        animationSpec = tween(RenMotionDurationMillis, easing = RenMotionEasing),
+        animationSpec = tween(RenMotionDurationMillis, easing = RenEmphasizedEasing),
         label = "file-card-elevation",
     )
     val cardScale by animateFloatAsState(
         targetValue = if (isDragging) 1.012f else 1f,
-        animationSpec = tween(RenMotionDurationMillis, easing = RenMotionEasing),
+        animationSpec = tween(RenMotionDurationMillis, easing = RenEmphasizedEasing),
         label = "file-card-scale",
     )
     val borderColor by animateColorAsState(
@@ -260,7 +260,7 @@ internal fun PdfFileCard(
         } else {
             renCardBorderColor()
         },
-        animationSpec = tween(RenMotionDurationMillis, easing = RenMotionEasing),
+        animationSpec = tween(RenMotionDurationMillis, easing = RenEmphasizedEasing),
         label = "file-card-border",
     )
     Card(
@@ -576,12 +576,12 @@ private fun PdfPageImage(
 
     val borderColor by animateColorAsState(
         targetValue = if (isSelected) renSelectedBorderColor() else renCardBorderColor(),
-        animationSpec = tween(RenMotionDurationMillis, easing = RenMotionEasing),
+        animationSpec = tween(RenMotionDurationMillis, easing = RenEmphasizedEasing),
         label = "page-border",
     )
     val backgroundColor by animateColorAsState(
         targetValue = if (isSelected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = .18f) else renCardContainerColor(),
-        animationSpec = tween(RenMotionDurationMillis, easing = RenMotionEasing),
+        animationSpec = tween(RenMotionDurationMillis, easing = RenEmphasizedEasing),
         label = "page-background",
     )
     val pageShape = RoundedCornerShape(12.dp)

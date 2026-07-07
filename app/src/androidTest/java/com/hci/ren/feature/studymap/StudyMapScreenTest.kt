@@ -82,13 +82,11 @@ class StudyMapScreenTest {
         setScreen(scheduledPlan(), submission(StudyDeadline.InOneWeek, 60))
 
         composeRule.onNodeWithContentDescription("Study plan options").performClick()
-        composeRule.onNodeWithText("Edit plan").assertIsDisplayed()
-        composeRule.onNodeWithText("Delete plan").assertIsDisplayed()
-
         composeRule.onNodeWithText("Edit plan").performClick()
         composeRule.onNodeWithText("Change deadline").assertIsDisplayed()
         composeRule.onNodeWithText("Available study time").assertIsDisplayed()
         composeRule.onNodeWithText("Choose material").assertIsDisplayed()
+        composeRule.onNodeWithText("Delete plan").assertIsDisplayed()
     }
 
     private fun setScreen(

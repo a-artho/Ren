@@ -131,6 +131,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.DpOffset
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import com.hci.ren.R
 import com.hci.ren.feature.pdfupload.presentation.PlanSetupSubmission
@@ -148,8 +149,8 @@ import com.hci.ren.feature.plangeneration.reservedStudyMinutes
 import com.hci.ren.ui.components.PlanFlowCircleAction
 import com.hci.ren.ui.components.PlanFlowControlHeight
 import com.hci.ren.ui.components.PlanLandingScaffold
+import com.hci.ren.ui.motion.RenEmphasizedEasing
 import com.hci.ren.ui.motion.RenMotionDurationMillis
-import com.hci.ren.ui.motion.RenMotionEasing
 import com.hci.ren.ui.motion.isReducedMotionEnabled
 import com.hci.ren.ui.motion.renFadeThroughTransform
 import com.hci.ren.ui.theme.RenContextMenuSurface
@@ -634,12 +635,12 @@ private fun StudyPlanCompactToggle(checked: Boolean) {
         } else {
             MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.42f)
         },
-        animationSpec = tween(RenMotionDurationMillis, easing = RenMotionEasing),
+        animationSpec = tween(RenMotionDurationMillis, easing = RenEmphasizedEasing),
         label = "study-plan-menu-toggle-track",
     )
     val thumbOffset by animateDpAsState(
         targetValue = if (checked) 19.dp else 3.dp,
-        animationSpec = tween(RenMotionDurationMillis, easing = RenMotionEasing),
+        animationSpec = tween(RenMotionDurationMillis, easing = RenEmphasizedEasing),
         label = "study-plan-menu-toggle-thumb",
     )
 
@@ -653,7 +654,7 @@ private fun StudyPlanCompactToggle(checked: Boolean) {
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.CenterStart) {
             Surface(
                 modifier = Modifier
-                    .offset(x = thumbOffset)
+                    .offset { IntOffset(x = thumbOffset.roundToPx(), y = 0) }
                     .size(18.dp),
                 shape = CircleShape,
                 color = if (checked) {
@@ -1277,12 +1278,12 @@ private fun PlanEditDailyTimeChoiceRow(
     val targetBackground = rowSurface
     val borderColor by animateColorAsState(
         targetValue = targetBorderColor,
-        animationSpec = tween(RenMotionDurationMillis, easing = RenMotionEasing),
+        animationSpec = tween(RenMotionDurationMillis, easing = RenEmphasizedEasing),
         label = "plan-edit-daily-choice-border",
     )
     val backgroundColor by animateColorAsState(
         targetValue = targetBackground,
-        animationSpec = tween(RenMotionDurationMillis, easing = RenMotionEasing),
+        animationSpec = tween(RenMotionDurationMillis, easing = RenEmphasizedEasing),
         label = "plan-edit-daily-choice-background",
     )
 
@@ -1494,13 +1495,18 @@ private fun PlanEditScopeContent(
                     }
                     val edgePadding = 12.dp
                     val travel = maxHeight - thumbHeight - edgePadding * 2
-                    val scrollProgress = topicScrollState.value.toFloat() / topicScrollState.maxValue.toFloat()
-                    val thumbOffset = edgePadding + travel * scrollProgress
                     Surface(
                         modifier = Modifier
                             .align(Alignment.TopEnd)
                             .padding(end = 5.dp)
-                            .offset(y = thumbOffset)
+                            .offset {
+                                val scrollProgress = topicScrollState.value.toFloat() /
+                                    topicScrollState.maxValue.toFloat()
+                                IntOffset(
+                                    x = 0,
+                                    y = (edgePadding + travel * scrollProgress).roundToPx(),
+                                )
+                            }
                             .width(2.dp)
                             .height(thumbHeight),
                         shape = RoundedCornerShape(999.dp),
@@ -2192,8 +2198,8 @@ private fun TimelineStudyItemBranchRow(
 @Composable
 private fun TreeTaskLeafNode(
     status: StudyTaskStatus,
-    isParent: Boolean = false,
     modifier: Modifier = Modifier,
+    isParent: Boolean = false,
 ) {
     val complete = status == StudyTaskStatus.Completed
     Box(
@@ -2970,8 +2976,8 @@ private fun MaterialTaskRowContent(
 private fun TimelineStudyItemTextContent(
     item: TimelineStudyItem,
     meta: String,
-    showMeta: Boolean = true,
     modifier: Modifier = Modifier,
+    showMeta: Boolean = true,
 ) {
     val textModifier = if (showMeta) {
         modifier.heightIn(min = 46.dp)
@@ -3006,8 +3012,8 @@ private fun TimelineStudyItemTextContent(
 private fun TaskRowTextContent(
     task: GeneratedStudyBlock,
     pageLabel: String?,
-    muted: Boolean = false,
     modifier: Modifier = Modifier,
+    muted: Boolean = false,
 ) {
     val meta = listOfNotNull(
         pageLabel,

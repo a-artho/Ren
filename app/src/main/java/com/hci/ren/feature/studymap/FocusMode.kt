@@ -176,11 +176,28 @@ fun AdaptiveFocusMode(
             taskStateById = project.taskStateById,
         )
     }
-    val today = remember(project.preferences) { currentStudyCalendar(project.preferences).toStudyDate() }
+    var clockNowMillis by remember { mutableLongStateOf(System.currentTimeMillis()) }
+    LaunchedEffect(project.preferences.studyDayResetOffsetHours) {
+        while (true) {
+            clockNowMillis = System.currentTimeMillis()
+            delay(60_000L)
+        }
+    }
+    val today = currentStudyCalendar(project.preferences, clockNowMillis).toStudyDate()
     val suppliedDayState = focusDayState?.takeIf { it.date == today }
     val todaySession = session?.takeIf { it.date == today }
-    val baseAvailableMinutes = todayBaseAvailableMinutes(project, data, today)
-    val availableMinutes = todaySession?.availableMinutes ?: baseAvailableMinutes
+    val baseAvailableMinutes = effectiveAvailableMinutesForStudyDate(
+        date = today,
+        requestedMinutes = todayBaseAvailableMinutes(project, data, today),
+        resetOffsetHours = project.preferences.studyDayResetOffsetHours,
+        nowMillis = clockNowMillis,
+    )
+    val availableMinutes = effectiveAvailableMinutesForStudyDate(
+        date = today,
+        requestedMinutes = todaySession?.availableMinutes ?: baseAvailableMinutes,
+        resetOffsetHours = project.preferences.studyDayResetOffsetHours,
+        nowMillis = clockNowMillis,
+    )
     val hasAvailabilityOverride = todaySession?.availableMinutes != null && availableMinutes != baseAvailableMinutes
     val todayPlan = remember(data, today, availableMinutes, todaySession, hasAvailabilityOverride) {
         TodaySessionPlanner().plan(
@@ -1859,8 +1876,8 @@ private fun FocusTimerRing(
     focusMinutesManuallyEdited: Boolean,
     lastReport: FocusRoundReport?,
     onFocusMinutesChange: (Int) -> Unit,
-    quietMode: Boolean = false,
     modifier: Modifier = Modifier,
+    quietMode: Boolean = false,
 ) {
     val primary = MaterialTheme.colorScheme.primary
     val track = MaterialTheme.colorScheme.outlineVariant
@@ -2123,7 +2140,7 @@ private fun FocusControls(
         when (phase) {
             FocusPhase.Ready -> {
                 FocusActionPill(
-                    label = "Start focus",
+                    label = stringResource(R.string.start_focus),
                     icon = Icons.Default.PlayArrow,
                     onClick = onStartRound,
                     primary = true,

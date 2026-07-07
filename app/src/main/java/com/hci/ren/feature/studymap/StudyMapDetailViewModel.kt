@@ -139,8 +139,14 @@ class StudyMapDetailViewModel(application: Application) : AndroidViewModel(appli
             dailyAvailableMinutesByDate = project.dailyAvailableMinutesByDate,
             taskStateById = project.taskStateById,
         )
-        val currentAvailableMinutes = session.availableMinutes
-            ?: todayBaseAvailableMinutes(project, data, date)
+        val nowMillis = System.currentTimeMillis()
+        val currentAvailableMinutes = effectiveAvailableMinutesForStudyDate(
+            date = date,
+            requestedMinutes = session.availableMinutes
+                ?: todayBaseAvailableMinutes(project, data, date),
+            resetOffsetHours = project.preferences.studyDayResetOffsetHours,
+            nowMillis = nowMillis,
+        )
         val updatedSession = session
             .appendFocusSession(record)
             .copy(
@@ -149,7 +155,7 @@ class StudyMapDetailViewModel(application: Application) : AndroidViewModel(appli
             )
         val updatedProject = project
             .appendFocusSession(date, record)
-            .copy(updatedAtMillis = System.currentTimeMillis())
+            .copy(updatedAtMillis = nowMillis)
         val activeSession = updatedSession.takeUnless { it.isEmpty }
         saveTodayDraft(project, date, activeSession)
         _uiState.value = current.copy(
@@ -176,12 +182,14 @@ class StudyMapDetailViewModel(application: Application) : AndroidViewModel(appli
     fun wrapUpToday(date: String) {
         val before = _uiState.value.project ?: return
         val sessionBefore = _uiState.value.todaySession
+        val nowMillis = System.currentTimeMillis()
         val result = todayWrapUpService.wrapUp(
             project = before,
             date = date,
             session = sessionBefore,
+            nowMillis = nowMillis,
         ) ?: return
-        val updated = result.project.copy(updatedAtMillis = System.currentTimeMillis())
+        val updated = result.project.copy(updatedAtMillis = nowMillis)
         publish(
             project = updated,
             todaySession = null,

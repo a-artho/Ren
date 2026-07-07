@@ -200,6 +200,24 @@ internal fun effectiveTodayAvailableMinutes(
         .coerceIn(0, MaxTodaySessionMinutes)
         .coerceAtMost(minutesUntilReset.coerceIn(0, MaxTodaySessionMinutes))
 
+internal fun effectiveAvailableMinutesForStudyDate(
+    date: String,
+    requestedMinutes: Int,
+    resetOffsetHours: Int,
+    nowMillis: Long = System.currentTimeMillis(),
+): Int {
+    val normalized = requestedMinutes.coerceIn(0, MaxTodaySessionMinutes)
+    val currentStudyDate = currentStudyCalendar(resetOffsetHours, nowMillis).toStudyDate()
+    if (date != currentStudyDate) return normalized
+    return effectiveTodayAvailableMinutes(
+        requestedMinutes = normalized,
+        minutesUntilReset = minutesUntilStudyDayReset(
+            nowMillis = nowMillis,
+            resetOffsetHours = resetOffsetHours,
+        ),
+    )
+}
+
 class TodaySessionPlanner {
     fun plan(
         data: StudyMapData,

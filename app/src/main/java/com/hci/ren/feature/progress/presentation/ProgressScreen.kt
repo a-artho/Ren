@@ -452,12 +452,27 @@ private fun StudyConsistencyCard(
     val mostConsistentLabel = summary.mostConsistentWeeksAgo?.let {
         consistencyWeekLabel(weeksAgo = it, sentenceCase = true)
     } ?: stringResource(R.string.progress_consistency_no_data)
+    val streakDescription = pluralStringResource(
+        R.plurals.progress_consistency_day_streak_description,
+        summary.currentStreakDays,
+        summary.currentStreakDays,
+    )
+    val activeDaysDescription = pluralStringResource(
+        R.plurals.progress_study_day_count,
+        summary.activeDays,
+        summary.activeDays,
+    )
+    val weekCountDescription = pluralStringResource(
+        R.plurals.progress_week_count,
+        summary.weekCount,
+        summary.weekCount,
+    )
     val chartDescription = stringResource(
         R.string.progress_consistency_chart_description,
-        summary.currentStreakDays,
+        streakDescription,
         mostConsistentLabel,
-        summary.activeDays,
-        summary.weekCount,
+        activeDaysDescription,
+        weekCountDescription,
     )
     ProgressCard(
         modifier = modifier,
@@ -993,7 +1008,7 @@ private fun consistencyWeekLabel(
             R.string.progress_consistency_last_week
         },
     )
-    else -> stringResource(R.string.progress_consistency_weeks_ago, weeksAgo)
+    else -> pluralStringResource(R.plurals.progress_consistency_weeks_ago, weeksAgo, weeksAgo)
 }
 
 @Composable

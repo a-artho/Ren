@@ -1,6 +1,7 @@
 package com.hci.ren.feature.studymap
 
 import android.content.Context
+import androidx.core.content.edit
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -23,14 +24,16 @@ internal class TodaySessionDraftStore(context: Context) {
             session?.let { clear(projectId, it.date) }
             return
         }
-        prefs.edit()
-            .putString(key(projectId, session.date), TodaySessionDraftJsonCodec.encode(session))
-            .apply()
+        prefs.edit {
+            putString(key(projectId, session.date), TodaySessionDraftJsonCodec.encode(session))
+        }
     }
 
     fun clear(projectId: String, date: String) {
         if (projectId.isBlank() || date.toStudyCalendar() == null) return
-        prefs.edit().remove(key(projectId, date)).apply()
+        prefs.edit {
+            remove(key(projectId, date))
+        }
     }
 
     fun clearProject(projectId: String) {
@@ -38,9 +41,9 @@ internal class TodaySessionDraftStore(context: Context) {
         val prefix = "$projectId|"
         val keys = prefs.all.keys.filter { it.startsWith(prefix) }
         if (keys.isEmpty()) return
-        val edit = prefs.edit()
-        keys.forEach(edit::remove)
-        edit.apply()
+        prefs.edit {
+            keys.forEach(::remove)
+        }
     }
 
     private fun key(projectId: String, date: String) = "$projectId|$date"

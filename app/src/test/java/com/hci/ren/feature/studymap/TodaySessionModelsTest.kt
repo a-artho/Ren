@@ -127,6 +127,33 @@ class TodaySessionModelsTest {
         assertEquals(0, effectiveTodayAvailableMinutes(requestedMinutes = 480, minutesUntilReset = 0))
     }
 
+    @Test fun effectiveAvailableMinutesForStudyDateCapsOnlyCurrentStudyDay() {
+        val now = GregorianCalendar().apply {
+            set(2026, Calendar.JULY, 6, 3, 30, 0)
+            set(Calendar.MILLISECOND, 0)
+        }
+        val currentStudyDate = currentStudyCalendar(4, now.timeInMillis).toStudyDate()
+
+        assertEquals(
+            30,
+            effectiveAvailableMinutesForStudyDate(
+                date = currentStudyDate,
+                requestedMinutes = 120,
+                resetOffsetHours = 4,
+                nowMillis = now.timeInMillis,
+            ),
+        )
+        assertEquals(
+            120,
+            effectiveAvailableMinutesForStudyDate(
+                date = "2026-07-08",
+                requestedMinutes = 120,
+                resetOffsetHours = 4,
+                nowMillis = now.timeInMillis,
+            ),
+        )
+    }
+
     @Test fun todayInheritsLikelyFallbackFromScheduledDay() {
         val first = task("first", 30).copy(order = 1, effortMaxMinutes = 60)
         val second = task("second", 30).copy(order = 2, effortMaxMinutes = 60)
