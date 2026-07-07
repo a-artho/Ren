@@ -30,6 +30,7 @@ data class StudyMapDetailUiState(
 
 class StudyMapDetailViewModel(application: Application) : AndroidViewModel(application) {
     private val repository = StudyProjectRepository.create(application)
+    private val todaySessionStore = TodaySessionDraftStore(application)
     private val todayWrapUpService = TodayWrapUpService()
     private val writeMutex = Mutex()
     private val _uiState = MutableStateFlow(StudyMapDetailUiState())
@@ -48,7 +49,8 @@ class StudyMapDetailViewModel(application: Application) : AndroidViewModel(appli
                 if (project == null) {
                     _uiState.value = StudyMapDetailUiState(hasLoaded = true)
                 } else {
-                    publish(project)
+                    val today = currentStudyCalendar(project.preferences).toStudyDate()
+                    publish(project, todaySession = todaySessionStore.load(project.id, today))
                 }
             } catch (error: CancellationException) {
                 throw error
@@ -91,12 +93,15 @@ class StudyMapDetailViewModel(application: Application) : AndroidViewModel(appli
         if (date.toStudyCalendar() == null) return
         val normalized = minutes?.coerceIn(0, MaxTodaySessionMinutes)
         val current = _uiState.value
+        val project = current.project ?: return
         val session = current.todaySession
             ?.takeIf { it.date == date }
             ?: TodaySessionState(date = date)
         val updatedSession = session.copy(availableMinutes = normalized)
+        val activeSession = updatedSession.takeUnless { it.isEmpty }
+        saveTodayDraft(project, date, activeSession)
         _uiState.value = current.copy(
-            todaySession = updatedSession.takeUnless { it.isEmpty },
+            todaySession = activeSession,
         )
     }
 
@@ -107,12 +112,15 @@ class StudyMapDetailViewModel(application: Application) : AndroidViewModel(appli
     ) {
         if (date.toStudyCalendar() == null || taskId.isBlank()) return
         val current = _uiState.value
+        val project = current.project ?: return
         val session = current.todaySession
             ?.takeIf { it.date == date }
             ?: TodaySessionState(date = date)
         val updatedSession = session.applyTaskAction(taskId, action)
+        val activeSession = updatedSession.takeUnless { it.isEmpty }
+        saveTodayDraft(project, date, activeSession)
         _uiState.value = current.copy(
-            todaySession = updatedSession.takeUnless { it.isEmpty },
+            todaySession = activeSession,
         )
     }
 
@@ -142,9 +150,11 @@ class StudyMapDetailViewModel(application: Application) : AndroidViewModel(appli
         val updatedProject = project
             .appendFocusSession(date, record)
             .copy(updatedAtMillis = System.currentTimeMillis())
+        val activeSession = updatedSession.takeUnless { it.isEmpty }
+        saveTodayDraft(project, date, activeSession)
         _uiState.value = current.copy(
             project = updatedProject,
-            todaySession = updatedSession.takeUnless { it.isEmpty },
+            todaySession = activeSession,
         )
         viewModelScope.launch {
             writeMutex.withLock {
@@ -156,7 +166,7 @@ class StudyMapDetailViewModel(application: Application) : AndroidViewModel(appli
                     publish(
                         project = before,
                         message = getApplication<Application>().getString(R.string.study_map_save_error),
-                        todaySession = updatedSession.takeUnless { it.isEmpty },
+                        todaySession = activeSession,
                     )
                 }
             }
@@ -165,10 +175,11 @@ class StudyMapDetailViewModel(application: Application) : AndroidViewModel(appli
 
     fun wrapUpToday(date: String) {
         val before = _uiState.value.project ?: return
+        val sessionBefore = _uiState.value.todaySession
         val result = todayWrapUpService.wrapUp(
             project = before,
             date = date,
-            session = _uiState.value.todaySession,
+            session = sessionBefore,
         ) ?: return
         val updated = result.project.copy(updatedAtMillis = System.currentTimeMillis())
         publish(
@@ -180,10 +191,15 @@ class StudyMapDetailViewModel(application: Application) : AndroidViewModel(appli
             writeMutex.withLock {
                 try {
                     repository.upsert(updated)
+                    todaySessionStore.clear(before.id, date)
                 } catch (error: CancellationException) {
                     throw error
                 } catch (_: Exception) {
-                    publish(before, getApplication<Application>().getString(R.string.study_map_save_error))
+                    publish(
+                        project = before,
+                        message = getApplication<Application>().getString(R.string.study_map_save_error),
+                        todaySession = sessionBefore,
+                    )
                 }
             }
         }
@@ -208,6 +224,7 @@ class StudyMapDetailViewModel(application: Application) : AndroidViewModel(appli
             writeMutex.withLock {
                 try {
                     repository.deleteActive()
+                    todaySessionStore.clearProject(before.id)
                 } catch (error: CancellationException) {
                     throw error
                 } catch (_: Exception) {
@@ -270,6 +287,14 @@ class StudyMapDetailViewModel(application: Application) : AndroidViewModel(appli
                     publish(before, getApplication<Application>().getString(R.string.study_map_save_error))
                 }
             }
+        }
+    }
+
+    private fun saveTodayDraft(project: StudyProject, date: String, session: TodaySessionState?) {
+        if (session == null) {
+            todaySessionStore.clear(project.id, date)
+        } else {
+            todaySessionStore.save(project.id, session)
         }
     }
 

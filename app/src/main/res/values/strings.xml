@@ -261,7 +261,7 @@
     <string name="wrap_up_carry_forward_label">Moves forward</string>
     <string name="wrap_up_unused_time_label">Unused time</string>
     <string name="wrap_up_time_after_closing_label">Time after closing</string>
-    <string name="wrap_up_today_closes_day">This only closes today. Source material stays unchanged.</string>
+    <string name="wrap_up_today_closes_day">Source material stays unchanged.</string>
     <string name="wrap_up_keep_open">Keep open</string>
     <string name="wrap_up_end_day">End day</string>
     <string name="wrap_up_today_confirm">Wrap up</string>

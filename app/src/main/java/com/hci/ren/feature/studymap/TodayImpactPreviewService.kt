@@ -1,5 +1,7 @@
 package com.hci.ren.feature.studymap
 
+import com.hci.ren.feature.plangeneration.StudyBlockDifficulty
+
 enum class TodayImpactStatus {
     Fits,
     WorkMovesForward,
@@ -10,6 +12,18 @@ enum class TodayImpactStatus {
 
 data class TodayImpactPreview(
     val status: TodayImpactStatus,
+    val carriedTaskCount: Int = 0,
+    val carriedMinutes: Int = 0,
+    val firstCarriedDate: String? = null,
+    val affectedFutureDayCount: Int = 0,
+    val unscheduledTaskCount: Int = 0,
+    val unscheduledMinutes: Int = 0,
+    val unscheduledCarriedTaskCount: Int = 0,
+    val unscheduledCarriedMinutes: Int = 0,
+    val firstCarriedDayLoad: StudyBlockDifficulty? = null,
+    val firstCarriedDayIsRisky: Boolean = false,
+    val firstCarriedDayPlannedMinutes: Int = 0,
+    val firstCarriedDayCapacityMinutes: Int = 0,
 )
 
 class TodayImpactPreviewService(
@@ -66,6 +80,30 @@ class TodayImpactPreviewService(
             todayPlan.unfinishedWorkForwardMinutes > 0 -> TodayImpactStatus.WorkMovesForward
             else -> TodayImpactStatus.Fits
         }
-        return TodayImpactPreview(status)
+        val carriedTaskIds = todayPlan.unfinishedWorkForwardTasks.mapTo(mutableSetOf()) { it.id }
+        val carriedScheduleDays = projectedData.schedule.days
+            .filter { day -> day.tasks.any { task -> task.id in carriedTaskIds } }
+            .map { it.date }
+        val firstCarriedDate = carriedScheduleDays.minOrNull()
+        val firstCarriedDay = projectedData.schedule.days.firstOrNull { it.date == firstCarriedDate }
+        val unscheduledCarriedTasks = projectedData.schedule.unscheduledTasks
+            .filter { it.id in carriedTaskIds }
+        return TodayImpactPreview(
+            status = status,
+            carriedTaskCount = todayPlan.unfinishedWorkForwardTasks.size,
+            carriedMinutes = todayPlan.unfinishedWorkForwardMinutes,
+            firstCarriedDate = firstCarriedDate,
+            affectedFutureDayCount = carriedScheduleDays.distinct().size,
+            unscheduledTaskCount = projectedData.schedule.unscheduledTasks.size,
+            unscheduledMinutes = projectedData.schedule.unscheduledTasks.sumOf {
+                projectedData.schedule.fitMode.fitMinutes(it)
+            },
+            unscheduledCarriedTaskCount = unscheduledCarriedTasks.size,
+            unscheduledCarriedMinutes = unscheduledCarriedTasks.sumOf { projectedData.schedule.fitMode.fitMinutes(it) },
+            firstCarriedDayLoad = firstCarriedDay?.load,
+            firstCarriedDayIsRisky = firstCarriedDay?.isRisky == true,
+            firstCarriedDayPlannedMinutes = firstCarriedDay?.plannedMinutes ?: 0,
+            firstCarriedDayCapacityMinutes = firstCarriedDay?.capacityMinutes ?: 0,
+        )
     }
 }

@@ -340,6 +340,22 @@ class TodaySessionModelsTest {
         assertEquals(listOf("future"), session.pullInCandidates.map { it.id })
     }
 
+    @Test fun focusSessionConsumedMinutesIncludeBreakOverflowSeconds() {
+        val record = FocusSessionRecord(
+            taskId = "done",
+            plannedFocusMinutes = 10,
+            plannedBreakMinutes = 5,
+            focusSeconds = 10 * 60,
+            breakSeconds = 5 * 60 + 20,
+            awaySeconds = 0,
+            interruptionCount = 0,
+            outcome = FocusSessionOutcome.BreakEnded,
+            endedAtMillis = 0L,
+        )
+
+        assertEquals(16, record.consumedMinutes)
+    }
+
     @Test fun sessionActionsCreateOrderedTemporaryBuckets() {
         val todayTasks = listOf(
             task("remove", 15).copy(order = 1),

@@ -4,6 +4,7 @@ import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.animateIntAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
@@ -15,6 +16,7 @@ import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -24,6 +26,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -65,15 +68,18 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LocalMinimumInteractiveComponentSize
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
@@ -92,7 +98,9 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -103,8 +111,11 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
+import android.view.HapticFeedbackConstants
+import android.view.View
 import com.hci.ren.R
 import com.hci.ren.feature.plangeneration.GeneratedStudyBlock
+import com.hci.ren.feature.plangeneration.StudyBlockDifficulty
 import com.hci.ren.feature.plangeneration.StudySourceDocument
 import com.hci.ren.feature.plangeneration.StudyTaskStatus
 import com.hci.ren.feature.plangeneration.StudyTaskType
@@ -116,6 +127,9 @@ import com.hci.ren.ui.motion.renFadeThroughTransform
 import com.hci.ren.ui.theme.RenContextMenuSurface
 import com.hci.ren.ui.theme.RenSelectedCardSurface
 import kotlinx.coroutines.delay
+import java.text.SimpleDateFormat
+import java.util.Calendar
+import java.util.Locale
 
 @Composable
 fun TodayScreen(
@@ -140,6 +154,7 @@ fun TodayScreen(
     )
     val today = currentStudyCalendar(project.preferences).toStudyDate()
     val reducedMotion = isReducedMotionEnabled()
+    val view = LocalView.current
     var clockNowMillis by remember { mutableLongStateOf(System.currentTimeMillis()) }
     LaunchedEffect(project.preferences.studyDayResetOffsetHours) {
         while (true) {
@@ -174,7 +189,7 @@ fun TodayScreen(
         activeWorkMinutes = todayPlan.activeWorkMinutes,
         minutesUntilReset = minutesUntilReset,
     )
-    var showWrapUpDialog by remember(today, todayPlan) { mutableStateOf(false) }
+    var showWrapUpDialog by rememberSaveable(today) { mutableStateOf(false) }
     var showTimeBudgetDialog by remember(today) { mutableStateOf(false) }
     var pendingRemovalTask by remember(today) { mutableStateOf<GeneratedStudyBlock?>(null) }
     var showUseExtraTimeInfo by rememberSaveable(today) { mutableStateOf(false) }
@@ -240,10 +255,18 @@ fun TodayScreen(
             visibleNotice = null
         }
     }
+    val wrapUpImpactPreview = remember(project, today, todaySession) {
+        TodayImpactPreviewService().preview(
+            project = project,
+            date = today,
+            session = todaySession,
+        )
+    }
 
     if (showWrapUpDialog) {
         WrapUpTodayDialog(
             todayPlan = todayPlan,
+            impactPreview = wrapUpImpactPreview,
             onDismiss = { showWrapUpDialog = false },
             onConfirm = {
                 showWrapUpDialog = false
@@ -622,7 +645,10 @@ fun TodayScreen(
                         wrapUpEnabled = canWrapUpToday,
                         doMoreEnabled = todayPlan.pullInCandidates.isNotEmpty(),
                         onDoMoreClick = { isUseExtraTimeExpanded = true },
-                        onWrapUpClick = { showWrapUpDialog = true },
+                        onWrapUpClick = {
+                            performPhysicalClickHaptic(view)
+                            showWrapUpDialog = true
+                        },
                     )
                     TodayTomorrowReveal(
                         expanded = todayPlan.pullInCandidates.isNotEmpty() && isUseExtraTimeExpanded,
@@ -994,110 +1020,131 @@ private fun TodayBudgetCard(
         modifier = modifier
             .fillMaxWidth()
             .animateContentSize(animationSpec = todayMotionSpec(reducedMotion))
-            .padding(vertical = 4.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
+            .padding(vertical = 2.dp),
+        verticalArrangement = Arrangement.spacedBy(9.dp),
     ) {
-        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.22f))
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            TodayBalanceToken(
-                label = "Day",
-                value = formatMinutes(animatedAvailableMinutes),
-                icon = Icons.Default.Timer,
-                modifier = Modifier.weight(1f),
-            )
-            TodayBalanceToken(
-                label = "Planned",
-                value = formatMinutes(animatedPlannedMinutes),
-                icon = Icons.AutoMirrored.Filled.Assignment,
-                modifier = Modifier.weight(1f),
-            )
-            TodayBalanceToken(
-                label = if (pressureMinutes > 0) "Over" else "Free",
-                value = formatMinutes(animatedRemainingOrOverMinutes),
-                icon = if (pressureMinutes > 0) Icons.Default.WarningAmber else Icons.Default.Schedule,
-                valueColor = balanceValueColor,
-                modifier = Modifier.weight(1f),
-            )
-        }
+        TodayLedgerRow(
+            items = listOf(
+                TodayLedgerItem(
+                    label = "Day",
+                    value = formatMinutes(animatedAvailableMinutes),
+                    icon = Icons.Default.Timer,
+                ),
+                TodayLedgerItem(
+                    label = "Planned",
+                    value = formatMinutes(animatedPlannedMinutes),
+                    icon = Icons.AutoMirrored.Filled.Assignment,
+                ),
+                TodayLedgerItem(
+                    label = if (pressureMinutes > 0) "Over" else "Free",
+                    value = formatMinutes(animatedRemainingOrOverMinutes),
+                    icon = if (pressureMinutes > 0) Icons.Default.WarningAmber else Icons.Default.Schedule,
+                    valueColor = balanceValueColor,
+                ),
+            ),
+        )
+        TodayLedgerRow(
+            items = listOf(
+                TodayLedgerItem(
+                    label = "Left",
+                    value = leafCountLabel(animatedRemainingLeaves),
+                    icon = Icons.Default.Eco,
+                ),
+                TodayLedgerItem(
+                    label = "Done",
+                    value = leafCountLabel(animatedDoneLeaves),
+                    icon = Icons.Default.CheckCircle,
+                ),
+                TodayLedgerItem(
+                    label = "Moved",
+                    value = leafCountLabel(animatedMovedLeaves),
+                    icon = Icons.Default.RestartAlt,
+                ),
+            ),
+            compact = true,
+        )
+    }
+}
 
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            TodayBalanceToken(
-                label = "Left",
-                value = leafCountLabel(animatedRemainingLeaves),
-                icon = Icons.Default.Eco,
-                modifier = Modifier.weight(1f),
-            )
-            TodayBalanceToken(
-                label = "Done",
-                value = leafCountLabel(animatedDoneLeaves),
-                icon = Icons.Default.CheckCircle,
-                modifier = Modifier.weight(1f),
-            )
-            TodayBalanceToken(
-                label = "Moved",
-                value = leafCountLabel(animatedMovedLeaves),
-                icon = Icons.Default.RestartAlt,
-                modifier = Modifier.weight(1f),
-            )
-        }
+private data class TodayLedgerItem(
+    val label: String,
+    val value: String,
+    val icon: ImageVector,
+    val valueColor: Color? = null,
+)
 
-        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.20f))
+@Composable
+private fun TodayLedgerRow(
+    items: List<TodayLedgerItem>,
+    modifier: Modifier = Modifier,
+    compact: Boolean = false,
+) {
+    Surface(
+        modifier = modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(15.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = if (compact) 0.06f else 0.08f),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.10f)),
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 2.dp, vertical = if (compact) 7.dp else 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            items.forEachIndexed { index, item ->
+                TodayLedgerCell(
+                    item = item,
+                    compact = compact,
+                    modifier = Modifier.weight(1f),
+                )
+                if (index < items.lastIndex) {
+                    Box(
+                        modifier = Modifier
+                            .height(if (compact) 28.dp else 32.dp)
+                            .width(1.dp)
+                            .background(MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.12f)),
+                    )
+                }
+            }
+        }
     }
 }
 
 @Composable
-private fun TodayBalanceToken(
-    label: String,
-    value: String,
-    icon: ImageVector,
+private fun TodayLedgerCell(
+    item: TodayLedgerItem,
+    compact: Boolean,
     modifier: Modifier = Modifier,
-    valueColor: Color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.88f),
 ) {
-    Surface(
-        modifier = modifier,
-        shape = RoundedCornerShape(12.dp),
-        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.10f),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.14f)),
+    val valueColor = item.valueColor ?: MaterialTheme.colorScheme.onSurface.copy(alpha = 0.88f)
+    Row(
+        modifier = modifier.padding(horizontal = 9.dp, vertical = if (compact) 2.dp else 3.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(7.dp),
     ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 8.dp, vertical = 7.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(7.dp),
+        Icon(
+            imageVector = item.icon,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.52f),
+            modifier = Modifier.size(if (compact) 13.dp else 14.dp),
+        )
+        Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(1.dp),
         ) {
-            Icon(
-                imageVector = icon,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.58f),
-                modifier = Modifier.size(13.dp),
+            Text(
+                text = item.value,
+                style = if (compact) MaterialTheme.typography.labelMedium else MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.SemiBold,
+                color = valueColor,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
             )
-            Column(
-                modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(1.dp),
-            ) {
-                Text(
-                    text = value,
-                    style = MaterialTheme.typography.labelLarge,
-                    fontWeight = FontWeight.SemiBold,
-                    color = valueColor,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                Text(
-                    text = label,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.68f),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
+            Text(
+                text = item.label,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.66f),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
         }
     }
 }
@@ -2124,128 +2171,216 @@ private fun TodayDoNowCard(
     modifier: Modifier = Modifier,
 ) {
     var menuExpanded by remember(task.id) { mutableStateOf(false) }
+    var isCompleting by remember(task.id) { mutableStateOf(false) }
+    val view = LocalView.current
     val sourceText = todayTaskSourceText(task, sourceDocuments)
+    val completionProgress by animateFloatAsState(
+        targetValue = if (isCompleting) 1f else 0f,
+        animationSpec = tween(
+            durationMillis = if (reducedMotion) 0 else TodayDoneConfirmationFadeMillis,
+            easing = RenMotionEasing,
+        ),
+        label = "today-do-now-completion-progress",
+    )
+    val cardBorderColor by animateColorAsState(
+        targetValue = if (isCompleting) {
+            MaterialTheme.colorScheme.primary.copy(alpha = 0.54f)
+        } else {
+            MaterialTheme.colorScheme.primary.copy(alpha = 0.26f)
+        },
+        animationSpec = todayMotionSpec(reducedMotion),
+        label = "today-do-now-completion-border",
+    )
+    val doneButtonContainerColor by animateColorAsState(
+        targetValue = if (isCompleting) {
+            MaterialTheme.colorScheme.primary.copy(alpha = 0.16f)
+        } else {
+            Color.Transparent
+        },
+        animationSpec = todayMotionSpec(reducedMotion),
+        label = "today-do-now-done-container",
+    )
+    val doneButtonContentColor by animateColorAsState(
+        targetValue = if (isCompleting) {
+            MaterialTheme.colorScheme.primary
+        } else {
+            MaterialTheme.colorScheme.onSurface
+        },
+        animationSpec = todayMotionSpec(reducedMotion),
+        label = "today-do-now-done-content",
+    )
+    val doneButtonBorderColor by animateColorAsState(
+        targetValue = if (isCompleting) {
+            MaterialTheme.colorScheme.primary.copy(alpha = 0.42f)
+        } else {
+            MaterialTheme.colorScheme.outline.copy(alpha = 0.64f)
+        },
+        animationSpec = todayMotionSpec(reducedMotion),
+        label = "today-do-now-done-border",
+    )
 
-    Card(
+    LaunchedEffect(isCompleting, task.id) {
+        if (!isCompleting) return@LaunchedEffect
+        delay(if (reducedMotion) 0L else TodayDoneCompletionDelayMillis)
+        onMarkDone()
+    }
+
+    Box(
         modifier = modifier
             .fillMaxWidth()
             .animateContentSize(animationSpec = todayMotionSpec(reducedMotion)),
-        shape = RoundedCornerShape(24.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.10f)),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.26f)),
     ) {
-        Column(
-            modifier = Modifier.padding(start = 18.dp, end = 18.dp, top = 18.dp, bottom = 18.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp),
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .graphicsLayer {
+                    val settle = completionProgress * 0.006f
+                    scaleX = 1f - settle
+                    scaleY = 1f - settle
+                },
+            shape = RoundedCornerShape(24.dp),
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.10f),
+            ),
+            border = BorderStroke(1.dp, cardBorderColor),
         ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.Top,
-                horizontalArrangement = Arrangement.spacedBy(16.dp),
+            Column(
+                modifier = Modifier.padding(start = 18.dp, end = 18.dp, top = 18.dp, bottom = 18.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp),
             ) {
-                Column(
-                    modifier = Modifier.weight(1f),
-                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.Top,
+                    horizontalArrangement = Arrangement.spacedBy(16.dp),
                 ) {
-                    Text(
-                        text = task.title,
-                        style = MaterialTheme.typography.titleLarge.copy(
-                            fontSize = 18.sp,
-                            lineHeight = 24.sp,
-                        ),
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurface,
-                        maxLines = 3,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                    TodayStartMetaRow(
-                        icon = taskTypeIcon(task.taskType),
-                        text = taskTypeLabel(task.taskType),
-                    )
-                    if (sourceText != null) {
-                        TodayStartMetaRow(
-                            icon = Icons.AutoMirrored.Filled.Assignment,
-                            text = sourceText,
+                    Column(
+                        modifier = Modifier.weight(1f),
+                        verticalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        Text(
+                            text = task.title,
+                            style = MaterialTheme.typography.titleLarge.copy(
+                                fontSize = 18.sp,
+                                lineHeight = 24.sp,
+                            ),
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            maxLines = 3,
+                            overflow = TextOverflow.Ellipsis,
                         )
-                    }
-                }
-                Box(
-                    modifier = Modifier.size(30.dp),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    CompositionLocalProvider(LocalMinimumInteractiveComponentSize provides 0.dp) {
-                        IconButton(
-                            onClick = { menuExpanded = true },
-                            modifier = Modifier.size(30.dp),
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.MoreVert,
-                                contentDescription = stringResource(R.string.today_task_actions),
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.size(18.dp),
+                        TodayStartMetaRow(
+                            icon = taskTypeIcon(task.taskType),
+                            text = taskTypeLabel(task.taskType),
+                        )
+                        if (sourceText != null) {
+                            TodayStartMetaRow(
+                                icon = Icons.AutoMirrored.Filled.Assignment,
+                                text = sourceText,
                             )
                         }
                     }
-                    DropdownMenu(
-                        expanded = menuExpanded,
-                        onDismissRequest = { menuExpanded = false },
-                        containerColor = RenContextMenuSurface,
-                        tonalElevation = 0.dp,
+                    Box(
+                        modifier = Modifier.size(30.dp),
+                        contentAlignment = Alignment.Center,
                     ) {
-                        actions.forEach { action ->
-                            DropdownMenuItem(
-                                text = { Text(action.label) },
-                                onClick = {
-                                    menuExpanded = false
-                                    action.onClick()
+                        CompositionLocalProvider(LocalMinimumInteractiveComponentSize provides 0.dp) {
+                            IconButton(
+                                onClick = { menuExpanded = true },
+                                modifier = Modifier.size(30.dp),
+                                enabled = !isCompleting,
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.MoreVert,
+                                    contentDescription = stringResource(R.string.today_task_actions),
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(18.dp),
+                                )
+                            }
+                        }
+                        DropdownMenu(
+                            expanded = menuExpanded,
+                            onDismissRequest = { menuExpanded = false },
+                            containerColor = RenContextMenuSurface,
+                            tonalElevation = 0.dp,
+                        ) {
+                            actions.forEach { action ->
+                                DropdownMenuItem(
+                                    text = { Text(action.label) },
+                                    onClick = {
+                                        menuExpanded = false
+                                        action.onClick()
+                                    },
+                                )
+                            }
+                        }
+                    }
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Button(
+                        onClick = {
+                            if (!isCompleting) onStartFocus()
+                        },
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(18.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = RenSelectedCardSurface,
+                            contentColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.72f),
+                        ),
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.Center,
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Timer,
+                                contentDescription = null,
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            Text(
+                                text = stringResource(R.string.start_focus),
+                            )
+                        }
+                    }
+                    OutlinedButton(
+                        onClick = {
+                            if (isCompleting) return@OutlinedButton
+                            performPhysicalClickHaptic(view)
+                            isCompleting = true
+                        },
+                        modifier = Modifier.weight(0.72f),
+                        shape = RoundedCornerShape(18.dp),
+                        colors = ButtonDefaults.outlinedButtonColors(
+                            containerColor = doneButtonContainerColor,
+                            contentColor = doneButtonContentColor,
+                        ),
+                        border = BorderStroke(1.dp, doneButtonBorderColor),
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.CheckCircle,
+                            contentDescription = null,
+                            modifier = Modifier.size(19.dp),
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        AnimatedContent(
+                            targetState = isCompleting,
+                            transitionSpec = { renFadeThroughTransform(reducedMotion = reducedMotion) },
+                            label = "today-do-now-done-button-label",
+                        ) { completing ->
+                            Text(
+                                text = if (completing) {
+                                    "Done"
+                                } else {
+                                    stringResource(R.string.mark_done)
                                 },
                             )
                         }
                     }
-                }
-            }
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Button(
-                    onClick = onStartFocus,
-                    modifier = Modifier.weight(1f),
-                    shape = RoundedCornerShape(18.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = RenSelectedCardSurface,
-                        contentColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.72f),
-                    ),
-                ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.Center,
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Timer,
-                            contentDescription = null,
-                        )
-                        Spacer(Modifier.width(8.dp))
-                        Text(
-                            text = stringResource(R.string.start_focus),
-                        )
-                    }
-                }
-                OutlinedButton(
-                    onClick = onMarkDone,
-                    modifier = Modifier.weight(0.72f),
-                    shape = RoundedCornerShape(18.dp),
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.CheckCircle,
-                        contentDescription = null,
-                        modifier = Modifier.size(19.dp),
-                    )
-                    Spacer(Modifier.width(8.dp))
-                    Text(stringResource(R.string.mark_done))
                 }
             }
         }
@@ -2619,113 +2754,159 @@ private fun todayTaskSourceText(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun WrapUpTodayDialog(
     todayPlan: TodaySessionPlan,
+    impactPreview: TodayImpactPreview?,
     onDismiss: () -> Unit,
     onConfirm: () -> Unit,
 ) {
+    val view = LocalView.current
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val closingRemainingMinutes = (todayPlan.availableMinutes - todayPlan.untrackedCompletedMinutes)
         .coerceAtLeast(0)
+    val movingForwardValue = wrapUpSummaryValue(
+        count = todayPlan.unfinishedWorkForwardTasks.size,
+        minutes = todayPlan.unfinishedWorkForwardMinutes,
+    )
+    val completedValue = wrapUpSummaryValue(
+        count = todayPlan.doneTodayTasks.size,
+        minutes = todayPlan.completedMinutes,
+    )
+    val hasRemovedWork = todayPlan.removedFromPlanTasks.isNotEmpty() || todayPlan.removedMinutes > 0
 
-    Dialog(onDismissRequest = onDismiss) {
-        Surface(
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        modifier = Modifier.fillMaxWidth(),
+        sheetState = sheetState,
+        shape = RoundedCornerShape(topStart = 30.dp, topEnd = 30.dp),
+        containerColor = MaterialTheme.colorScheme.surface,
+        contentColor = MaterialTheme.colorScheme.onSurface,
+        tonalElevation = 0.dp,
+        scrimColor = Color.Black.copy(alpha = 0.72f),
+        dragHandle = {
+            Surface(
+                modifier = Modifier
+                    .padding(top = 10.dp, bottom = 4.dp)
+                    .size(width = 44.dp, height = 4.dp),
+                shape = CircleShape,
+                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.42f),
+                content = {},
+            )
+        },
+    ) {
+        Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .widthIn(max = 420.dp),
-            shape = RoundedCornerShape(28.dp),
-            color = MaterialTheme.colorScheme.surface,
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.28f)),
+                .navigationBarsPadding()
+                .padding(horizontal = 24.dp)
+                .padding(top = 8.dp, bottom = 18.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
+            WrapUpPlanImpactBand(
+                impactPreview = impactPreview,
+                todayDate = todayPlan.date,
+                unfinishedMinutes = todayPlan.unfinishedWorkForwardMinutes,
+            )
+
             Column(
-                modifier = Modifier.padding(22.dp),
-                verticalArrangement = Arrangement.spacedBy(18.dp),
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(0.dp),
             ) {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                WrapUpDecisionRow(
+                    icon = Icons.Default.CheckCircle,
+                    label = stringResource(R.string.completed),
+                    value = completedValue,
+                    emphasized = todayPlan.doneTodayTasks.isNotEmpty(),
+                )
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.16f))
+                WrapUpDecisionRow(
+                    icon = Icons.Default.Eco,
+                    label = "Carry forward",
+                    value = movingForwardValue,
+                    emphasized = todayPlan.unfinishedWorkForwardTasks.isNotEmpty(),
+                )
+                if (hasRemovedWork) {
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.16f))
+                    WrapUpDecisionRow(
+                        icon = Icons.Default.Close,
+                        label = stringResource(R.string.removed_metric_label),
+                        value = wrapUpSummaryValue(
+                            count = todayPlan.removedFromPlanTasks.size,
+                            minutes = todayPlan.removedMinutes,
+                        ),
+                    )
+                }
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.16f))
+                WrapUpDecisionRow(
+                    icon = Icons.Default.Timer,
+                    label = "Unused",
+                    value = formatMinutes(closingRemainingMinutes),
+                )
+            }
+
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(18.dp),
+                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.12f),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.16f)),
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Info,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.62f),
+                        modifier = Modifier.size(16.dp),
+                    )
+                    Text(
+                        text = stringResource(R.string.wrap_up_today_closes_day),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.78f),
+                        lineHeight = 17.sp,
+                    )
+                }
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                OutlinedButton(
+                    onClick = onDismiss,
+                    modifier = Modifier.weight(1f),
+                    shape = RoundedCornerShape(18.dp),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.22f)),
+                    colors = ButtonDefaults.outlinedButtonColors(
+                        contentColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.78f),
+                    ),
+                ) {
+                    Text(stringResource(R.string.wrap_up_keep_open))
+                }
+                Button(
+                    onClick = {
+                        performPhysicalClickHaptic(view)
+                        onConfirm()
+                    },
+                    modifier = Modifier.weight(1f),
+                    shape = RoundedCornerShape(18.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Color(0xFFC78200),
+                        contentColor = Color.Black.copy(alpha = 0.88f),
+                    ),
+                ) {
                     Icon(
                         imageVector = Icons.Default.Flag,
                         contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.74f),
-                        modifier = Modifier.size(22.dp),
+                        modifier = Modifier.size(17.dp),
                     )
-                    Text(
-                        text = stringResource(R.string.wrap_up_today_title),
-                        style = MaterialTheme.typography.headlineSmall,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurface,
-                    )
-                    Text(
-                        text = stringResource(R.string.wrap_up_today_message),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.86f),
-                    )
-                }
-
-                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    WrapUpDecisionRow(
-                        icon = Icons.Default.CheckCircle,
-                        label = stringResource(R.string.completed),
-                        value = wrapUpSummaryValue(
-                            count = todayPlan.doneTodayTasks.size,
-                            minutes = todayPlan.completedMinutes,
-                        ),
-                    )
-                    WrapUpDecisionRow(
-                        icon = Icons.Default.Eco,
-                        label = stringResource(R.string.wrap_up_carry_forward_label),
-                        value = wrapUpSummaryValue(
-                            count = todayPlan.unfinishedWorkForwardTasks.size,
-                            minutes = todayPlan.unfinishedWorkForwardMinutes,
-                        ),
-                    )
-                    if (todayPlan.removedFromPlanTasks.isNotEmpty() || todayPlan.removedMinutes > 0) {
-                        WrapUpDecisionRow(
-                            icon = Icons.Default.Close,
-                            label = stringResource(R.string.removed_metric_label),
-                            value = wrapUpSummaryValue(
-                                count = todayPlan.removedFromPlanTasks.size,
-                                minutes = todayPlan.removedMinutes,
-                            ),
-                        )
-                    }
-                    WrapUpDecisionRow(
-                        icon = Icons.Default.Timer,
-                        label = stringResource(R.string.wrap_up_unused_time_label),
-                        value = formatMinutes(closingRemainingMinutes),
-                    )
-                }
-
-                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.22f))
-
-                Text(
-                    text = stringResource(R.string.wrap_up_today_closes_day),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.72f),
-                )
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp, Alignment.End),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    TextButton(
-                        onClick = onDismiss,
-                        colors = ButtonDefaults.textButtonColors(
-                            contentColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.82f),
-                        ),
-                    ) {
-                        Text(stringResource(R.string.wrap_up_keep_open))
-                    }
-                    Button(
-                        onClick = onConfirm,
-                        shape = RoundedCornerShape(18.dp),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.78f),
-                            contentColor = MaterialTheme.colorScheme.onPrimary,
-                        ),
-                    ) {
-                        Text(stringResource(R.string.wrap_up_end_day))
-                    }
+                    Spacer(Modifier.width(8.dp))
+                    Text(stringResource(R.string.wrap_up_end_day))
                 }
             }
         }
@@ -2920,46 +3101,276 @@ private data class WrapUpSummaryItem(
 )
 
 @Composable
+private fun WrapUpPlanImpactBand(
+    impactPreview: TodayImpactPreview?,
+    todayDate: String,
+    unfinishedMinutes: Int,
+) {
+    val status = impactPreview?.status ?: if (unfinishedMinutes > 0) {
+        TodayImpactStatus.WorkMovesForward
+    } else {
+        TodayImpactStatus.Fits
+    }
+    val statusColor = when (status) {
+        TodayImpactStatus.Fits,
+        TodayImpactStatus.WorkMovesForward,
+            -> MaterialTheme.colorScheme.primary
+        TodayImpactStatus.Tight,
+        TodayImpactStatus.Crammed,
+            -> Color(0xFFC78200)
+        TodayImpactStatus.Overloaded -> MaterialTheme.colorScheme.error
+    }
+    val icon = when (status) {
+        TodayImpactStatus.Fits -> Icons.Default.CheckCircle
+        TodayImpactStatus.WorkMovesForward -> Icons.Default.Schedule
+        TodayImpactStatus.Tight,
+        TodayImpactStatus.Crammed,
+        TodayImpactStatus.Overloaded,
+            -> Icons.Default.WarningAmber
+    }
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(24.dp),
+        color = statusColor.copy(alpha = 0.09f),
+        border = BorderStroke(1.dp, statusColor.copy(alpha = 0.22f)),
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = 19.dp, vertical = 18.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                Surface(
+                    modifier = Modifier.size(28.dp),
+                    shape = CircleShape,
+                    color = statusColor.copy(alpha = 0.13f),
+                    border = BorderStroke(1.dp, statusColor.copy(alpha = 0.24f)),
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            imageVector = icon,
+                            contentDescription = null,
+                            tint = statusColor.copy(alpha = 0.86f),
+                            modifier = Modifier.size(16.dp),
+                        )
+                    }
+                }
+                Text(
+                    text = wrapUpSchedulerImpactTitle(
+                        preview = impactPreview,
+                        todayDate = todayDate,
+                        fallbackStatus = status,
+                    ),
+                    modifier = Modifier.weight(1f),
+                    style = MaterialTheme.typography.labelLarge.copy(
+                        fontSize = 18.sp,
+                        lineHeight = 23.sp,
+                    ),
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.9f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            Text(
+                text = wrapUpSchedulerImpactDetail(
+                    preview = impactPreview,
+                    todayDate = todayDate,
+                    fallbackStatus = status,
+                ),
+                style = MaterialTheme.typography.bodySmall.copy(
+                    fontSize = 14.5.sp,
+                    lineHeight = 20.sp,
+                ),
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.76f),
+                maxLines = 3,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+    }
+}
+
+@Composable
 private fun WrapUpDecisionRow(
     icon: ImageVector,
     label: String,
     value: String,
+    emphasized: Boolean = false,
 ) {
-    Surface(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(16.dp),
-        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.22f),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.16f)),
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 11.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
-        ) {
-            Icon(
-                imageVector = icon,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.62f),
-                modifier = Modifier.size(17.dp),
-            )
-            Text(
-                text = label,
-                modifier = Modifier.weight(1f),
-                style = MaterialTheme.typography.bodyMedium,
-                fontWeight = FontWeight.Medium,
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.9f),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Text(
-                text = value,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.82f),
-                textAlign = TextAlign.End,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            tint = if (emphasized) {
+                MaterialTheme.colorScheme.primary.copy(alpha = 0.74f)
+            } else {
+                MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.54f)
+            },
+            modifier = Modifier.size(17.dp),
+        )
+        Text(
+            text = label,
+            modifier = Modifier.weight(1f),
+            style = MaterialTheme.typography.bodyMedium.copy(
+                fontSize = 15.sp,
+                lineHeight = 19.sp,
+            ),
+            fontWeight = FontWeight.SemiBold,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.84f),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+        Text(
+            text = value,
+            style = MaterialTheme.typography.bodyMedium.copy(
+                fontSize = 15.sp,
+                lineHeight = 19.sp,
+            ),
+            fontWeight = if (emphasized) FontWeight.SemiBold else FontWeight.Medium,
+            color = if (emphasized) {
+                MaterialTheme.colorScheme.primary.copy(alpha = 0.86f)
+            } else {
+                MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.78f)
+            },
+            textAlign = TextAlign.End,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
+}
+
+private fun TodayImpactStatus.wrapUpImpactDetail(): String = when (this) {
+    TodayImpactStatus.Fits -> "No extra pressure after closing. Suspiciously civil."
+    TodayImpactStatus.WorkMovesForward -> "Unfinished work moves forward. The calendar survives."
+    TodayImpactStatus.Tight -> "It fits, but with less breathing room. Tiny calendar yoga."
+    TodayImpactStatus.Crammed -> "It fits, technically. The calendar is doing gymnastics."
+    TodayImpactStatus.Overloaded -> "Something may not fit yet. Time or scope has to blink first."
+}
+
+@Composable
+private fun wrapUpSchedulerImpactTitle(
+    preview: TodayImpactPreview?,
+    todayDate: String,
+    fallbackStatus: TodayImpactStatus,
+): String {
+    if (preview == null || preview.carriedTaskCount == 0) {
+        return fallbackStatus.wrapUpFallbackTitle()
+    }
+    if (preview.unscheduledCarriedTaskCount > 0) {
+        return "Needs a slot first"
+    }
+    val landingDate = preview.firstCarriedDate ?: return fallbackStatus.wrapUpFallbackTitle()
+    return when (fallbackStatus) {
+        TodayImpactStatus.Fits,
+        TodayImpactStatus.WorkMovesForward,
+            -> "${wrapUpLandingSubject(wrapUpLandingDateLabel(todayDate, landingDate))} can take it"
+        TodayImpactStatus.Tight -> "${wrapUpLandingSubject(wrapUpLandingDateLabel(todayDate, landingDate))} gets tight"
+        TodayImpactStatus.Crammed -> "${wrapUpLandingSubject(wrapUpLandingDateLabel(todayDate, landingDate))} gets packed"
+        TodayImpactStatus.Overloaded -> "Watch the spillover"
+    }
+}
+
+private fun TodayImpactStatus.wrapUpFallbackTitle(): String = when (this) {
+    TodayImpactStatus.Fits -> "Plan still fits"
+    TodayImpactStatus.WorkMovesForward -> "Schedule preview"
+    TodayImpactStatus.Tight -> "Plan gets tight"
+    TodayImpactStatus.Crammed -> "Plan gets packed"
+    TodayImpactStatus.Overloaded -> "More time needed"
+}
+
+@Composable
+private fun wrapUpSchedulerImpactDetail(
+    preview: TodayImpactPreview?,
+    todayDate: String,
+    fallbackStatus: TodayImpactStatus,
+): String {
+    if (preview == null || preview.carriedTaskCount == 0) {
+        return fallbackStatus.wrapUpImpactDetail()
+    }
+    if (preview.unscheduledCarriedTaskCount > 0) {
+        val minutes = preview.unscheduledCarriedMinutes.takeIf { it > 0 }
+            ?.let { ", ${formatMinutes(it)}" }
+            .orEmpty()
+        return "${leafCountLabel(preview.unscheduledCarriedTaskCount)}$minutes cannot land yet. Rude, but useful to know."
+    }
+    val landingDate = preview.firstCarriedDate ?: return fallbackStatus.wrapUpImpactDetail()
+    val landingLabel = wrapUpLandingDateLabel(todayDate = todayDate, landingDate = landingDate)
+    val loadLabel = preview.wrapUpFirstCarriedDayLoadLabel()
+    val loadText = if (
+        loadLabel != null &&
+        preview.firstCarriedDayPlannedMinutes > 0 &&
+        preview.firstCarriedDayCapacityMinutes > 0
+    ) {
+        val loadVerb = if (preview.firstCarriedDayLoad == StudyBlockDifficulty.Light && !preview.firstCarriedDayIsRisky) {
+            "stays"
+        } else {
+            "becomes"
         }
+        "${wrapUpLandingSubject(landingLabel)} $loadVerb $loadLabel: " +
+            "${formatMinutes(preview.firstCarriedDayPlannedMinutes)} scheduled in a " +
+            "${formatMinutes(preview.firstCarriedDayCapacityMinutes)} day budget."
+    } else {
+        fallbackStatus.wrapUpImpactDetail()
+    }
+    val spreadText = if (preview.affectedFutureDayCount > 1) {
+        " It spreads across ${preview.affectedFutureDayCount} days."
+    } else {
+        ""
+    }
+    val unscheduledText = if (preview.unscheduledTaskCount > 0) {
+        " ${leafCountLabel(preview.unscheduledTaskCount)} still won't fit after closing."
+    } else if (fallbackStatus == TodayImpactStatus.WorkMovesForward || fallbackStatus == TodayImpactStatus.Fits) {
+        " Calendar survives."
+    } else {
+        ""
+    }
+    val moveText = if (preview.carriedTaskCount == 1) {
+        "This leaf moves"
+    } else {
+        "${leafCountLabel(preview.carriedTaskCount)} move"
+    }
+    return "$moveText to $landingLabel. $loadText$spreadText$unscheduledText"
+}
+
+@Composable
+private fun TodayImpactPreview.wrapUpFirstCarriedDayLoadLabel(): String? {
+    val load = firstCarriedDayLoad ?: return null
+    return when {
+        firstCarriedDayIsRisky -> stringResource(R.string.load_tight)
+        load == StudyBlockDifficulty.Light -> stringResource(R.string.load_light)
+        load == StudyBlockDifficulty.Standard -> stringResource(R.string.load_standard)
+        else -> stringResource(R.string.load_heavy)
+    }.lowercase(Locale.getDefault())
+}
+
+private fun wrapUpLandingSubject(landingLabel: String): String = when (landingLabel) {
+    "tomorrow" -> "Tomorrow"
+    "today" -> "Today"
+    else -> landingLabel
+}
+
+private fun wrapUpLandingDateLabel(
+    todayDate: String,
+    landingDate: String,
+): String {
+    val today = todayDate.toStudyCalendar()
+    val landing = landingDate.toStudyCalendar() ?: return landingDate
+    val tomorrow = today?.let {
+        (it.clone() as Calendar).apply { add(Calendar.DAY_OF_MONTH, 1) }
+    }
+    return when {
+        tomorrow != null && landingDate == tomorrow.toStudyDate() -> "tomorrow"
+        landingDate == todayDate -> "today"
+        else -> SimpleDateFormat("EEE, d MMM", Locale.getDefault()).format(landing.time)
     }
 }
 
@@ -3103,4 +3514,12 @@ private fun <T> todayMotionSpec(reducedMotion: Boolean) = tween<T>(
     easing = RenMotionEasing,
 )
 
+private fun performPhysicalClickHaptic(view: View) {
+    if (!view.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)) {
+        view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+    }
+}
+
 private const val TimeAdjustmentStepMinutes = 30
+private const val TodayDoneConfirmationFadeMillis = 160
+private const val TodayDoneCompletionDelayMillis = 460L

@@ -169,6 +169,35 @@ class StudyProjectPersistenceTest {
         assertEquals(mapOf("2026-06-22" to listOf(record)), decoded.focusSessionHistoryByDate)
     }
 
+    @Test fun todaySessionDraftPreservesTemporaryTodayState() {
+        val record = FocusSessionRecord(
+            taskId = "done",
+            plannedFocusMinutes = 20,
+            plannedFocusSeconds = 1_200,
+            plannedBreakMinutes = 5,
+            focusSeconds = 1_190,
+            flowOvertimeSeconds = 30,
+            breakSeconds = 300,
+            awaySeconds = 8,
+            interruptionCount = 1,
+            outcome = FocusSessionOutcome.FocusRoundEnded,
+            endedAtMillis = 300L,
+        )
+        val session = TodaySessionState(
+            date = "2026-06-22",
+            availableMinutes = 45,
+            movedLaterTaskIds = setOf("move"),
+            pulledInTaskIds = setOf("pull"),
+            doneTodayTaskIds = setOf("done"),
+            removedFromPlanTaskIds = setOf("remove"),
+            focusSessions = listOf(record),
+        )
+
+        val decoded = TodaySessionDraftJsonCodec.decode(TodaySessionDraftJsonCodec.encode(session))
+
+        assertEquals(session, decoded)
+    }
+
     @Test fun generatedProjectKeepsCanonicalBlocksBeforePersistence() {
         val generated = newStudyProject(
             plan(

@@ -6,6 +6,7 @@ import com.hci.ren.feature.pdfupload.presentation.StudyDeadline
 import com.hci.ren.feature.pdfupload.presentation.StudyGoal
 import com.hci.ren.feature.plangeneration.GeneratedStudyBlock
 import com.hci.ren.feature.plangeneration.GeneratedStudyPlan
+import com.hci.ren.feature.plangeneration.StudyBlockDifficulty
 import com.hci.ren.feature.plangeneration.StudyTaskStatus
 import com.hci.ren.feature.plangeneration.StudyTaskType
 import java.util.Calendar
@@ -44,6 +45,11 @@ class TodayImpactPreviewServiceTest {
         val preview = TodayImpactPreviewService().preview(project, "2026-06-22", session)
 
         assertEquals(TodayImpactStatus.WorkMovesForward, preview?.status)
+        assertEquals(1, preview?.carriedTaskCount)
+        assertEquals("2026-06-23", preview?.firstCarriedDate)
+        assertEquals(StudyBlockDifficulty.Standard, preview?.firstCarriedDayLoad)
+        assertEquals(false, preview?.firstCarriedDayIsRisky)
+        assertEquals(60, preview?.firstCarriedDayCapacityMinutes)
     }
 
     @Test fun previewReportsWorkMovesForwardWhenUnfinishedTodayCloses() {
@@ -56,6 +62,8 @@ class TodayImpactPreviewServiceTest {
         val preview = TodayImpactPreviewService().preview(project, "2026-06-22", null)
 
         assertEquals(TodayImpactStatus.WorkMovesForward, preview?.status)
+        assertEquals("2026-06-23", preview?.firstCarriedDate)
+        assertEquals(StudyBlockDifficulty.Standard, preview?.firstCarriedDayLoad)
     }
 
     @Test fun previewReportsTightProjectedPlan() {
@@ -108,6 +116,9 @@ class TodayImpactPreviewServiceTest {
         val preview = TodayImpactPreviewService().preview(project, "2026-06-22", session)
 
         assertEquals(TodayImpactStatus.Overloaded, preview?.status)
+        assertEquals("2026-06-23", preview?.firstCarriedDate)
+        assertEquals(1, preview?.unscheduledTaskCount)
+        assertEquals(0, preview?.unscheduledCarriedTaskCount)
     }
 
     private fun project(

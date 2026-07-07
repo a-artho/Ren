@@ -13,20 +13,35 @@ import android.hardware.Sensor
 import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
 import android.hardware.SensorManager
+import android.media.AudioAttributes
+import android.media.AudioFormat
+import android.media.AudioTrack
 import android.os.Build
 import android.os.SystemClock
+import android.os.VibrationEffect
+import android.os.Vibrator
+import android.os.VibratorManager
+import android.view.HapticFeedbackConstants
+import android.view.View
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -39,10 +54,12 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Eco
+import androidx.compose.material.icons.filled.MobileOff
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Remove
@@ -52,6 +69,7 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -78,6 +96,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
@@ -90,7 +109,12 @@ import com.hci.ren.feature.plangeneration.GeneratedStudyBlock
 import com.hci.ren.feature.plangeneration.StudySourceDocument
 import com.hci.ren.feature.plangeneration.StudyTaskStatus
 import com.hci.ren.feature.plangeneration.likelyStudyMinutes
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import kotlin.math.PI
+import kotlin.math.sin
 import kotlin.math.sqrt
 
 data class FocusDayState(
@@ -136,7 +160,7 @@ fun AdaptiveFocusMode(
     session: TodaySessionState?,
     onDismiss: () -> Unit,
     onMarkDone: (date: String, taskId: String) -> Unit,
-    onOpenTask: (taskId: String) -> Unit,
+    onOpenTask: (date: String, taskId: String, pulledIntoToday: Boolean) -> Unit,
     modifier: Modifier = Modifier,
     startAutomatically: Boolean = false,
     focusDayState: FocusDayState? = null,
@@ -176,6 +200,7 @@ fun AdaptiveFocusMode(
         )
     }
     val doneTodayIds = remember(todayPlan) { todayPlan.doneTodayTasks.mapTo(mutableSetOf()) { it.id } }
+    val pullInCandidateIds = remember(todayPlan) { todayPlan.pullInCandidates.mapTo(mutableSetOf()) { it.id } }
     val focusQueue = remember(todayPlan) {
         (todayPlan.doTodayTasks + todayPlan.pulledInTasks + todayPlan.pullInCandidates)
             .distinctBy { it.id }
@@ -230,6 +255,7 @@ fun AdaptiveFocusMode(
     var focusedSeconds by rememberSaveable(today) { mutableIntStateOf(0) }
     var plannedFocusSeconds by rememberSaveable(today) { mutableIntStateOf(0) }
     var bankedFlowOvertimeSeconds by rememberSaveable(today) { mutableIntStateOf(0) }
+    var recordedBreakSeconds by rememberSaveable(today) { mutableIntStateOf(0) }
     var quietSeconds by rememberSaveable(today) { mutableIntStateOf(0) }
     var screenInteractionCount by rememberSaveable(today) { mutableIntStateOf(0) }
     var lastInteractionAtMillis by rememberSaveable(today) { mutableLongStateOf(0L) }
@@ -238,6 +264,7 @@ fun AdaptiveFocusMode(
     var pauseCount by rememberSaveable(today) { mutableIntStateOf(0) }
     var pauseStartedAtMillis by rememberSaveable(today) { mutableLongStateOf(0L) }
     var pausedMillis by rememberSaveable(today) { mutableLongStateOf(0L) }
+    var screenUpPauseInterruptionCounted by rememberSaveable(today) { mutableStateOf(false) }
     var backgroundInterruptions by rememberSaveable(today) { mutableIntStateOf(0) }
     var softGlanceCount by rememberSaveable(today) { mutableIntStateOf(0) }
     var backgroundStartedAtMillis by rememberSaveable(today) { mutableLongStateOf(0L) }
@@ -260,16 +287,23 @@ fun AdaptiveFocusMode(
     var autoStarted by rememberSaveable(currentTask.id) { mutableStateOf(false) }
     var leafDoneChoicePending by rememberSaveable(today) { mutableStateOf(false) }
     var deepFocusMinutes by rememberSaveable(today) { mutableStateOf<Int?>(null) }
+    var pendingFaceDownStartMinutes by rememberSaveable(today) { mutableStateOf<Int?>(null) }
+    var pausedFromFlowOvertime by rememberSaveable(today) { mutableStateOf(false) }
     var recoveryStartedAtMillis by rememberSaveable(today) {
         mutableLongStateOf(initialDayState.recoveryStartedAtRealtimeMillis)
     }
     var lastReport by remember(today) { mutableStateOf(initialDayState.lastRound?.toRoundReport()) }
     var notificationPermissionGranted by rememberNotificationPermissionState()
     var notificationEvent by remember { mutableStateOf<FocusNotificationEvent?>(null) }
+    var completionCueEvent by remember { mutableStateOf<FocusCompletionCueEvent?>(null) }
+    var focusModeNotice by remember { mutableStateOf<String?>(null) }
+    var focusModeNoticeSerial by remember { mutableIntStateOf(0) }
     val posture = rememberFocusPostureReading(
-        enabled = phase in FocusTrackingPhases && faceDownAssistEnabled,
+        enabled = faceDownAssistEnabled &&
+            (phase in FocusTrackingPhases || phase in FocusStartGatePhases || pendingFaceDownStartMinutes != null),
     )
     val latestPhoneDown by rememberUpdatedState(posture.isPhoneDown)
+    val focusView = LocalView.current
 
     fun setPhase(next: FocusPhase) {
         phaseName = next.name
@@ -317,11 +351,39 @@ fun AdaptiveFocusMode(
     fun currentRoundInterruptionCount(): Int = backgroundInterruptions + pauseCount
 
     fun currentFlowOvertimeSeconds(): Int =
-        bankedFlowOvertimeSeconds + if (phase == FocusPhase.FlowOvertime) {
+        bankedFlowOvertimeSeconds + if (
+            phase == FocusPhase.FlowOvertime ||
+            (phase == FocusPhase.Paused && pausedFromFlowOvertime)
+        ) {
             (-remainingSeconds).coerceAtLeast(0)
         } else {
             0
         }
+
+    fun currentBreakElapsedSeconds(): Int =
+        (breakMinutes * SecondsPerMinute - remainingSeconds).coerceAtLeast(0)
+
+    fun currentUnrecordedBreakSeconds(): Int =
+        (currentBreakElapsedSeconds() - recordedBreakSeconds).coerceAtLeast(0)
+
+    fun currentPausedMillis(): Long =
+        pausedMillis + if (pauseStartedAtMillis == 0L) {
+            0L
+        } else {
+            SystemClock.elapsedRealtime() - pauseStartedAtMillis
+        }
+
+    fun countScreenUpPauseInterruptionIfNeeded(now: Long = SystemClock.elapsedRealtime()) {
+        if (
+            phase == FocusPhase.Paused &&
+            pauseStartedAtMillis != 0L &&
+            !screenUpPauseInterruptionCounted &&
+            now - pauseStartedAtMillis >= InterruptionGraceMillis
+        ) {
+            pauseCount += 1
+            screenUpPauseInterruptionCounted = true
+        }
+    }
 
     fun currentLeafFocusSeconds(): Int = previousFocusSecondsForTask + focusedSeconds
 
@@ -407,6 +469,8 @@ fun AdaptiveFocusMode(
         pauseCount = 0
         pauseStartedAtMillis = 0L
         pausedMillis = 0L
+        screenUpPauseInterruptionCounted = false
+        pausedFromFlowOvertime = false
         backgroundInterruptions = 0
         softGlanceCount = 0
         backgroundStartedAtMillis = 0L
@@ -469,6 +533,7 @@ fun AdaptiveFocusMode(
     }
 
     fun startFocusRound(minutes: Int = focusMinutes) {
+        pendingFaceDownStartMinutes = null
         leafDoneChoicePending = false
         deepFocusMinutes = null
         val requestedMinutes = nextFocusAfterRecoveryGap(minutes)
@@ -482,15 +547,89 @@ fun AdaptiveFocusMode(
         remainingSeconds = plannedFocusSeconds
         lastInteractionAtMillis = SystemClock.elapsedRealtime()
         setPhase(FocusPhase.Focus)
+        performFocusStartHaptic(focusView)
         roundSerial += 1
         publishDayState()
+    }
+
+    fun pauseFocusForScreenUp() {
+        if (phase !in FocusTrackingPhases || !faceDownAssistEnabled || !posture.isSupported) return
+        pendingFaceDownStartMinutes = focusMinutes
+        pausedFromFlowOvertime = phase == FocusPhase.FlowOvertime
+        if (pauseStartedAtMillis == 0L) {
+            pauseStartedAtMillis = SystemClock.elapsedRealtime()
+            screenUpPauseInterruptionCounted = false
+        }
+        screenSettled = false
+        setPhase(FocusPhase.Paused)
+        publishDayState()
+    }
+
+    fun resumePausedFocus() {
+        if (phase != FocusPhase.Paused) return
+        countScreenUpPauseInterruptionIfNeeded()
+        val startedAt = pauseStartedAtMillis
+        if (startedAt != 0L) {
+            pausedMillis += SystemClock.elapsedRealtime() - startedAt
+            pauseStartedAtMillis = 0L
+        }
+        screenUpPauseInterruptionCounted = false
+        pendingFaceDownStartMinutes = null
+        lastInteractionAtMillis = SystemClock.elapsedRealtime()
+        screenSettled = false
+        setPhase(if (pausedFromFlowOvertime) FocusPhase.FlowOvertime else FocusPhase.Focus)
+        roundSerial += 1
+        publishDayState()
+    }
+
+    fun updateFaceDownAssist(enabled: Boolean) {
+        if (enabled == faceDownAssistEnabled) return
+
+        faceDownAssistEnabled = enabled
+        if (enabled) {
+            focusModeNotice = FocusPhoneDownNotice
+            focusModeNoticeSerial += 1
+            publishDayState()
+            return
+        }
+
+        val pendingMinutes = pendingFaceDownStartMinutes
+        if (phase == FocusPhase.Paused) {
+            resumePausedFocus()
+            return
+        }
+        if (pendingMinutes != null && phase in FocusStartGatePhases) {
+            startFocusRound(pendingMinutes)
+            return
+        }
+
+        pendingFaceDownStartMinutes = null
+        publishDayState()
+    }
+
+    fun requestFocusStart(minutes: Int = focusMinutes) {
+        if (phase == FocusPhase.Paused) {
+            if (faceDownAssistEnabled && posture.isSupported && !latestPhoneDown) {
+                pendingFaceDownStartMinutes = minutes.coerceIn(MinFocusMinutes, MaxFocusMinutes)
+                return
+            }
+            resumePausedFocus()
+            return
+        }
+        if (faceDownAssistEnabled && posture.isSupported && !latestPhoneDown) {
+            pendingFaceDownStartMinutes = minutes.coerceIn(MinFocusMinutes, MaxFocusMinutes)
+            return
+        }
+        startFocusRound(minutes)
     }
 
     fun startBreak(minutes: Int = breakMinutes) {
         val normalized = minutes.coerceIn(MinBreakMinutes, MaxBreakMinutes)
         breakMinutes = normalized
+        recordedBreakSeconds = 0
         remainingSeconds = normalized * SecondsPerMinute
         setPhase(FocusPhase.Break)
+        performFocusStartHaptic(focusView)
         roundSerial += 1
         publishDayState()
     }
@@ -500,8 +639,9 @@ fun AdaptiveFocusMode(
         nextPhase: FocusPhase = FocusPhase.Summary,
     ) {
         finalizeBackgroundAway(resetOnLongGap = false)
+        countScreenUpPauseInterruptionIfNeeded()
         val awaySeconds = (backgroundAwayMillis / 1_000L).toInt()
-        val pauseSeconds = (pausedMillis / 1_000L).toInt()
+        val pauseSeconds = (currentPausedMillis() / 1_000L).toInt()
         val interruptions = currentRoundInterruptionCount()
         val flowOvertimeSeconds = currentFlowOvertimeSeconds()
         val report = FocusRoundReport(
@@ -572,9 +712,10 @@ fun AdaptiveFocusMode(
     fun persistPartialFocusProgress(): FocusRoundReport? {
         if (phase !in FocusTrackingPhases && phase != FocusPhase.Paused) return null
         finalizeBackgroundAway(resetOnLongGap = false)
+        countScreenUpPauseInterruptionIfNeeded()
 
         val awaySeconds = (backgroundAwayMillis / 1_000L).toInt()
-        val pauseSeconds = (pausedMillis / 1_000L).toInt()
+        val pauseSeconds = (currentPausedMillis() / 1_000L).toInt()
         val interruptions = currentRoundInterruptionCount()
         val flowOvertimeSeconds = currentFlowOvertimeSeconds()
         val report = FocusRoundReport(
@@ -624,16 +765,17 @@ fun AdaptiveFocusMode(
 
     fun persistPartialBreakProgress() {
         if (phase !in BreakTrackingPhases) return
-        val plannedBreakSeconds = breakMinutes * SecondsPerMinute
-        val elapsedBreakSeconds = (plannedBreakSeconds - remainingSeconds)
-            .coerceAtLeast(0)
+        val elapsedBreakSeconds = currentBreakElapsedSeconds()
+        val unrecordedBreakSeconds = (elapsedBreakSeconds - recordedBreakSeconds).coerceAtLeast(0)
+        if (unrecordedBreakSeconds == 0) return
         recordFocusSession(
             outcome = FocusSessionOutcome.BreakEnded,
             focusSecondsValue = 0,
             plannedFocusSecondsValue = 0,
-            breakSecondsValue = elapsedBreakSeconds,
+            breakSecondsValue = unrecordedBreakSeconds,
         )
-        dayBreakSeconds += elapsedBreakSeconds
+        dayBreakSeconds += unrecordedBreakSeconds
+        recordedBreakSeconds = elapsedBreakSeconds
     }
 
     fun finishBreak() {
@@ -645,6 +787,7 @@ fun AdaptiveFocusMode(
             text = "Ready when you are.",
         )
         remainingSeconds = focusMinutes * SecondsPerMinute
+        recordedBreakSeconds = 0
         setPhase(if (leafDoneChoicePending) FocusPhase.LeafDone else FocusPhase.Ready)
         if (recoveryStartedBeforeFinish != 0L) {
             recoveryStartedAtMillis = recoveryStartedBeforeFinish
@@ -748,7 +891,7 @@ fun AdaptiveFocusMode(
         deepFocusMinutes = null
         setPhase(FocusPhase.Ready)
         remainingSeconds = focusMinutes * SecondsPerMinute
-        onOpenTask(task.id)
+        onOpenTask(today, task.id, task.id in pullInCandidateIds)
         publishDayState()
     }
 
@@ -790,15 +933,93 @@ fun AdaptiveFocusMode(
         permissionGranted = notificationPermissionGranted,
         event = notificationEvent,
     )
+    FocusCompletionCueEffect(event = completionCueEvent)
 
     val isAmbientFocus = phase in FocusTrackingPhases && screenSettled
     FocusKeepScreenOnEffect(enabled = phase in FocusTrackingPhases)
     FocusScreenDimmingEffect(enabled = isAmbientFocus)
 
+    LaunchedEffect(focusModeNoticeSerial) {
+        val serial = focusModeNoticeSerial
+        if (focusModeNotice != null) {
+            delay(FocusTopNoticeDurationMillis)
+            if (focusModeNoticeSerial == serial) {
+                focusModeNotice = null
+            }
+        }
+    }
+
+    LaunchedEffect(
+        pendingFaceDownStartMinutes,
+        latestPhoneDown,
+        faceDownAssistEnabled,
+        posture.isSupported,
+        phase,
+    ) {
+        val pendingMinutes = pendingFaceDownStartMinutes ?: return@LaunchedEffect
+        if (phase !in FocusStartGatePhases) {
+            pendingFaceDownStartMinutes = null
+            return@LaunchedEffect
+        }
+        if (!faceDownAssistEnabled || !posture.isSupported || latestPhoneDown) {
+            if (phase == FocusPhase.Paused) {
+                resumePausedFocus()
+            } else {
+                startFocusRound(pendingMinutes)
+            }
+        }
+    }
+
+    LaunchedEffect(
+        phase,
+        latestPhoneDown,
+        faceDownAssistEnabled,
+        posture.isSupported,
+        pauseStartedAtMillis,
+    ) {
+        if (!faceDownAssistEnabled || !posture.isSupported) {
+            if (phase == FocusPhase.Paused && pauseStartedAtMillis != 0L) {
+                resumePausedFocus()
+            }
+            return@LaunchedEffect
+        }
+
+        if (phase in FocusTrackingPhases && !latestPhoneDown) {
+            delay(FocusPhoneUpPauseGraceMillis)
+            if (phase in FocusTrackingPhases && !latestPhoneDown && faceDownAssistEnabled && posture.isSupported) {
+                pauseFocusForScreenUp()
+            }
+            return@LaunchedEffect
+        }
+
+        if (phase == FocusPhase.Paused && latestPhoneDown && pauseStartedAtMillis != 0L) {
+            resumePausedFocus()
+        }
+    }
+
+    LaunchedEffect(
+        phase,
+        pauseStartedAtMillis,
+        screenUpPauseInterruptionCounted,
+    ) {
+        if (
+            phase != FocusPhase.Paused ||
+            pauseStartedAtMillis == 0L ||
+            screenUpPauseInterruptionCounted
+        ) {
+            return@LaunchedEffect
+        }
+        val remainingGraceMillis = (InterruptionGraceMillis -
+            (SystemClock.elapsedRealtime() - pauseStartedAtMillis)).coerceAtLeast(0L)
+        delay(remainingGraceMillis)
+        countScreenUpPauseInterruptionIfNeeded()
+        publishDayState()
+    }
+
     LaunchedEffect(startAutomatically, currentTask.id) {
         if (startAutomatically && !autoStarted) {
             autoStarted = true
-            startFocusRound(focusMinutes)
+            requestFocusStart(focusMinutes)
         }
     }
 
@@ -827,12 +1048,20 @@ fun AdaptiveFocusMode(
                 }
             }
             if (phase == FocusPhase.Focus && remainingSeconds <= 0) {
+                completionCueEvent = FocusCompletionCueEvent(
+                    id = SystemClock.elapsedRealtime(),
+                    kind = FocusCompletionCueKind.FocusEnded,
+                )
                 setPhase(FocusPhase.FlowOvertime)
                 return@LaunchedEffect
             }
             if (phase == FocusPhase.Break && remainingSeconds <= 0) {
                 persistPartialBreakProgress()
                 remainingSeconds = 0
+                completionCueEvent = FocusCompletionCueEvent(
+                    id = SystemClock.elapsedRealtime(),
+                    kind = FocusCompletionCueKind.BreakEnded,
+                )
                 notificationEvent = FocusNotificationEvent(
                     id = SystemClock.elapsedRealtime(),
                     title = "Break done",
@@ -863,7 +1092,9 @@ fun AdaptiveFocusMode(
             0
         },
         sessionBreakSeconds = dayBreakSeconds + if (phase == FocusPhase.Break) {
-            (breakMinutes * SecondsPerMinute - remainingSeconds).coerceAtLeast(0)
+            currentUnrecordedBreakSeconds()
+        } else if (phase == FocusPhase.BreakEnded) {
+            currentUnrecordedBreakSeconds()
         } else {
             0
         },
@@ -872,6 +1103,7 @@ fun AdaptiveFocusMode(
         screenInteractionCount = screenInteractionCount,
         posture = posture,
         faceDownAssistEnabled = faceDownAssistEnabled,
+        focusModeNotice = focusModeNotice,
         lastReport = lastReport,
         notificationPermissionGranted = notificationPermissionGranted,
         currentInterruptionCount = dayInterruptionCount + if (phase in FocusTrackingPhases || phase == FocusPhase.Paused) {
@@ -879,10 +1111,13 @@ fun AdaptiveFocusMode(
         } else {
             0
         },
+        faceDownStartPending = pendingFaceDownStartMinutes != null &&
+            phase in FocusStartGatePhases &&
+            faceDownAssistEnabled &&
+            posture.isSupported,
         onRequestNotifications = { notificationPermissionGranted = it },
         onFaceDownAssistChange = { enabled ->
-            faceDownAssistEnabled = enabled
-            publishDayState()
+            updateFaceDownAssist(enabled)
         },
         onFocusMinutesChange = { minutes ->
             if (phase == FocusPhase.Ready) {
@@ -904,14 +1139,14 @@ fun AdaptiveFocusMode(
             }
         },
         onDismiss = ::requestDismiss,
-        onStartRound = { startFocusRound(focusMinutes) },
-        onStartFocusMinutes = { minutes -> startFocusRound(minutes) },
+        onStartRound = { requestFocusStart(focusMinutes) },
+        onStartFocusMinutes = { minutes -> requestFocusStart(minutes) },
         onEndFocus = ::requestDismiss,
         onTakeBreak = ::chooseBreakLength,
         onExtendFlow = ::extendFlowRound,
         onStartBreak = ::startBreak,
         onSkipBreak = { finishBreak() },
-        onContinueLeaf = { startFocusRound(focusMinutes) },
+        onContinueLeaf = { requestFocusStart(focusMinutes) },
         onMarkDone = ::finishCurrentLeaf,
         onOpenNextLeaf = ::openNextLeaf,
         ambientDimmed = isAmbientFocus,
@@ -940,6 +1175,8 @@ private fun AdaptiveFocusModeContent(
     screenInteractionCount: Int,
     posture: FocusPostureReading,
     faceDownAssistEnabled: Boolean,
+    focusModeNotice: String?,
+    faceDownStartPending: Boolean,
     lastReport: FocusRoundReport?,
     currentInterruptionCount: Int,
     notificationPermissionGranted: Boolean,
@@ -984,10 +1221,12 @@ private fun AdaptiveFocusModeContent(
             )
             .padding(start = 22.dp, end = 22.dp, top = 10.dp, bottom = 18.dp)
 
-        Box(
+        BoxWithConstraints(
             modifier = contentModifier,
             contentAlignment = Alignment.Center,
         ) {
+            val layoutSpec = focusLayoutSpec(maxWidth = maxWidth, maxHeight = maxHeight)
+
             FocusTimerStage(
                 phase = phase,
                 remainingSeconds = remainingSeconds,
@@ -997,66 +1236,159 @@ private fun AdaptiveFocusModeContent(
                 lastReport = lastReport,
                 onFocusMinutesChange = onFocusMinutesChange,
                 quietMode = ambientDimmed,
+                timerSize = layoutSpec.timerSize,
+                suggestionOffsetY = layoutSpec.suggestionOffsetY,
                 modifier = Modifier.fillMaxWidth(),
             )
-        }
 
-        if (!ambientDimmed || chromeAlpha > 0.01f) {
-            Box(
-                modifier = contentModifier.alpha(chromeAlpha),
-            ) {
-                FocusTaskTopBar(
-                    posture = posture,
-                    faceDownAssistEnabled = faceDownAssistEnabled,
-                    onFaceDownAssistChange = onFaceDownAssistChange,
-                    onEndFocus = onEndFocus,
-                    modifier = Modifier.align(Alignment.TopCenter),
-                )
+            if (!ambientDimmed || chromeAlpha > 0.01f) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .alpha(chromeAlpha),
+                ) {
+                    FocusTaskTopBar(
+                        posture = posture,
+                        faceDownAssistEnabled = faceDownAssistEnabled,
+                        onFaceDownAssistChange = onFaceDownAssistChange,
+                        onEndFocus = onEndFocus,
+                        modifier = Modifier.align(Alignment.TopCenter),
+                    )
 
-                FocusTaskHeading(
-                    task = task,
-                    sourceDocuments = sourceDocuments,
-                    modifier = Modifier
-                        .align(Alignment.Center)
-                        .offset(y = (-242).dp),
-                )
-                FocusBottomPanel(
-                    phase = phase,
-                    hasNextTask = hasNextTask,
-                    breakImpact = breakImpact,
-                    focusMinutes = focusMinutes,
-                    deepFocusMinutes = deepFocusMinutes,
-                    flowExtensionMinutes = flowExtensionMinutes,
-                    breakMinutes = breakMinutes,
-                    lastReport = lastReport,
-                    sessionFocusedSeconds = sessionFocusedSeconds,
-                    completedLeavesThisSession = completedLeavesThisSession,
-                    notificationPermissionGranted = notificationPermissionGranted,
-                    onRequestNotifications = onRequestNotifications,
-                    onStartRound = onStartRound,
-                    onStartFocusMinutes = onStartFocusMinutes,
-                    onTakeBreak = onTakeBreak,
-                    onExtendFlow = onExtendFlow,
-                    onStartBreak = onStartBreak,
-                    onSkipBreak = onSkipBreak,
-                    onContinueLeaf = onContinueLeaf,
-                    onMarkDone = onMarkDone,
-                    onOpenNextLeaf = onOpenNextLeaf,
-                    modifier = Modifier
-                        .align(Alignment.Center)
-                        .offset(y = 272.dp),
-                )
-                FocusSessionLine(
-                    sessionFocusedSeconds = sessionFocusedSeconds,
-                    sessionBreakSeconds = sessionBreakSeconds,
-                    currentInterruptionCount = currentInterruptionCount,
-                    modifier = Modifier
-                        .align(Alignment.BottomCenter)
-                        .padding(bottom = 22.dp),
-                )
+                    FocusTaskHeading(
+                        task = task,
+                        sourceDocuments = sourceDocuments,
+                        modifier = Modifier
+                            .align(Alignment.Center)
+                            .offset(y = layoutSpec.headingOffsetY),
+                    )
+                    FocusBottomPanel(
+                        phase = phase,
+                        hasNextTask = hasNextTask,
+                        breakImpact = breakImpact,
+                        focusMinutes = focusMinutes,
+                        deepFocusMinutes = deepFocusMinutes,
+                        flowExtensionMinutes = flowExtensionMinutes,
+                        breakMinutes = breakMinutes,
+                        lastReport = lastReport,
+                        sessionFocusedSeconds = sessionFocusedSeconds,
+                        completedLeavesThisSession = completedLeavesThisSession,
+                        notificationPermissionGranted = notificationPermissionGranted,
+                        faceDownStartPending = faceDownStartPending,
+                        onRequestNotifications = onRequestNotifications,
+                        onStartRound = onStartRound,
+                        onStartFocusMinutes = onStartFocusMinutes,
+                        onTakeBreak = onTakeBreak,
+                        onExtendFlow = onExtendFlow,
+                        onStartBreak = onStartBreak,
+                        onSkipBreak = onSkipBreak,
+                        onContinueLeaf = onContinueLeaf,
+                        onMarkDone = onMarkDone,
+                        onOpenNextLeaf = onOpenNextLeaf,
+                        modifier = Modifier
+                            .align(Alignment.Center)
+                            .offset(y = layoutSpec.panelOffsetY),
+                    )
+                    FocusSessionLine(
+                        sessionFocusedSeconds = sessionFocusedSeconds,
+                        sessionBreakSeconds = sessionBreakSeconds,
+                        currentInterruptionCount = currentInterruptionCount,
+                        modifier = Modifier
+                            .align(Alignment.BottomCenter)
+                            .padding(bottom = layoutSpec.sessionLineBottomPadding),
+                    )
+                }
             }
         }
+        AnimatedVisibility(
+            visible = focusModeNotice != null && !ambientDimmed,
+            enter = fadeIn(
+                animationSpec = tween(
+                    durationMillis = FocusTopNoticeAnimationMillis,
+                    easing = FastOutSlowInEasing,
+                ),
+            ) + slideInVertically(
+                animationSpec = tween(
+                    durationMillis = FocusTopNoticeAnimationMillis,
+                    easing = FastOutSlowInEasing,
+                ),
+            ) { -it / 2 },
+            exit = fadeOut(
+                animationSpec = tween(
+                    durationMillis = FocusTopNoticeAnimationMillis,
+                    easing = FastOutSlowInEasing,
+                ),
+            ) + slideOutVertically(
+                animationSpec = tween(
+                    durationMillis = FocusTopNoticeAnimationMillis,
+                    easing = FastOutSlowInEasing,
+                ),
+            ) { -it / 2 },
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .statusBarsPadding()
+                .padding(start = 20.dp, top = 74.dp, end = 20.dp),
+        ) {
+            FocusTopNotice(message = focusModeNotice.orEmpty())
+        }
     }
+}
+
+private data class FocusLayoutSpec(
+    val timerSize: Dp,
+    val headingOffsetY: Dp,
+    val panelOffsetY: Dp,
+    val suggestionOffsetY: Dp,
+    val sessionLineBottomPadding: Dp,
+)
+
+private fun focusLayoutSpec(maxWidth: Dp, maxHeight: Dp): FocusLayoutSpec {
+    val widthScale = (maxWidth.value / FocusBaselineContentWidthDp).coerceIn(FocusMinLayoutScale, 1f)
+    val heightScale = (maxHeight.value / FocusBaselineContentHeightDp).coerceIn(FocusMinLayoutScale, 1f)
+    val scale = minOf(widthScale, heightScale)
+
+    val timerSizeValue = (FocusBaselineTimerSizeDp * scale)
+        .coerceAtLeast(FocusMinimumTimerSizeDp)
+    val headingOffsetValue = guardedHeadingOffset(
+        maxHeight = maxHeight,
+        idealOffset = FocusBaselineHeadingOffsetDp * scale,
+    )
+    val panelOffsetValue = guardedPanelOffset(
+        maxHeight = maxHeight,
+        idealOffset = FocusBaselinePanelOffsetDp * scale,
+    )
+    val suggestionOffsetValue = (timerSizeValue / 2f) + (FocusSuggestionGapDp * scale)
+
+    return FocusLayoutSpec(
+        timerSize = timerSizeValue.dp,
+        headingOffsetY = headingOffsetValue.dp,
+        panelOffsetY = panelOffsetValue.dp,
+        suggestionOffsetY = suggestionOffsetValue.dp,
+        sessionLineBottomPadding = (FocusBaselineSessionLineBottomPaddingDp * scale)
+            .coerceAtLeast(FocusMinimumSessionLineBottomPaddingDp)
+            .dp,
+    )
+}
+
+private fun guardedHeadingOffset(maxHeight: Dp, idealOffset: Float): Float {
+    val minimumHeadingCenterY = if (maxHeight.value < FocusVeryTightContentHeightDp) {
+        FocusVeryTightHeadingCenterYDp
+    } else {
+        FocusTightHeadingCenterYDp
+    }
+    val highestAllowedOffset = minimumHeadingCenterY - (maxHeight.value / 2f)
+    return maxOf(idealOffset, highestAllowedOffset)
+}
+
+private fun guardedPanelOffset(maxHeight: Dp, idealOffset: Float): Float {
+    val bottomReserve = if (maxHeight.value < FocusTightContentHeightDp) {
+        FocusTightBottomReserveDp
+    } else {
+        FocusBaselineBottomReserveDp
+    }
+    val lowestAllowedOffset = (maxHeight.value / 2f) - bottomReserve
+    return minOf(idealOffset, lowestAllowedOffset)
+        .coerceAtLeast(FocusMinimumPanelOffsetDp)
 }
 
 @Composable
@@ -1240,11 +1572,48 @@ private fun FocusFaceDownTopToggle(
         contentAlignment = Alignment.Center,
     ) {
         Icon(
-            imageVector = Icons.Default.Eco,
+            imageVector = Icons.Default.MobileOff,
             contentDescription = "Phone-down assist",
             tint = tint,
             modifier = Modifier.size(18.dp),
         )
+    }
+}
+
+@Composable
+private fun FocusTopNotice(
+    message: String,
+    modifier: Modifier = Modifier,
+) {
+    Surface(
+        modifier = modifier
+            .fillMaxWidth()
+            .widthIn(max = 360.dp),
+        shape = RoundedCornerShape(18.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.92f),
+        contentColor = MaterialTheme.colorScheme.onSurface,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.34f)),
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 11.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(9.dp),
+        ) {
+            Icon(
+                imageVector = Icons.Default.MobileOff,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.72f),
+                modifier = Modifier.size(17.dp),
+            )
+            Text(
+                text = message,
+                style = MaterialTheme.typography.bodySmall,
+                fontWeight = FontWeight.Medium,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.88f),
+                maxLines = 3,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
     }
 }
 
@@ -1259,6 +1628,8 @@ private fun FocusTimerStage(
     onFocusMinutesChange: (Int) -> Unit,
     modifier: Modifier = Modifier,
     quietMode: Boolean = false,
+    timerSize: Dp = FocusBaselineTimerSizeDp.dp,
+    suggestionOffsetY: Dp = FocusBaselineSuggestionOffsetDp.dp,
 ) {
     val totalSeconds = when (phase) {
         FocusPhase.BreakChoice,
@@ -1306,7 +1677,7 @@ private fun FocusTimerStage(
             lastReport = lastReport,
             onFocusMinutesChange = onFocusMinutesChange,
             quietMode = quietMode,
-            modifier = Modifier.size(332.dp),
+            modifier = Modifier.size(timerSize),
         )
         if (phase == FocusPhase.Ready && !quietMode) {
             Text(
@@ -1316,7 +1687,7 @@ private fun FocusTimerStage(
                 ),
                 modifier = Modifier
                     .align(Alignment.Center)
-                    .offset(y = 196.dp)
+                    .offset(y = suggestionOffsetY)
                     .fillMaxWidth()
                     .padding(horizontal = 28.dp),
                 style = MaterialTheme.typography.bodySmall,
@@ -1581,6 +1952,7 @@ private fun FocusBottomPanel(
     sessionFocusedSeconds: Int,
     completedLeavesThisSession: Int,
     notificationPermissionGranted: Boolean,
+    faceDownStartPending: Boolean,
     onRequestNotifications: (Boolean) -> Unit,
     onStartRound: () -> Unit,
     onStartFocusMinutes: (Int) -> Unit,
@@ -1614,6 +1986,7 @@ private fun FocusBottomPanel(
             lastReport = lastReport,
             sessionFocusedSeconds = sessionFocusedSeconds,
             completedLeavesThisSession = completedLeavesThisSession,
+            faceDownStartPending = faceDownStartPending,
             onStartRound = onStartRound,
             onStartFocusMinutes = onStartFocusMinutes,
             onTakeBreak = onTakeBreak,
@@ -1719,6 +2092,7 @@ private fun FocusControls(
     lastReport: FocusRoundReport?,
     sessionFocusedSeconds: Int,
     completedLeavesThisSession: Int,
+    faceDownStartPending: Boolean,
     onStartRound: () -> Unit,
     onStartFocusMinutes: (Int) -> Unit,
     onTakeBreak: () -> Unit,
@@ -1734,6 +2108,18 @@ private fun FocusControls(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
+        val waitingForScreenDown = faceDownStartPending && phase in FocusStartGatePhases
+        if (waitingForScreenDown) {
+            FocusStatusPill(
+                label = if (phase == FocusPhase.Paused) {
+                    "Screen down to continue"
+                } else {
+                    "Nice try. Screen down first"
+                },
+                icon = Icons.Default.MobileOff,
+            )
+            if (phase != FocusPhase.Paused) return@Column
+        }
         when (phase) {
             FocusPhase.Ready -> {
                 FocusActionPill(
@@ -1758,12 +2144,19 @@ private fun FocusControls(
                 )
             }
             FocusPhase.Paused -> {
-                FocusActionPill(
-                    label = "Continue focus",
-                    icon = Icons.Default.PlayArrow,
-                    onClick = onContinueLeaf,
-                    primary = true,
-                )
+                if (waitingForScreenDown) {
+                    FocusLiveActions(
+                        onTakeBreak = onTakeBreak,
+                        onMarkDone = onMarkDone,
+                    )
+                } else {
+                    FocusActionPill(
+                        label = "Continue focus",
+                        icon = Icons.Default.PlayArrow,
+                        onClick = onContinueLeaf,
+                        primary = true,
+                    )
+                }
             }
             FocusPhase.Break,
             FocusPhase.BreakEnded,
@@ -2097,12 +2490,14 @@ private fun FocusActionPill(
     modifier: Modifier = Modifier,
     icon: androidx.compose.ui.graphics.vector.ImageVector? = null,
     primary: Boolean = false,
+    enabled: Boolean = true,
 ) {
     val shape = RoundedCornerShape(18.dp)
     val height = 48.dp
     if (primary) {
         Button(
             onClick = onClick,
+            enabled = enabled,
             modifier = modifier.height(height),
             shape = shape,
             colors = ButtonDefaults.buttonColors(
@@ -2115,6 +2510,7 @@ private fun FocusActionPill(
     } else {
         OutlinedButton(
             onClick = onClick,
+            enabled = enabled,
             modifier = modifier.height(height),
             shape = shape,
             colors = ButtonDefaults.outlinedButtonColors(
@@ -2122,6 +2518,46 @@ private fun FocusActionPill(
             ),
         ) {
             FocusActionPillContent(label = label, icon = icon)
+        }
+    }
+}
+
+@Composable
+private fun FocusStatusPill(
+    label: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    modifier: Modifier = Modifier,
+) {
+    Surface(
+        modifier = modifier.height(48.dp),
+        shape = RoundedCornerShape(18.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.78f),
+        contentColor = MaterialTheme.colorScheme.onSurface,
+        border = BorderStroke(
+            width = 1.dp,
+            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.18f),
+        ),
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 24.dp),
+            horizontalArrangement = Arrangement.Center,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.64f),
+                modifier = Modifier.size(20.dp),
+            )
+            Spacer(Modifier.width(10.dp))
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.76f),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
         }
     }
 }
@@ -2384,6 +2820,107 @@ private fun FocusNotificationEffect(
         onDispose { cancelFocusTimerNotification(context) }
     }
 }
+
+@Composable
+private fun FocusCompletionCueEffect(event: FocusCompletionCueEvent?) {
+    val context = LocalContext.current.applicationContext
+    LaunchedEffect(event?.id, event?.kind) {
+        event ?: return@LaunchedEffect
+        launch { playFocusCompletionSound() }
+        launch { playFocusCompletionHaptics(context) }
+    }
+}
+
+private suspend fun playFocusCompletionSound() = withContext(Dispatchers.Default) {
+    val samples = createFocusCompletionPcm()
+    val audioTrack = AudioTrack.Builder()
+        .setAudioAttributes(
+            AudioAttributes.Builder()
+                .setUsage(AudioAttributes.USAGE_ASSISTANCE_SONIFICATION)
+                .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                .build(),
+        )
+        .setAudioFormat(
+            AudioFormat.Builder()
+                .setSampleRate(FocusCueSampleRate)
+                .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
+                .setChannelMask(AudioFormat.CHANNEL_OUT_MONO)
+                .build(),
+        )
+        .setTransferMode(AudioTrack.MODE_STATIC)
+        .setBufferSizeInBytes(samples.size * Short.SIZE_BYTES)
+        .build()
+    try {
+        audioTrack.write(samples, 0, samples.size)
+        audioTrack.play()
+        delay(FocusCueSoundDurationMillis)
+    } finally {
+        audioTrack.stop()
+        audioTrack.release()
+    }
+}
+
+private suspend fun playFocusCompletionHaptics(context: Context) {
+    val vibrator = context.focusVibrator() ?: return
+    if (!vibrator.hasVibrator()) return
+    repeat(FocusCueHapticPulseCount) { index ->
+        vibrateFocusCuePulse(vibrator)
+        delay(if (index == FocusCueHapticPulseCount - 1) {
+            FocusCueHapticIntervalMillis - FocusCueHapticPulseMillis
+        } else {
+            FocusCueHapticIntervalMillis
+        })
+    }
+}
+
+private fun performFocusStartHaptic(view: View) {
+    if (!view.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)) {
+        view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+    }
+}
+
+private fun Context.focusVibrator(): Vibrator? =
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+        getSystemService(VibratorManager::class.java)?.defaultVibrator
+    } else {
+        @Suppress("DEPRECATION")
+        getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator
+    }
+
+private fun vibrateFocusCuePulse(vibrator: Vibrator) {
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+        vibrator.vibrate(
+            VibrationEffect.createOneShot(
+                FocusCueHapticPulseMillis,
+                FocusCueHapticAmplitude,
+            ),
+        )
+    } else {
+        @Suppress("DEPRECATION")
+        vibrator.vibrate(FocusCueHapticPulseMillis)
+    }
+}
+
+private fun createFocusCompletionPcm(): ShortArray {
+    val sampleCount = (FocusCueSampleRate * FocusCueSoundDurationSeconds).toInt()
+    val buffer = ShortArray(sampleCount)
+    val notes = doubleArrayOf(392.0, 493.88, 587.33)
+    for (i in buffer.indices) {
+        val time = i.toDouble() / FocusCueSampleRate.toDouble()
+        val fadeIn = (time / FocusCueFadeInSeconds).coerceIn(0.0, 1.0)
+        val fadeOut = ((FocusCueSoundDurationSeconds - time) / FocusCueFadeOutSeconds).coerceIn(0.0, 1.0)
+        val envelope = easeSine(fadeIn) * easeSine(fadeOut)
+        val shimmer = (sin(2.0 * PI * notes[0] * time) * 0.55) +
+            (sin(2.0 * PI * notes[1] * time) * 0.32) +
+            (sin(2.0 * PI * notes[2] * time) * 0.18)
+        val value = shimmer * envelope * FocusCueVolume
+        buffer[i] = (value.coerceIn(-1.0, 1.0) * Short.MAX_VALUE).toInt().toShort()
+    }
+    return buffer
+}
+
+private fun easeSine(value: Double): Double =
+    sin((value.coerceIn(0.0, 1.0) * PI) / 2.0)
 
 private fun adaptFocusRound(
     report: FocusRoundReport,
@@ -2800,7 +3337,8 @@ private val RecoveryPhases = setOf(
     FocusPhase.LeafDone,
 )
 private val FocusTrackingPhases = setOf(FocusPhase.Focus, FocusPhase.FlowOvertime)
-private val BreakTrackingPhases = setOf(FocusPhase.Break)
+private val FocusStartGatePhases = setOf(FocusPhase.Ready, FocusPhase.Summary, FocusPhase.Paused)
+private val BreakTrackingPhases = setOf(FocusPhase.Break, FocusPhase.BreakEnded)
 private val TimerRunningPhases = FocusTrackingPhases + BreakTrackingPhases + FocusPhase.BreakEnded
 
 private data class FocusPostureReading(
@@ -2921,6 +3459,16 @@ private data class FocusNotificationEvent(
     val text: String,
 )
 
+private data class FocusCompletionCueEvent(
+    val id: Long,
+    val kind: FocusCompletionCueKind,
+)
+
+private enum class FocusCompletionCueKind {
+    FocusEnded,
+    BreakEnded,
+}
+
 private const val SecondsPerMinute = 60
 private const val InitialFocusMinutes = 10
 private const val InitialBreakMinutes = 2
@@ -2940,7 +3488,40 @@ private const val InteractionCountThrottleMillis = 1_000L
 private const val FocusScreenBrightness = 0.08f
 private const val FocusQuietTransitionMillis = 520
 private const val FocusTimerRingAnimationMillis = 850
+private const val FocusTopNoticeAnimationMillis = 260
+private const val FocusTopNoticeDurationMillis = 4_500L
+private const val FocusPhoneUpPauseGraceMillis = 1_000L
+private const val FocusCueSoundDurationMillis = 3_000L
+private const val FocusCueSoundDurationSeconds = 3.0
+private const val FocusCueFadeInSeconds = 0.18
+private const val FocusCueFadeOutSeconds = 1.3
+private const val FocusCueSampleRate = 44_100
+private const val FocusCueVolume = 0.11
+private const val FocusCueHapticPulseCount = 4
+private const val FocusCueHapticIntervalMillis = 1_000L
+private const val FocusCueHapticPulseMillis = 42L
+private const val FocusCueHapticAmplitude = 72
 private const val FocusNotificationChannelId = "ren_focus_mode"
 private const val FocusNotificationId = 9087
+private const val FocusPhoneDownNotice =
+    "Yep, it is that strict. Focus only counts while the screen faces down. Breaks start normally."
+private const val FocusBaselineContentWidthDp = 342f
+private const val FocusBaselineContentHeightDp = 724f
+private const val FocusMinLayoutScale = 0.82f
+private const val FocusBaselineTimerSizeDp = 332f
+private const val FocusMinimumTimerSizeDp = 276f
+private const val FocusBaselineHeadingOffsetDp = -242f
+private const val FocusBaselinePanelOffsetDp = 272f
+private const val FocusBaselineSuggestionOffsetDp = 196f
+private const val FocusSuggestionGapDp = 30f
+private const val FocusBaselineSessionLineBottomPaddingDp = 22f
+private const val FocusMinimumSessionLineBottomPaddingDp = 10f
+private const val FocusTightContentHeightDp = 680f
+private const val FocusVeryTightContentHeightDp = 600f
+private const val FocusBaselineBottomReserveDp = 72f
+private const val FocusTightBottomReserveDp = 118f
+private const val FocusMinimumPanelOffsetDp = 148f
+private const val FocusTightHeadingCenterYDp = 86f
+private const val FocusVeryTightHeadingCenterYDp = 72f
 private val FocusRamp = listOf(10, 15, 20, 25, 35, 45)
 private val BreakRamp = listOf(2, 3, 5, 7, 10, 15)

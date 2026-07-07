@@ -107,11 +107,139 @@ abstract class StudyProjectDatabase : RoomDatabase() {
                 StudyProjectDatabase::class.java,
                 "ren-study-projects.db",
             )
-                .addMigrations(Migration5To6)
-                .fallbackToDestructiveMigration(dropAllTables = true)
+                .addMigrations(
+                    Migration1To2,
+                    Migration2To3,
+                    Migration3To4,
+                    Migration4To5,
+                    Migration5To6,
+                )
                 .build()
                 .also { instance = it }
         }
+    }
+}
+
+private object Migration1To2 : Migration(1, 2) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL(
+            """
+            CREATE TABLE IF NOT EXISTS `active_study_project` (
+                `slot` TEXT NOT NULL,
+                `projectId` TEXT NOT NULL,
+                `title` TEXT NOT NULL,
+                `createdAtMillis` INTEGER NOT NULL,
+                `updatedAtMillis` INTEGER NOT NULL,
+                `deadlineAtMillis` INTEGER,
+                `planJson` TEXT NOT NULL,
+                `preferencesJson` TEXT NOT NULL,
+                `dailyMinutesOverride` INTEGER,
+                `acceptedTightPlan` INTEGER NOT NULL,
+                PRIMARY KEY(`slot`)
+            )
+            """.trimIndent(),
+        )
+        db.execSQL(
+            """
+            INSERT INTO `active_study_project` (
+                `slot`,
+                `projectId`,
+                `title`,
+                `createdAtMillis`,
+                `updatedAtMillis`,
+                `deadlineAtMillis`,
+                `planJson`,
+                `preferencesJson`,
+                `dailyMinutesOverride`,
+                `acceptedTightPlan`
+            )
+            SELECT
+                'active',
+                `id`,
+                `title`,
+                `createdAtMillis`,
+                `updatedAtMillis`,
+                `deadlineAtMillis`,
+                `planJson`,
+                `preferencesJson`,
+                `dailyMinutesOverride`,
+                `acceptedTightPlan`
+            FROM `study_projects`
+            ORDER BY `updatedAtMillis` DESC
+            LIMIT 1
+            """.trimIndent(),
+        )
+        db.execSQL("DROP TABLE `study_projects`")
+    }
+}
+
+private object Migration2To3 : Migration(2, 3) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE `active_study_project` ADD COLUMN `dailyAvailableMinutesJson` TEXT NOT NULL DEFAULT '{}'")
+    }
+}
+
+private object Migration3To4 : Migration(3, 4) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE `active_study_project` ADD COLUMN `taskProgressJson` TEXT NOT NULL DEFAULT '{}'")
+    }
+}
+
+private object Migration4To5 : Migration(4, 5) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL(
+            """
+            CREATE TABLE IF NOT EXISTS `_active_study_project_new` (
+                `slot` TEXT NOT NULL,
+                `projectId` TEXT NOT NULL,
+                `title` TEXT NOT NULL,
+                `createdAtMillis` INTEGER NOT NULL,
+                `updatedAtMillis` INTEGER NOT NULL,
+                `deadlineAtMillis` INTEGER,
+                `planJson` TEXT NOT NULL,
+                `preferencesJson` TEXT NOT NULL,
+                `dailyMinutesOverride` INTEGER,
+                `dailyAvailableMinutesJson` TEXT NOT NULL,
+                `taskStateJson` TEXT NOT NULL,
+                `acceptedTightPlan` INTEGER NOT NULL,
+                PRIMARY KEY(`slot`)
+            )
+            """.trimIndent(),
+        )
+        db.execSQL(
+            """
+            INSERT INTO `_active_study_project_new` (
+                `slot`,
+                `projectId`,
+                `title`,
+                `createdAtMillis`,
+                `updatedAtMillis`,
+                `deadlineAtMillis`,
+                `planJson`,
+                `preferencesJson`,
+                `dailyMinutesOverride`,
+                `dailyAvailableMinutesJson`,
+                `taskStateJson`,
+                `acceptedTightPlan`
+            )
+            SELECT
+                `slot`,
+                `projectId`,
+                `title`,
+                `createdAtMillis`,
+                `updatedAtMillis`,
+                `deadlineAtMillis`,
+                `planJson`,
+                `preferencesJson`,
+                `dailyMinutesOverride`,
+                `dailyAvailableMinutesJson`,
+                `taskProgressJson`,
+                `acceptedTightPlan`
+            FROM `active_study_project`
+            """.trimIndent(),
+        )
+        db.execSQL("DROP TABLE `active_study_project`")
+        db.execSQL("ALTER TABLE `_active_study_project_new` RENAME TO `active_study_project`")
     }
 }
 

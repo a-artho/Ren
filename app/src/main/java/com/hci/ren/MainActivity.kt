@@ -45,7 +45,6 @@ import com.hci.ren.feature.pdfupload.presentation.PdfUploadRoute
 import com.hci.ren.feature.pdfupload.presentation.PdfUploadViewModel
 import com.hci.ren.feature.plangeneration.PlanGenerationScreen
 import com.hci.ren.feature.plangeneration.PlanGenerationViewModel
-import com.hci.ren.feature.plangeneration.StudyTaskStatus
 import com.hci.ren.feature.progress.presentation.ProgressScreen
 import com.hci.ren.feature.studymap.AdaptiveFocusMode
 import com.hci.ren.feature.studymap.StudyMapDetailRoute
@@ -214,7 +213,7 @@ class MainActivity : ComponentActivity() {
                             },
                             onBack = {
                                 if (!transition.isRunning) {
-                                    forward = false
+                                    finish()
                                 }
                             },
                             onCreateProject = {
@@ -250,8 +249,14 @@ class MainActivity : ComponentActivity() {
                                             TodaySessionTaskAction.MarkDone,
                                         )
                                     },
-                                    onOpenTask = { taskId ->
-                                        studyMapDetailViewModel.updateTaskStatus(taskId, StudyTaskStatus.InProgress)
+                                    onOpenTask = { date, taskId, pulledIntoToday ->
+                                        if (pulledIntoToday) {
+                                            studyMapDetailViewModel.updateTodayTaskAction(
+                                                date,
+                                                taskId,
+                                                TodaySessionTaskAction.PullIn,
+                                            )
+                                        }
                                         activeFocusTaskId = taskId
                                     },
                                     focusDayState = studyMapState.focusDayState,
@@ -267,7 +272,6 @@ class MainActivity : ComponentActivity() {
                                     onTaskAction = studyMapDetailViewModel::updateTodayTaskAction,
                                     onWrapUpToday = studyMapDetailViewModel::wrapUpToday,
                                     onStartFocusTask = { taskId ->
-                                        studyMapDetailViewModel.updateTaskStatus(taskId, StudyTaskStatus.InProgress)
                                         activeFocusTaskId = taskId
                                     },
                                     onConsumeWrapUpResult = studyMapDetailViewModel::consumeTodayWrapUpMessage,
