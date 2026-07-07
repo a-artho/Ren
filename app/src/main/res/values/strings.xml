@@ -118,7 +118,7 @@
     <string name="today_tasks">Fits today</string>
     <string name="today_do_now">Do now</string>
     <string name="up_next">Queue</string>
-    <string name="start_focus">Start focus</string>
+    <string name="start_focus">Focus</string>
     <string name="focus_mode_title">Focus mode</string>
     <string name="focus_ready_subtitle">Start small. Keep the day moving.</string>
     <string name="focus_running_subtitle">One leaf. No heroic nonsense.</string>

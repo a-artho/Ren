@@ -52,7 +52,6 @@ import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Flag
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.MoreVert
-import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.RestartAlt
 import androidx.compose.material.icons.filled.Schedule
@@ -2213,8 +2212,8 @@ private fun TodayDoNowCard(
                     modifier = Modifier.weight(1f),
                     shape = RoundedCornerShape(18.dp),
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.74f),
-                        contentColor = Color.Black,
+                        containerColor = RenSelectedCardSurface,
+                        contentColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.72f),
                     ),
                 ) {
                     Row(
@@ -2223,14 +2222,12 @@ private fun TodayDoNowCard(
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Icon(
-                            imageVector = Icons.Default.PlayArrow,
+                            imageVector = Icons.Default.Timer,
                             contentDescription = null,
-                            tint = Color.Black,
                         )
                         Spacer(Modifier.width(8.dp))
                         Text(
                             text = stringResource(R.string.start_focus),
-                            color = Color.Black,
                         )
                     }
                 }
